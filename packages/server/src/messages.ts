@@ -11,6 +11,7 @@ import {
   messageOperation,
   messageDeliveryState,
   normalizeMessageSend,
+  type Capability,
   type MessageDelivery,
   type MessageNativeIdentity,
   type MessageEntry,
@@ -27,6 +28,7 @@ export type MessageDomain = {
   installationId: string;
   continuity?: (signal: AbortSignal) => ContinuityGateway;
   listBots?: (signal: AbortSignal) => Promise<NativeBotSnapshot>;
+  authorize: (signal: AbortSignal, capability: Capability) => Promise<void>;
 };
 
 type StoredMessage = MessageOperation & {
@@ -280,6 +282,12 @@ export function messageApplication(domain: MessageDomain, principal: Principal, 
       if (!submissionGateway) {
         return yield* Effect.fail(operationUnknown(pending));
       }
+      // Recheck the same principal after preflight/discovery. Native ownership
+      // and a retained receipt are not current management write authority.
+      yield* Effect.tryPromise({
+        try: signal => domain.authorize(AbortSignal.any([controller.signal, signal]), "messages.write"),
+        catch: error => error,
+      });
       const nativeOutcome = yield* Effect.result(Effect.tryPromise({
         try: signal => submissionGateway!.rpc("sendPrompt", { agentId: botId, prompt: request.text, clientNonce: request.clientNonce }, {
           timeoutMs: 15_000, maxResponseBytes: 64 * 1024, write: true, singleAttempt: true,

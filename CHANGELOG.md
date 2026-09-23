@@ -8,6 +8,7 @@ when upstream Grok Bot or Cursor internals change.
 
 ## 0.1.0-alpha.6 — Unreleased
 
+- Recheck the same management principal's current `messages.write` after message preflight and before native `sendPrompt`. Revocation or subject change during native reads does not dispatch; retained receipts and replay are not new write authority. Disconnect does not cancel an admitted send; Server shutdown aborts and settles the owned transport.
 - **Breaking runtime configuration/protocol:** models schema v2 uses structured per-Bot assignments and wire v7 preserves reasoning-token usage. Read-only v1 normalization does not write; explicit saves/migration require coordinated CLI/preload/Host/modeld upgrade and a protected rollback configuration. Older peers remain diagnostic-only; no data-root relocation or automatic live cutover.
 - Add capability-gated `models use --effort`, configured-only `models show --for`, and `models migrate --confirm`. Keep the same channel/model identity, freeze policy in TURN selection/revision, validate cold restore and final HTTP effort, preserve bounded SDK warnings and requested/emitted evidence, and show optional `e=` without inventing catalog variants.
 

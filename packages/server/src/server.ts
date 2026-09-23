@@ -278,7 +278,8 @@ export async function startManagementServer(options: ManagementServerOptions, te
         fileDomain: fileService ? { service: fileService, authorize: materialAuthorize } : undefined,
         desktopDomain: desktopService ? { service: desktopService, authorize: materialAuthorize } : undefined,
         messageDomain: options.native.continuityAccess ? { root: options.store.root, installationId,
-          continuity: (signal: AbortSignal) => options.native.continuityAccess!(signal), listBots: options.native.listBots } : undefined,
+          continuity: (signal: AbortSignal) => options.native.continuityAccess!(signal), listBots: options.native.listBots,
+          authorize: materialAuthorize } : undefined,
         contextDomain: { root: options.store.root, installationId, authorize: materialAuthorize, hooks: testPorts.context?.hooks,
           ...(options.native.continuityAccess ? { context: (signal: AbortSignal) => ({ boxRuntimeRoot: options.store.root, env: options.env ?? {}, fetch: options.fetch, signal,
             gateway: () => options.native.continuityAccess!(signal), ownershipRead: options.native.ownershipRead }) } : {}) },
@@ -324,6 +325,9 @@ export async function startManagementServer(options: ManagementServerOptions, te
       }
       if (request.method === "GET" && (url.pathname.startsWith("/v1/notification-") || url.pathname === "/v1/notifications" || url.pathname.startsWith("/v1/notifications/"))) {
         yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, url.pathname.includes("-operations/") ? "operations.read" : "notifications.read"), catch: error => error });
+      }
+      if (request.method === "GET" && (url.pathname === "/v1/messages" || url.pathname.startsWith("/v1/messages/") || url.pathname.startsWith("/v1/message-"))) {
+        yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, "messages.read"), catch: error => error });
       }
       if (request.method === "POST" && url.pathname === "/v1/notification-sends" && result && typeof result === "object" && "state" in result && result.state === "refused") {
         return yield* Effect.fail(new HttpFailure(409, "notification_send_refused", "The explicit delivery did not send successfully. Inspect its original receipt; a refusal does not authorize resending this work.", { operation: result }));

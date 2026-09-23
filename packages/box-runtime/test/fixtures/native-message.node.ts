@@ -9,6 +9,7 @@ import { Effect } from "effect";
 import { botRef } from "@grokbox/client";
 import type { ContinuityGateway } from "../../src/runtime.ts";
 import { messageApplication } from "../../../server/src/messages.ts";
+import { requireCapability, type Principal } from "../../../server/src/access.ts";
 import { nativeMessageCode } from "./native-message-code.ts";
 import { bindHostOwnershipRead, HOST_OWNERSHIP_READ_SYMBOL } from "../../src/internal/host/ownership-read.ts";
 import { decideManagedOwnership } from "@grokbox/runtime-kernel/contract";
@@ -95,8 +96,9 @@ async function fixture(active = true) {
     getAgentOwnership: async ids => ({ result: (await call(api, "getHostStatus", { grokboxOwnershipAgentIds: ids })).grokboxOwnership, discovery }), currentStateControl: async () => ({ result: {}, discovery }),
     routineProvision: async () => ({ result: {}, discovery }), agentRoutines: async () => ({ result: {}, discovery }),
   };
-  const domain = { root, installationId: INSTALLATION, continuity: () => gateway };
-  const principal = { id: "owned-principal", capabilities: ["messages.read", "messages.write"] as const };
+  const principal: Principal = { id: "owned-principal", capabilities: ["messages.read", "messages.write"] };
+  const domain = { root, installationId: INSTALLATION, continuity: () => gateway,
+    authorize: async (_signal: AbortSignal, capability: Principal["capabilities"][number]) => { requireCapability(principal, capability); } };
   const submit = async () => {
     const requestId = randomUUID(), clientNonce = randomUUID();
     const request = { requestId, botRef: botRef(INSTALLATION, BOT), clientNonce, text: "owned-input" };

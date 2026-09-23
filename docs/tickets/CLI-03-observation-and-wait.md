@@ -40,7 +40,7 @@ Agent 或未来页面先读取 Bot 快照，再接续变化；断线后能识别
 
 ## 消息关联与对账（2026-09-23）
 
-`message send` 在原 native writer 前保存 management request/submission、clientNonce、Gateway generation 和 `nativeIdentity`（账号 scope 摘要、Server Bot id、harness）。复用同一 pinned continuity gateway，发送前后核对当前身份；成功 ACK 仅证明 native acceptance，显式 queue 字段才证明 queued。对账的 ownership 读前/读后与 transcript 来源必须同原绑定；scope、Server id、harness、进程代际变化或失权只返回 unknown，不跨账号/跨 Bot 猜测，不补投。身份前后采样不是全局账户锁，不代签未观察到的中间状态或原 native writer 的外部业务完成。
+`message send` 在原 native writer 前保存 management request/submission、clientNonce、Gateway generation 和 `nativeIdentity`（账号 scope 摘要、Server Bot id、harness）。复用同一 pinned continuity gateway，发送前后核对当前身份；预检/发现完成后、真正 native dispatch 前再次核对同一主体的当前 `messages.write`。管理授权撤销或主体变化不得调用 sendPrompt；历史读取与原请求重放不是新的写权限，也不补投。调用者断连不取消已准入写入；Server 关闭中止并结算自有 transport。成功 ACK 仅证明 native acceptance，显式 queue 字段才证明 queued。对账的 ownership 读前/读后与 transcript 来源必须同原绑定；scope、Server id、harness、进程代际变化或失权只返回 unknown，不跨账号/跨 Bot 猜测，不补投。身份前后采样不是全局账户锁，不代签未观察到的中间状态或原 native writer 的外部业务完成。
 
 `message get` 无需原生来源在线即可读回保留的原请求。旧记录缺 nativeIdentity 时仅投影为 null，保留原状态且不重发；这不授予在当前账号下重新认领它的资格。损坏记录不作为“不存在”。历史读取适配不恢复旧 writer 或第二消息实现。
 

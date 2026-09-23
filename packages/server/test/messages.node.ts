@@ -27,6 +27,8 @@ async function fixture() {
   let lastNonce: string | undefined;
   let scopeId = "a".repeat(64), revoke = false, missingIdentity = false, switchAfterSend = false, switchDuringRead = false;
   let entries: unknown[] | undefined, sourceUnavailable = false, accepted = true, ack: unknown;
+  let afterRoster: (() => void) | undefined, afterOwnership: (() => void) | undefined;
+  let sendHold: Promise<void> | undefined, sendEntered: (() => void) | undefined;
   const transcriptPins: unknown[] = [];
   const signals: AbortSignal[] = [];
   const discovery = { baseUrl: "http://native.invalid", pid: 123, startedAt: 1 };
@@ -38,6 +40,17 @@ async function fixture() {
     rpc: async (method, input, options) => {
       if (method === "sendPrompt") {
         calls.send++;
+        sendEntered?.();
+        const owner = signals.at(-1), held = sendHold;
+        if (held) {
+          await new Promise<void>((resolve, reject) => {
+            const settle = (fn: () => void) => { owner?.removeEventListener("abort", onAbort); fn(); };
+            const onAbort = () => settle(() => reject(new Error("aborted")));
+            if (owner?.aborted) { onAbort(); return; }
+            owner?.addEventListener("abort", onAbort, { once: true });
+            held.then(() => settle(resolve), error => settle(() => reject(error)));
+          });
+        }
         if (calls.sourceChanged) throw new Error("source_changed");
         lastNonce = typeof input.clientNonce === "string" ? input.clientNonce : undefined;
         if (switchAfterSend) scopeId = "b".repeat(64);
@@ -58,10 +71,13 @@ async function fixture() {
       throw new Error(`unexpected_${method}`);
     },
     listAgents: async () => { if (sourceUnavailable) throw Error("unavailable");
-      return { agents: [{ id: BOT, name: "First", isGroup: false }], discovery }; },
+      const agents = [{ id: BOT, name: "First", isGroup: false }];
+      JSON.stringify({ agents, discovery }); afterRoster?.();
+      return { agents, discovery }; },
     getAgentOwnership: async ids => {
       const result = ownedOwnershipSnapshot(ids, { scopeId });
       if (revoke) result.agents[0]!.server.viewerIsOwner = false;
+      JSON.stringify(result); afterOwnership?.();
       return { result: missingIdentity ? {} : result, discovery };
     },
     currentStateControl: async () => ({ result: {}, discovery }),
@@ -81,7 +97,7 @@ async function fixture() {
   const server = await startManagementServer(options, { hostHealth: { enabled: false } });
   cleanup.push(() => server.close());
   const client = (credential = OWNER) => new ManagementClient({ baseUrl: server.url, installationId: INSTALLATION, credential: async () => credential });
-  return { root, options, server, client, calls, discovery, transcriptPins, signals,
+  return { root, options, server, client, calls, discovery, transcriptPins, signals, grants,
     setEntries: (rows: unknown[]) => { entries = rows; },
     moveGeneration: () => { discovery.startedAt++; },
     unavailable: () => { sourceUnavailable = true; },
@@ -90,6 +106,15 @@ async function fixture() {
     switchScope: () => { scopeId = "b".repeat(64); },
     revoke: () => { revoke = true; }, noIdentity: () => { missingIdentity = true; },
     switchAfterSend: () => { switchAfterSend = true; }, switchDuringRead: () => { switchDuringRead = true; },
+    duringRoster: (fn: () => void) => { afterRoster = fn; },
+    duringOwnership: (fn: () => void) => { afterOwnership = fn; },
+    restoreGrant: () => { grants[0]!.principalId = "owner"; grants[0]!.capabilities = [...CAPABILITIES]; },
+    holdSend: () => {
+      let release!: () => void;
+      sendHold = new Promise<void>(resolve => { release = resolve; });
+      const entered = new Promise<void>(resolve => { sendEntered = resolve; });
+      return { entered, release: () => release() };
+    },
     botRef: botRef(INSTALLATION, BOT) };
 }
 
@@ -363,4 +388,87 @@ test("missing native identity refuses before a first effect, while old unbound r
   assert.equal((await f.client().sendMessage(input)).data.nativeIdentity, null);
   assert.equal((await f.client().messageDelivery(input.requestId)).data.state, "unknown");
   assert.equal(f.calls.send, 1); assert.equal(f.calls.transcript, 0);
+});
+
+const denied = (promise: Promise<unknown>, code: string) => assert.rejects(promise, error => {
+  assert.equal((error as { code?: string }).code, code); return true;
+});
+const dropWrite = (grants: AccessGrant[]) => {
+  grants[0]!.capabilities = grants[0]!.capabilities.filter(capability => capability !== "messages.write");
+};
+
+for (const scenario of ["roster", "ownership", "subject"] as const) test(`management ${scenario} change during native reads cannot dispatch sendPrompt`, async () => {
+  const f = await fixture(), input = sendInput(f);
+  const act = () => { if (scenario === "subject") f.grants[0]!.principalId = "other-owner"; else dropWrite(f.grants); };
+  if (scenario === "ownership") f.duringOwnership(act); else f.duringRoster(act);
+  await denied(f.client().sendMessage(input), "permission_denied");
+  assert.equal(f.calls.send, 0);
+  f.restoreGrant();
+  const original = (await f.client().messageOperation(input.requestId)).data;
+  assert.equal(original.state, "unknown");
+  assert.equal(original.requestId, input.requestId);
+  assert.equal(original.clientNonce, input.clientNonce);
+  assert.equal(original.nativeIdentity?.scopeId, "a".repeat(64));
+  await denied(f.client().sendMessage(input), "operation_unknown");
+  assert.equal(f.calls.send, 0);
+});
+
+test("after-dispatch revocation cannot resend; historical read is not write authority", async () => {
+  const f = await fixture(), input = sendInput(f);
+  const original = (await f.client().sendMessage(input)).data;
+  assert.equal(original.state, "accepted");
+  dropWrite(f.grants);
+  await denied(f.client().sendMessage(input), "permission_denied");
+  assert.deepEqual((await f.client().messageOperation(input.requestId)).data, original);
+  assert.equal((await f.client().messageDelivery(input.requestId)).data.operation.state, "accepted");
+  f.restoreGrant();
+  assert.deepEqual((await f.client().sendMessage(input)).data, original);
+  assert.equal(f.calls.send, 1);
+});
+
+test("unknown receipt is not new write authority after later grant revocation", async () => {
+  const f = await fixture(), input = sendInput(f);
+  f.calls.sourceChanged = true;
+  await denied(f.client().sendMessage(input), "operation_unknown");
+  assert.equal((await f.client().messageOperation(input.requestId)).data.state, "unknown");
+  dropWrite(f.grants);
+  await denied(f.client().sendMessage(input), "permission_denied");
+  assert.equal((await f.client().messageOperation(input.requestId)).data.state, "unknown");
+  f.restoreGrant();
+  await denied(f.client().sendMessage(input), "operation_unknown");
+  assert.equal(f.calls.send, 1);
+});
+
+test("client disconnect does not cancel an admitted native send", async () => {
+  const f = await fixture(), input = sendInput(f), hold = f.holdSend();
+  const disconnected = new AbortController();
+  const lost = f.client().sendMessage(input, disconnected.signal);
+  await hold.entered;
+  disconnected.abort();
+  await denied(lost, "operation_unknown");
+  hold.release();
+  const deadline = Date.now() + 2000;
+  let state = "unknown";
+  while (Date.now() < deadline) {
+    state = (await f.client().messageOperation(input.requestId)).data.state;
+    if (state === "accepted") break;
+    await new Promise(resolve => setTimeout(resolve, 15));
+  }
+  assert.equal(state, "accepted");
+  assert.equal(f.calls.send, 1);
+});
+
+test("Server shutdown aborts the owned send transport and keeps the original unknown receipt", async () => {
+  const f = await fixture(), input = sendInput(f), hold = f.holdSend();
+  const pending = f.client().sendMessage(input).catch(error => error);
+  await hold.entered;
+  await f.server.close(); await pending;
+  const path = join(f.root, "messages", "owner", `${input.requestId}.json`);
+  assert.equal(JSON.parse(await readFile(path, "utf8")).state, "unknown");
+  const server = await startManagementServer(f.options, { hostHealth: { enabled: false } });
+  cleanup.push(() => server.close());
+  const client = new ManagementClient({ baseUrl: server.url, installationId: INSTALLATION, credential: async () => OWNER });
+  assert.equal((await client.messageOperation(input.requestId)).data.state, "unknown");
+  await denied(client.sendMessage(input), "operation_unknown");
+  assert.equal(f.calls.send, 1);
 });
