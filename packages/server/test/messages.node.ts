@@ -29,6 +29,7 @@ async function fixture() {
   let entries: unknown[] | undefined, sourceUnavailable = false, accepted = true, ack: unknown;
   let afterRoster: (() => void) | undefined, afterOwnership: (() => void) | undefined, beforeNativeSend: (() => void) | undefined;
   let sendHold: Promise<void> | undefined, sendEntered: (() => void) | undefined;
+  let beforeGrant: (() => Promise<void>) | undefined;
   const transcriptPins: unknown[] = [];
   const signals: AbortSignal[] = [];
   const discovery = { baseUrl: "http://native.invalid", pid: 123, startedAt: 1 };
@@ -95,7 +96,7 @@ async function fixture() {
     { principalId: "owner", tokenSha256: digest(OWNER), capabilities: [...CAPABILITIES] },
     { principalId: "reader", tokenSha256: digest(READER), capabilities: ["messages.read", "bots.read", "operations.read"] },
   ];
-  const options = { root, store, native, installationId: INSTALLATION, readGrants: async () => grants };
+  const options = { root, store, native, installationId: INSTALLATION, readGrants: async () => { await beforeGrant?.(); return grants; } };
   const server = await startManagementServer(options, { hostHealth: { enabled: false } });
   cleanup.push(() => server.close());
   const client = (credential = OWNER) => new ManagementClient({ baseUrl: server.url, installationId: INSTALLATION, credential: async () => credential });
@@ -111,6 +112,7 @@ async function fixture() {
     duringRoster: (fn: () => void) => { afterRoster = fn; },
     duringOwnership: (fn: () => void) => { afterOwnership = fn; },
     beforeNativeSend: (fn: () => void) => { beforeNativeSend = fn; },
+    beforeGrant: (fn: () => Promise<void>) => { beforeGrant = fn; },
     restoreGrant: () => { grants[0]!.principalId = "owner"; grants[0]!.capabilities = [...CAPABILITIES]; },
     holdSend: () => {
       let release!: () => void;
@@ -486,4 +488,24 @@ for (const subjectChange of [false, true]) test(`final native transport boundary
   const saved = (await f.client().messageOperation(input.requestId)).data;
   assert.equal(saved.state, "unknown"); assert.equal(saved.clientNonce, input.clientNonce);
   await denied(f.client().sendMessage(input), "operation_unknown"); assert.equal(f.calls.send, 0);
+});
+
+for (const wallClock of ["forward", "rollback"] as const) test(`ownership evidence expires during final authorization despite ${wallClock} wall clock`, async t => {
+  const f = await fixture(), input = sendInput(f);
+  let wall = Date.now(), mono = performance.now(), advanced = false;
+  t.mock.method(Date, "now", () => wall);
+  t.mock.method(performance, "now", () => mono);
+  f.beforeNativeSend(() => f.beforeGrant(async () => {
+    await Promise.resolve();
+    if (!advanced) { mono += 6_000; wall += wallClock === "forward" ? 6_000 : -1_000; advanced = true; }
+  }));
+  const result = await f.client().sendMessage(input).catch(error => error);
+  assert.equal(advanced, true);
+  assert.equal(f.calls.send, 0, "an expired native ownership snapshot cannot authorize sendPrompt");
+  assert.equal(result.code, "operation_unknown");
+  const saved = (await f.client().messageOperation(input.requestId)).data;
+  assert.equal(saved.state, "unknown"); assert.equal(saved.clientNonce, input.clientNonce);
+  assert.deepEqual(saved.nativeIdentity, { scopeId: "a".repeat(64), serverId: `owned-${BOT}`, harness: "box" });
+  await denied(f.client().sendMessage(input), "operation_unknown");
+  assert.equal(f.calls.send, 0);
 });

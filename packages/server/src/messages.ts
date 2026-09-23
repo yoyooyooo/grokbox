@@ -173,10 +173,10 @@ async function listNative(domain: MessageDomain, signal: AbortSignal, pinnedGate
 }
 const sameNativeIdentity = (a: MessageNativeIdentity, b: MessageNativeIdentity) =>
   a.scopeId === b.scopeId && a.serverId === b.serverId && a.harness === b.harness;
-async function nativeIdentity(gateway: ContinuityGateway, botId: string, generation: string, timeoutMs = 10_000): Promise<MessageNativeIdentity> {
+async function nativeIdentity(gateway: ContinuityGateway, botId: string, generation: string, timeoutMs = 10_000): Promise<{ identity: MessageNativeIdentity; assertFresh: () => void }> {
   const began = performance.now();
   const reply = await gateway.getAgentOwnership([botId], timeoutMs);
-  const elapsed = performance.now() - began;
+  const capturedTick = performance.now(), elapsed = capturedTick - began;
   const fact = inspectOwnership({ agentIds: [botId], snapshot: reply.result });
   const row = fact.agents[0], now = Date.now();
   const stamps = [fact.observedAt, fact.completedAt, fact.serverObservedAt].map(value => value == null ? NaN : Date.parse(value));
@@ -188,7 +188,17 @@ async function nativeIdentity(gateway: ContinuityGateway, botId: string, generat
     || elapsed < 0 || elapsed > OWNERSHIP_EVIDENCE_MAX_AGE_MS) {
     throw new HttpFailure(503, "source_invalid", "The native message identity is not currently confirmed.");
   }
-  return { scopeId: fact.scope.id, serverId: row.server.serverId, harness: row.server.harness };
+  const oldestStamp = Math.min(...stamps), initialAge = now - oldestStamp;
+  return {
+    identity: { scopeId: fact.scope.id, serverId: row.server.serverId, harness: row.server.harness },
+    // Retain the observation clock only in this request, never in public receipts.
+    // A delayed authorization or backwards wall clock cannot renew its lifetime.
+    assertFresh: () => {
+      const wallAge = Date.now() - oldestStamp, passed = performance.now() - capturedTick;
+      if (wallAge < 0 || passed < 0 || Math.max(wallAge, initialAge + passed) > OWNERSHIP_EVIDENCE_MAX_AGE_MS)
+        throw new HttpFailure(503, "source_invalid", "The native message identity evidence expired before dispatch.");
+    },
+  };
 }
 async function transcript(domain: MessageDomain, botId: string, limit: number, beforeSeq: number | undefined, signal: AbortSignal,
   expectedGeneration?: string, timeoutMs = 10_000, expectedIdentity?: MessageNativeIdentity): Promise<MessagePage> {
@@ -196,7 +206,7 @@ async function transcript(domain: MessageDomain, botId: string, limit: number, b
   try {
     const gateway = domain.continuity(AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]));
     const check = async () => {
-      if (expectedIdentity && (!expectedGeneration || !sameNativeIdentity(expectedIdentity, await nativeIdentity(gateway, botId, expectedGeneration, timeoutMs))))
+      if (expectedIdentity && (!expectedGeneration || !sameNativeIdentity(expectedIdentity, (await nativeIdentity(gateway, botId, expectedGeneration, timeoutMs)).identity)))
         throw new HttpFailure(503, "source_invalid", "The native message account or Bot identity changed.");
     };
     await check();
@@ -269,7 +279,8 @@ export function messageApplication(domain: MessageDomain, principal: Principal, 
         return publicOperation(rechecked);
       }
       if (!submissionGateway) return yield* Effect.fail(new HttpFailure(503, "source_unavailable", "Native message input is unavailable."));
-      const identity = yield* Effect.tryPromise({ try: () => nativeIdentity(submissionGateway!, botId, native.source.generation), catch: error => error });
+      const observedIdentity = yield* Effect.tryPromise({ try: () => nativeIdentity(submissionGateway!, botId, native.source.generation), catch: error => error });
+      const identity = observedIdentity.identity;
       const pending: StoredMessage = {
         schemaVersion: 1, installationId: domain.installationId, requestId: request.requestId,
         operationRef: operationRef(domain.installationId, botId, request.requestId), submissionRef: submissionRef(domain.installationId, botId, request.requestId),
@@ -292,7 +303,10 @@ export function messageApplication(domain: MessageDomain, principal: Principal, 
         try: signal => submissionGateway!.rpc("sendPrompt", { agentId: botId, prompt: request.text, clientNonce: request.clientNonce }, {
           timeoutMs: 15_000, maxResponseBytes: 64 * 1024, write: true, singleAttempt: true,
           unknownOutcomeCode: "operation_outcome_unknown", expectedGeneration: native.source.generation,
-          beforeDispatch: async owner => { await domain.authorize(owner, "messages.write"); owner.throwIfAborted(); },
+          beforeDispatch: async owner => {
+            await domain.authorize(owner, "messages.write"); owner.throwIfAborted();
+            observedIdentity.assertFresh();
+          },
         }),
         catch: error => error,
       }));
@@ -303,7 +317,7 @@ export function messageApplication(domain: MessageDomain, principal: Principal, 
       const acknowledgement = receipt(nativeReply.result);
       if (!acknowledgement || sourceOf(nativeReply.discovery)?.generation !== pending.nativeGeneration) return yield* Effect.fail(operationUnknown(pending));
       const after = yield* Effect.result(Effect.tryPromise({ try: () => nativeIdentity(submissionGateway!, botId, native.source.generation), catch: error => error }));
-      if (after._tag === "Failure" || !sameNativeIdentity(identity, after.success)) return yield* Effect.fail(operationUnknown(pending));
+      if (after._tag === "Failure" || !sameNativeIdentity(identity, after.success.identity)) return yield* Effect.fail(operationUnknown(pending));
       const accepted: StoredMessage = {
         ...pending, state: "accepted", acceptedAtMs: Date.now(), nativeGeneration: sourceOf(nativeReply!.discovery)?.generation ?? null,
         nativeReceipt: acknowledgement,
