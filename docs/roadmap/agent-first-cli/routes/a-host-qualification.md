@@ -35,3 +35,8 @@ A1可以分批交有用接口，消费者只等待自己实际调用的接口资
 每个出口提供v2基线/tip、接口表、源/worker/candidate/制品摘要、测试真实性、当前缺口及直接消费者。接口表在HOST-01/HCR相应来源处维护，本卡只路由。
 
 缺来源访问只阻相关ABI/现场资格，继续公开fixture及协议工作；未知原生角色是CODE/DEP，明确缺哪个reader/writer，不把整个B/C都标“等Host全完”。J2所加载路径存在P0/P1或必要资格缺失则保留阻断，不能用未运行该功能的短对话绕过。
+
+
+### A2 固定风险闭包入口（2026-09-23）
+
+核心候选采用前的 61 片完整风险映射与固定入口为 [A2 固定报告](../../../reports/2026-09-23-core-reachable-patch-risk.md)。执行 `node scripts/verify-host-health.mjs core-risk` 时必须显式提供当前 native Host/continuity/Node 资格输入；该入口覆盖 applicability、candidate、hook/reference、opportunity 与 effect 证据，但始终不把 loaded/attachment/exercised 改写为已观察。后续来源演进继续按 HOST-01/AH-159 分类，不用旧 source pin 冒充新代资格。

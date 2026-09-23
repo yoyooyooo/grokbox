@@ -70,3 +70,33 @@ test("native runtime never obtains a passing run from missing opt-ins or an impl
     expect(refused.stderr).toContain("requires explicit native"); expect(refused.stdout).not.toContain("-before");
   }
 });
+
+
+test("A2 core-risk inventory is a disjoint complete execution of the maintained risk evidence set", () => {
+  const risk = inventory("core-risk");
+  expect(risk.files).toContain("packages/box-runtime/test/core-risk-closure.test.ts");
+  expect(risk.files).toContain("packages/box-runtime/test/native-current-candidate.test.ts");
+  expect(risk.files).toContain("packages/box-runtime/test/host-resume-admission.test.ts");
+  const files = risk.commands.flatMap(command => {
+    expect(command.slice(0, 4)).toEqual(["bun", "test", "--timeout", "220000"]);
+    expect(command.slice(4).every(path => path.startsWith("./"))).toBe(true);
+    return command.slice(4).map(path => path.slice(2));
+  });
+  expect(new Set(files).size).toBe(files.length);
+  expect([...files].sort()).toEqual([...risk.files].sort());
+});
+
+test("A2 core-risk cannot run without explicit current native qualification inputs", () => {
+  for (const settings of [
+    { GROKBOX_TEST_NATIVE_CONTINUITY: "0", GROKBOX_TEST_NATIVE_HOST: "1", GROKBOX_TEST_NATIVE_NODE: "/not-executed/node" },
+    { GROKBOX_TEST_NATIVE_CONTINUITY: "1", GROKBOX_TEST_NATIVE_HOST: "0", GROKBOX_TEST_NATIVE_NODE: "/not-executed/node" },
+    { GROKBOX_TEST_NATIVE_CONTINUITY: "1", GROKBOX_TEST_NATIVE_HOST: "1" },
+  ]) {
+    const refused = spawnSync("node", ["scripts/verify-host-health.mjs", "core-risk"], {
+      cwd: root, encoding: "utf8", timeout: 10000, env: { PATH: process.env.PATH, ...settings },
+    });
+    expect(refused.error).toBeUndefined();
+    expect(refused.status).not.toBe(0);
+    expect(refused.stdout).not.toContain("-before");
+  }
+});
