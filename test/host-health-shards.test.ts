@@ -100,3 +100,35 @@ test("A2 core-risk cannot run without explicit current native qualification inpu
     expect(refused.stdout).not.toContain("-before");
   }
 });
+
+test("E1 core-observation inventory is disjoint and complete", () => {
+  const view = inventory("core-observation");
+  expect(view.files).toContain("packages/box-runtime/test/core-observation-closure.test.ts");
+  expect(view.files).toContain("packages/box-runtime/test/native-message-qualification.test.ts");
+  expect(view.files).toContain("packages/box-runtime/test/storage-maintenance-lifetime.test.ts");
+  const files = view.commands.flatMap(command => {
+    expect(command.slice(0, 4)).toEqual(["bun", "test", "--timeout", "220000"]);
+    expect(command.slice(4).every(path => path.startsWith("./"))).toBe(true);
+    return command.slice(4).map(path => path.slice(2));
+  });
+  expect(new Set(files).size).toBe(files.length);
+  expect([...files].sort()).toEqual([...view.files].sort());
+  for (const name of ["ops-automatic-notification.test.ts","ops-notification-outbox.test.ts","ops-native-notification.test.ts","notification-authorization-contract.test.ts"]) {
+    const owners=view.commands.filter(command=>command.some(path=>path.endsWith("/"+name)));
+    expect(owners).toHaveLength(1); expect(owners[0]).toHaveLength(5);
+  }
+});
+
+test("E1 core-observation refuses missing native qualification inputs", () => {
+  for (const settings of [
+    { GROKBOX_TEST_NATIVE_CONTINUITY: "0", GROKBOX_TEST_NATIVE_HOST: "1", GROKBOX_TEST_NATIVE_NODE: "/not-executed/node" },
+    { GROKBOX_TEST_NATIVE_CONTINUITY: "1", GROKBOX_TEST_NATIVE_HOST: "0", GROKBOX_TEST_NATIVE_NODE: "/not-executed/node" },
+    { GROKBOX_TEST_NATIVE_CONTINUITY: "1", GROKBOX_TEST_NATIVE_HOST: "1" },
+  ]) {
+    const refused = spawnSync("node", ["scripts/verify-host-health.mjs", "core-observation"], {
+      cwd: root, encoding: "utf8", timeout: 10000, env: { PATH: process.env.PATH, ...settings },
+    });
+    expect(refused.error).toBeUndefined(); expect(refused.status).not.toBe(0);
+    expect(refused.stdout).not.toContain("-before");
+  }
+});

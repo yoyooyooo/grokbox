@@ -30,3 +30,8 @@ E1不能靠关闭全部保护/诊断制造可运行。已生效策略会触发�
 本地HTTP接收端不是实际Bot收到，生产Chrome不是原版App，24小时计划不是实际时长。Q统一现场窗口，E提供事件/故障/资源及至少三个维护周期的实际证据；持续运行按手册执行。
 
 不要新建通用GC、operation数据库或第二poller；各领域安全标记由原准入/恢复owner证明可退役后维护，不按诊断TTL删unknown。E1先阶段性回流，E2的完整通知产品不阻已合格核心；安全关键失败不可作为普通残余后置。
+
+
+### E1 固定核心观察入口（2026-09-23）
+
+核心候选采用前的观察/保全固定入口为 [E1 固定报告](../../../reports/2026-09-23-core-observation-safety.md) 与 `node scripts/verify-host-health.mjs core-observation`。该入口固定执行关联、Host 健康、monitor、protection、notification、容量维护和管理边界的 evidence 文件集合；需要显式 current native Host/continuity/Node 输入。它不宣称真实外部通知已送达、真实 App 已观察或 24 小时现场运行已完成，这些仍归 J2/J3/LIVE。

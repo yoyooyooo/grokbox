@@ -4,13 +4,14 @@ import { captureVerificationSource } from "./verification-source.mjs";
 import { expandTests, partitionTests } from "./verification-shards.mjs";
 import { verificationChild, verificationSignals } from "./verification-child.mjs";
 import { HOST_CORE_RISK_TESTS } from "./host-core-risk-manifest.mjs";
+import { CORE_OBSERVATION_TESTS } from "./core-observation-manifest.mjs";
 const root=fileURLToPath(new URL("../",import.meta.url));
 const group=process.argv[2]??"core",listOnly=process.argv[3]==="--list";
-const groups=["core","core-risk","integration","integration-host","integration-domains","integration-web","native-pair","native-runtime"];
-if(process.argv.length>4||(process.argv[3]!==undefined&&!listOnly)||!groups.includes(group))throw Error("usage: verify-host-health.mjs [core|core-risk|integration|integration-host|integration-domains|integration-web|native-pair|native-runtime] [--list]");
-if(!listOnly&&["native-pair","native-runtime","core-risk"].includes(group)&&(process.env.GROKBOX_TEST_NATIVE_CONTINUITY!=="1"||process.env.GROKBOX_TEST_NATIVE_CONTINUITY_PAIR!==undefined||!process.env.GROKBOX_TEST_NATIVE_NODE))
+const groups=["core","core-risk","core-observation","integration","integration-host","integration-domains","integration-web","native-pair","native-runtime"];
+if(process.argv.length>4||(process.argv[3]!==undefined&&!listOnly)||!groups.includes(group))throw Error("usage: verify-host-health.mjs [core|core-risk|core-observation|integration|integration-host|integration-domains|integration-web|native-pair|native-runtime] [--list]");
+if(!listOnly&&["native-pair","native-runtime","core-risk","core-observation"].includes(group)&&(process.env.GROKBOX_TEST_NATIVE_CONTINUITY!=="1"||process.env.GROKBOX_TEST_NATIVE_CONTINUITY_PAIR!==undefined||!process.env.GROKBOX_TEST_NATIVE_NODE))
  throw Error(`${group} requires explicit native continuity opt-in and native Node executable; retired pair selectors are not supported and tests never authorize adoption.`);
-if(!listOnly&&["native-runtime","core-risk"].includes(group)&&process.env.GROKBOX_TEST_NATIVE_HOST!=="1")
+if(!listOnly&&["native-runtime","core-risk","core-observation"].includes(group)&&process.env.GROKBOX_TEST_NATIVE_HOST!=="1")
  throw Error(`${group} requires explicit native Host opt-in as well as the original worker qualification.`);
 const bun=spawnSync("bun",["--version"],{encoding:"utf8"});
 if(!listOnly&&(bun.status!==0||bun.stdout.trim()!=="1.3.14"))throw Error("Use the repository-declared Bun 1.3.14 on PATH for verification and nested builds.");
@@ -68,6 +69,7 @@ const suites={
   "packages/box-runtime/test/e07-host-purpose-e2e.test.ts","packages/box-runtime/test/tool-contract-integration.test.ts",
   "test/context-management.test.ts","test/compaction-management.test.ts","test/ownership-model-selection.test.ts","packages/box-runtime/test/compaction-management.test.ts"],
  "core-risk":[...HOST_CORE_RISK_TESTS],
+ "core-observation":[...CORE_OBSERVATION_TESTS],
  "native-pair":["packages/box-runtime/test/native-message-qualification.test.ts","packages/box-runtime/test/native-current-candidate.test.ts","packages/box-runtime/test/native-checkpoint-qualification.test.ts","packages/box-runtime/test/native-worker-binding.test.ts","packages/box-runtime/test/native-startup-seams.test.ts","packages/box-runtime/test/native-duplicate-qualification.test.ts","packages/box-runtime/test/native-disposal-qualification.test.ts"]
 };
 // Partition the same integration inventory, not a reduced acceptance set. The
@@ -104,6 +106,21 @@ const riskShards = partitionTests(riskFiles, path => {
 
 // Compile-heavy artifact and CLI tests get fresh VMs. Other tests remain in
 // bounded owner groups. This changes process lifetime, never case deadlines.
+const observationFiles = expandTests(root, suites["core-observation"]);
+const observationShards = partitionTests(observationFiles, path => {
+ const name = path.split("/").at(-1);
+ if (name === "core-observation-closure.test.ts") return "contract";
+ if (name.startsWith("native-")) return "native";
+ if (/^(monitor-|observation-closed|incident-evidence|authority-observation)/.test(name)) return "monitor";
+ if (name === "ops-automatic-notification.test.ts") return "notification-auto";
+ if (name === "ops-notification-outbox.test.ts") return "notification-outbox";
+ if (name === "ops-native-notification.test.ts") return "notification-native";
+ if (name === "notification-authorization-contract.test.ts") return "notification-contract";
+ if (/^(diagnostic-admission|storage-maintenance)/.test(name)) return "maintenance";
+ if (path.startsWith("test/") || path.startsWith("packages/client/")) return "management";
+ return "host-health";
+});
+
 const coreFiles = expandTests(root, suites.core);
 const coreShards = partitionTests(coreFiles, path => {
  const name = path.split("/").at(-1);
@@ -124,8 +141,8 @@ const commands=group==="core"?[
  ["cargo","test","--locked","-p","grokbox-host-verifier"],
  ["bun","run","typecheck"],["bun","run","typecheck:web"],
  ...coreShards.map(shard=>testCommand(shard.files.map(path=>`./${path}`)))
-]:group==="native-runtime"?runtimeShards.map(paths=>testCommand(paths.map(path=>`./${path}`))):group==="core-risk"?riskShards.map(shard=>testCommand(shard.files.map(path=>`./${path}`))):group==="integration"?["integration-host","integration-domains","integration-web"].map(shard=>testCommand(suites[shard])):[testCommand(suites[group])];
-if(listOnly){console.log(JSON.stringify({group,files:group==="core"?coreFiles:group==="core-risk"?riskFiles:suites[group],shards:group==="core"?coreShards:group==="core-risk"?riskShards:undefined,commands}));process.exit(0);}
+]:group==="native-runtime"?runtimeShards.map(paths=>testCommand(paths.map(path=>`./${path}`))):group==="core-risk"?riskShards.map(shard=>testCommand(shard.files.map(path=>`./${path}`))):group==="core-observation"?observationShards.map(shard=>testCommand(shard.files.map(path=>`./${path}`))):group==="integration"?["integration-host","integration-domains","integration-web"].map(shard=>testCommand(suites[shard])):[testCommand(suites[group])];
+if(listOnly){console.log(JSON.stringify({group,files:group==="core"?coreFiles:group==="core-risk"?riskFiles:group==="core-observation"?observationFiles:suites[group],shards:group==="core"?coreShards:group==="core-risk"?riskShards:group==="core-observation"?observationShards:undefined,commands}));process.exit(0);}
 const before=captureVerificationSource(root),receipts=[];
 console.log(JSON.stringify({phase:`host-health-${group}-before`,...before}));
 const cancellation=verificationSignals();
@@ -135,7 +152,7 @@ try { for(const command of commands){
  const output=`${result.stdout??""}\n${result.stderr??""}`;
  const summary=output.split("\n").filter(line=>/^\{|^test result:|^\s*\d+ (pass|fail|skip)|^Ran |^error|^\$/.test(line));
  console.log(summary.join("\n"));
- const skippedNative=["native-pair","native-runtime","core-risk"].includes(group)&&/^\s*[1-9][0-9]* skip\b/m.test(output);
+ const skippedNative=["native-pair","native-runtime","core-risk","core-observation"].includes(group)&&/^\s*[1-9][0-9]* skip\b/m.test(output);
  receipts.push({command:command.join(" "),code:result.status,error:result.error?.code??(skippedNative?"native_qualification_skipped":null),signal:result.signal,settled:result.settled,elapsedMs:result.elapsedMs,summary});
  if(result.error||result.status!==0||!result.settled||skippedNative){console.error(output.slice(-100000));break;}
 } } finally { cancellation.dispose(); }
