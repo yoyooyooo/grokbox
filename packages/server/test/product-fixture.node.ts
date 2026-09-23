@@ -31,6 +31,7 @@ export async function productFixture() {
   const state = { rows: new Map<string, Record<string, any>>([[P_A, productRow(P_A)], [P_B, productRow(P_B)], [P_GROUP, productRow(P_GROUP, true)]]),
     calls: [] as Array<{ method: string; input: any }>, writes: 0, cleanupCalls: 0, scopeId: P_SCOPE, owner: true, ownershipAgeMs: 0,
     token: "synthetic-product-native", startedAt: 1000, failNative: false, failAfterWrite: false, failWriteStatus: 503, failReadBack: false,
+    ownershipTransform: undefined as undefined | ((proof: ReturnType<typeof ownedOwnershipSnapshot>, ids: string[]) => unknown),
     filterMembers: false, failCleanup: false, nativeCleanup: false, routines: [] as unknown[], transcript: [] as unknown[],
     holdWrite: undefined as undefined | (() => Promise<void>), afterWrite: undefined as undefined | (() => Promise<void>),
     beforeCommit: undefined as undefined | ((label: string) => Promise<void>), afterCommit: undefined as undefined | ((label: string) => Promise<void>),
@@ -63,7 +64,7 @@ export async function productFixture() {
             row.server.harness = harness; row.local.before.harness = harness; row.local.after.harness = harness;
           }
         }
-        output = { grokboxOwnership: proof };
+        output = { grokboxOwnership: state.ownershipTransform ? state.ownershipTransform(proof, input.grokboxOwnershipAgentIds) : proof };
       } else if (method === "getAgentAutomations") output = state.routines;
       else if (method === "getAgentTranscriptTail") output = { entries: state.transcript, nextBeforeSeq: null };
       else if (WRITE.has(method)) {

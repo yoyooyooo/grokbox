@@ -1,68 +1,26 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { build } from "esbuild";
+import { spawnSync } from "node:child_process";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { captureCli, parseJson, writeDiscovery } from "./helpers.ts";
-import { ownedOwnershipSnapshot } from "../packages/box-runtime/test/ownership-fixture.ts";
+import { fileURLToPath } from "node:url";
+import { ensurePackedCli } from "./packed-cli-fixture.ts";
 
-const A = "11111111-1111-4111-8111-111111111111";
-const B = "22222222-2222-4222-8222-222222222222";
-async function fixture(mode: "box" | "temporal" | "confirmed-temporal" | "old" | "failure" | "wrong-id" = "box") {
-  const root = await mkdtemp(join(tmpdir(), "grokbox-selection-command-"));
-  const calls: Array<{ path: string; body: unknown }> = [];
-  let title = "Keep Me";
-  const gateway = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
-    const path = new URL(request.url).pathname;
-    if (path === "/health") return Response.json({ ok: true, pid: 4242, startedAt: 1 });
-    if (path === "/v1/models") return Response.json({ data: [{ id: "owned" }] });
-    if (request.headers.get("authorization") !== "Bearer owned-command-token") return Response.json({}, { status: 401 });
-    const body = await request.json() as Record<string, unknown>;
-    calls.push({ path, body });
-    if (path === "/api/createAgent") return Response.json({ agent: { id: A, name: "owned", isGroup: false } });
-    if (path === "/api/listAgents") return Response.json([{ id: A, name: "owned", title, isGroup: false, harness: "box" }]);
-    if (path === "/api/updateAgent") {
-      const profile = body.profile as Record<string, unknown> | undefined;
-      if (typeof profile?.title === "string") title = profile.title;
-      return Response.json({ agent: { id: A, name: "owned", title, isGroup: false } });
-    }
-    if (path === "/api/getHostStatus") {
-      if (mode === "old") return Response.json({ version: "old" });
-      if (mode === "failure") return Response.json({ error: "owned-failure" }, { status: 503 });
-      const ids = body.grokboxOwnershipAgentIds as string[];
-      const snapshot = ownedOwnershipSnapshot(mode === "wrong-id" ? [B] : ids, {
-        serverHarness: mode === "temporal" || mode === "confirmed-temporal" ? "temporal" : "box",
-        localHarness: mode === "confirmed-temporal" ? "temporal" : "box",
-      });
-      return Response.json({ grokboxOwnership: snapshot });
-    }
-    return Response.json({}, { status: 404 });
-  } });
-  const discoveryPath = await writeDiscovery({ port: gateway.port!, pid: 4242, startedAt: 1, token: "owned-command-token" });
-  const boxRuntimeRoot = join(root, "runtime");
-  await mkdir(join(boxRuntimeRoot, "state"), { recursive: true, mode: 0o700 });
-  await writeFile(join(boxRuntimeRoot, "config.json"), JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
-  await writeFile(join(boxRuntimeRoot, "models.json"), JSON.stringify({ version: 3,
-    models: { "openai/owned": { id: "openai/owned", provider: "openai", model: "owned", endpoint: `http://127.0.0.1:${gateway.port}/v1`, apiKeyRef: "env:OWNED", contextWindowTokens: 200000,
-      capabilities: { tools: true, images: false, vision: false, reasoning: { efforts: ["high", "xhigh"] } }, dataTypes: ["text", "tools"] } },
-    assignments: { main: null, agents: { [A]: { modelId: "stub/echo" }, [B]: { modelId: "stub/echo" } } },
-  }));
-  const deps = { configDir: root, discoveryPath, boxRuntimeRoot, env: { OWNED: "owned-test-key" }, transport: "local" as const, daemonSocket: join(root, "unused.sock") };
-  return { calls, deps, load: async () => JSON.parse(await readFile(join(boxRuntimeRoot, "models.json"), "utf8")),
-    close: async () => { gateway.stop(true); await rm(root, { recursive: true, force: true }); } };
-}
-
-for (const mode of ["box", "temporal", "old", "failure", "wrong-id"] as const) {
-  test(`created Bot ${mode} ownership read-back never retries create or pretends migration`, async () => {
-    const f = await fixture(mode);
-    try {
-      const nonce = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-      const ran = await captureCli(["agents", "create", "--name", "owned", "--nonce", nonce, "--harness", "box"], f.deps);
-      expect(ran.code, ran.stderr).toBe(0);
-      const result = parseJson(ran.stdout) as { data: { creation: { outcome: string; ownershipConfirmed: boolean; operationId: string; managedEnabled: boolean } } };
-      expect(result.data.creation).toMatchObject({ operationId: nonce, ownershipConfirmed: mode === "box", managedEnabled: false });
-      expect(result.data.creation.outcome).toBe(mode === "box" ? "created_ownership_confirmed" : mode === "temporal" ? "created_ownership_mismatch" : "created_ownership_unconfirmed");
-      expect(f.calls.filter(c => c.path === "/api/createAgent")).toHaveLength(1);
-      expect(f.calls.filter(c => c.path.includes("delete") || c.path.includes("reconcile") || c.path.includes("sendPrompt"))).toHaveLength(0);
-    } finally { await f.close(); }
-  });
-}
+const root = fileURLToPath(new URL("../", import.meta.url));
+/** Creation is a management operation now, not a retired direct Gateway command.
+ * Preserve the five original ownership fault modes on the actual current chain. */
+test("created Bot ownership uses current packed CLI, Node HTTP and original receipts without native/account effects", async () => {
+  const cache = join(root, "node_modules", ".cache"); await mkdir(cache, { recursive: true, mode: 0o700 });
+  const directory = await mkdtemp(join(cache, "created-ownership-"));
+  try {
+    ensurePackedCli(); const output = join(directory, "suite.mjs");
+    await build({ absWorkingDir: root, entryPoints: ["packages/server/test/created-bot-ownership.node.ts"], outfile: output,
+      bundle: true, platform: "node", target: "node20", format: "esm", external: ["classic-level", "sqlite3"],
+      banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" }, logLevel: "silent" });
+    const result = spawnSync("node", ["--test", "--test-reporter=tap", output], { cwd: root, encoding: "utf8", timeout: 45000, maxBuffer: 4 * 1024 * 1024,
+      env: { PATH: process.env.PATH ?? "", HOME: directory, TMPDIR: directory, GROKBOX_TEST_NATIVE_HOST: "0", GROKBOX_TEST_ALLOW_NATIVE: "0", GROKBOX_TEST_CLI_ENTRY: join(root, "dist", "index.js") } });
+    expect(result.error, result.error?.message).toBeUndefined(); expect(result.status, result.stdout + "\n" + result.stderr).toBe(0);
+    expect(result.stdout).toMatch(/# tests 6\b/); expect(result.stdout).toMatch(/# fail 0/); expect(result.stdout).toMatch(/# skipped 0/);
+    console.log(JSON.stringify({ suite: "created-bot-ownership-node", tests: 6, failed: 0, skipped: 0, native: "synthetic", modelCalls: 0 }));
+  } finally { await rm(directory, { recursive: true, force: true }); }
+}, 60000);
