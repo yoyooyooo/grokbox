@@ -21,7 +21,7 @@ import {
 import { serveModeld, readOneFrame, type Incoming } from "../src/internal/modeld/server.node.ts";
 import { COMPACT_RESUME_RESERVE_MS, compactWaitBudget, sameConnectionHostCompactLayer } from "../src/internal/modeld/same-connection-compact.ts";
 import { emptyResourceCounts } from "../src/internal/modeld/unix-listen.node.ts";
-import { acceptModeldFrame, clientSessionFor, decodeModeldFrame, encodeModeldFrame, parseV4ControlFrame } from "../src/internal/wire/modeld-wire.ts";
+import { acceptModeldFrame, clientSessionFor, decodeModeldFrame, encodeModeldFrame, parseV4ControlFrame, MODELD_MAX_FRAME } from "../src/internal/wire/modeld-wire.ts";
 
 const EVENTS: InferenceEvent[] = [
   { type: "text_delta", text: "ok" },
@@ -496,3 +496,80 @@ for (const closed of [false, true]) test(`buffered complete frame survives peer 
     await rm(dir, { recursive: true, force: true });
   }
 }, 3000);
+
+for (const delivery of ["socket-event", "wire"] as const) test(`oversized compact resume preserves capacity and settles once (${delivery})`, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "modeld-resume-capacity-")), path = join(dir, "modeld.sock");
+  const generation = randomUUID(), counts = createCountedSeams(), resources = emptyResourceCounts();
+  let incoming: Incoming | undefined, controls = 0;
+  const outcomes: Array<{ outcome: string; failureCode?: string; execution?: { activeSteps: number } }> = [];
+  let listening!: () => void;
+  const ready = new Promise<void>(resolve => { listening = resolve; });
+  const layer = fakeBackendAuthLayer("secret", counts).pipe(
+    Layer.merge(fakeModelBackendLayer(EVENTS, counts, { failFirst: overflow })),
+    Layer.merge(fakeConfigurationReadLayer({ models: file })), Layer.merge(fakeAdmissionAuthorityLayer()),
+    Layer.merge(inferenceMemoryLayer({ serviceEpoch: generation })),
+  );
+  const fiber = Effect.runFork(Effect.scoped(serveModeld({ path, generation, counts: resources,
+    hooks: { afterListen: Effect.sync(listening) },
+    compactForIncoming: (value, budget) => { incoming = value; return sameConnectionHostCompactLayer(value, budget); },
+    observeStep: (_request, outcome) => Effect.sync(() => { outcomes.push(outcome); }),
+  }).pipe(Effect.andThen(Effect.never), Effect.provide(layer)) as Effect.Effect<never, unknown>));
+  let client: Socket | undefined;
+  try {
+    await ready;
+    const frames = await new Promise<Array<Record<string, unknown>>>((resolve, reject) => {
+      const socket = client = createConnection(path);
+      const frames: Array<Record<string, unknown>> = [];
+      let buf = Buffer.alloc(0), settled = false;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true; clearTimeout(timer); socket.destroy();
+        if (error) reject(error); else resolve(frames);
+      };
+      const timer = setTimeout(() => finish(Error("resume_capacity_timeout")), 3000);
+      socket.once("connect", () => socket.write(encodeModeldFrame(stepBody(generation))));
+      socket.on("error", error => finish(error));
+      socket.once("close", () => finish());
+      socket.on("data", (chunk: Buffer) => {
+        buf = Buffer.concat([buf, chunk]);
+        for (;;) {
+          const decoded = decodeModeldFrame(buf); if (!decoded) return;
+          if ("error" in decoded) { finish(Error(decoded.error)); return; }
+          buf = Buffer.from(decoded.rest);
+          const frame = decoded.value as Record<string, unknown>;
+          frames.push(frame);
+          if (frame.method === "compact-request") {
+            controls++;
+            // At most one bounded frame plus one byte. The event case fixes
+            // chunk delivery deterministically on the real server socket; the
+            // wire case additionally exercises actual Unix transport chunking.
+            const raw = Buffer.alloc(MODELD_MAX_FRAME + 5, 0x20);
+            raw.writeUInt32BE(MODELD_MAX_FRAME, 0);
+            if (delivery === "socket-event") incoming!.socket.emit("data", raw);
+            else socket.write(raw);
+          }
+        }
+      });
+    });
+    expect(incoming?.overflow).toBe(true);
+    expect(controls).toBe(1); expect(counts.network).toBe(1);
+    expect(frames.filter(frame => frame.kind === "terminal")).toHaveLength(1);
+    expect(frames.find(frame => frame.kind === "terminal")).toMatchObject({ outcome: "error", code: "capacity" });
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0]).toMatchObject({ outcome: "error", failureCode: "capacity", execution: { activeSteps: 0 } });
+    expect(incoming).toMatchObject({ consumed: true, awaitingResume: false });
+    expect(resources).toMatchObject({ sockets: 0, fibers: 0 });
+    // Auth is pinned to the retained TURN, not the settled STEP. The service
+    // owns that bounded cache and releases it on cooling or service shutdown.
+    expect(counts.leasesAlive).toBe(1);
+    // A new connection queries the same STEP identity, not a replacement task.
+    const duplicate = await drive(path, stepBody(generation), () => { throw Error("unexpected_second_compact"); });
+    expect(counts.network).toBe(1);
+    expect(duplicate.at(-1)).toMatchObject({ kind: "terminal", outcome: "duplicate" });
+  } finally {
+    client?.destroy(); await Effect.runPromise(Fiber.interrupt(fiber).pipe(Effect.ignore));
+    expect(resources).toEqual({ listeners: 0, sockets: 0, fibers: 0 });
+    expect(counts.leasesAlive).toBe(0);
+    await rm(dir, { recursive: true, force: true });
+  }
+}, 8000);

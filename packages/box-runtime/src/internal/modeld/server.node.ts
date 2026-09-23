@@ -335,7 +335,8 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
       }) };
       const transportHalt = Effect.raceFirst(
         Deferred.await(disconnected).pipe(Effect.andThen(Effect.fail(new BindingFailure("cancelled")))),
-        Deferred.await(late).pipe(Effect.andThen(Effect.fail(new WireError(incoming.overflow ? "capacity" : "extra_keys")))),
+        // Inspect the cause when late input arrives, not when the wait is built.
+        Deferred.await(late).pipe(Effect.flatMap(() => Effect.fail(new WireError(incoming.overflow ? "capacity" : "extra_keys")))),
       );
       const admitted = yield* Effect.result(
         Effect.raceFirst(runStep(request, { startedTick }), transportHalt).pipe(
@@ -384,10 +385,7 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
 
       let sequence = 0;
       const outputBudget = new StreamOutputBudget();
-      const halt = Effect.raceFirst(
-        Deferred.await(disconnected).pipe(Effect.andThen(Effect.fail(new BindingFailure("cancelled")))),
-        Deferred.await(late).pipe(Effect.andThen(Effect.fail(new WireError(incoming.overflow ? "capacity" : "extra_keys")))),
-      );
+      const halt = transportHalt;
       const collected = yield* Effect.result(
         Stream.runForEach(
           Stream.interruptWhen(step.stream, halt).pipe(
@@ -519,6 +517,7 @@ export function serveModeld(options: ServeOptions) {
             if (held.buf.length + chunk.length > MODELD_MAX_FRAME + 4) {
               held.overflow = true;
               held.buf = Buffer.alloc(0);
+              held.onLate?.();
               return;
             }
             held.buf = Buffer.concat([held.buf, chunk]);
