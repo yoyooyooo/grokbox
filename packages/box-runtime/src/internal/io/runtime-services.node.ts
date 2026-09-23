@@ -221,7 +221,11 @@ function render(scope: string, component: Unit["component"], root: string, run: 
 }
 
 export async function runtimeServices(input: RuntimeServiceRequest, manager: ServiceManager = systemdUserManager()) {
-  if (!["install", "status", "uninstall"].includes(input.action)) return bad("invalid_action");
+  // The public owner enforces the same intent boundary as its CLI caller.
+  // Reject before reading state so invalid start flags cannot enter recovery.
+  if (!["install", "status", "uninstall"].includes(input.action)
+    || input.start !== undefined && typeof input.start !== "boolean"
+    || input.start === true && input.action !== "install") return bad("invalid_action");
   const root = path(input.durableRoot), run = path(input.runRoot), home = path(input.home);
   const unitDir = join(home, ".config/systemd/user"), state = join(root, "state"), file = join(state, "runtime-services.json");
   const scope = sha256Text(canonicalJson(["runtime-services-v2", root, run, home, process.getuid?.() ?? -1]));

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { defaultConfig } from "@grokbox/runtime-kernel/config";
 import { runRuntimeServiceCommand } from "../src/internal/roots/runtime-services.runtime.ts";
-import type { ServiceManager, RuntimeServiceRequest } from "../src/internal/io/runtime-services.node.ts";
+import { runtimeServices, type ServiceManager, type RuntimeServiceRequest } from "../src/internal/io/runtime-services.node.ts";
 
 async function fixture() {
   const dir = await mkdtemp(join(tmpdir(), "runtime-service-install-")), root = join(dir, "durable"), run = join(dir, "run"), home = join(dir, "home"), release = join(dir, "release with space");
@@ -247,5 +247,50 @@ test("a release prefix overlapping durable state or any source checkout ancestor
     await expect(f.command("install", { releaseRoot: f.root })).rejects.toMatchObject({ reason: "release_prefix_not_independent" });
     await writeFile(join(f.dir, ".git"), "gitdir: parent-fixture", { mode: 0o600 });
     await expect(f.command("install")).rejects.toMatchObject({ reason: "source_checkout_not_release" });
+  } finally { await f.close(); }
+});
+
+for (const entry of ["command", "owner"] as const) for (const action of ["status", "uninstall"] as const) {
+  test(`service ${entry} rejects ${action} with start before reading or changing resources`, async () => {
+    const f = await fixture();
+    try {
+      let probes = 0;
+      const probe = f.manager.probe;
+      f.manager.probe = async () => { probes++; return probe(); };
+      const rootBefore = await readdir(f.root), homeBefore = await readdir(f.home);
+      const input = { ...f.input, action, start: true, confirmed: true };
+      await expect(entry === "command" ? runRuntimeServiceCommand(input, f.manager) : runtimeServices(input, f.manager))
+        .rejects.toMatchObject({ reason: "invalid_action" });
+      expect(probes).toBe(0); expect(f.calls).toEqual([]);
+      expect(await readdir(f.root)).toEqual(rootBefore); expect(await readdir(f.home)).toEqual(homeBefore);
+    } finally { await f.close(); }
+  });
+}
+for (const start of ["true", 1, null]) {
+  test(`service owner rejects non-boolean start (${JSON.stringify(start)}) before any manager call`, async () => {
+    const f = await fixture();
+    try {
+      let probes = 0;
+      const probe = f.manager.probe;
+      f.manager.probe = async () => { probes++; return probe(); };
+      await expect(f.command("install", { start: start as unknown as boolean }))
+        .rejects.toMatchObject({ reason: "invalid_action" });
+      expect(probes).toBe(0); expect(f.calls).toEqual([]);
+      expect(await readdir(f.root)).toEqual(["config.json"]); expect(await readdir(f.home)).toEqual([]);
+    } finally { await f.close(); }
+  });
+}
+
+test("explicit start=false preserves valid install, status and retirement", async () => {
+  const f = await fixture();
+  try {
+    const plan = await f.command("install", { start: false });
+    const done = await f.command("install", { start: false, confirmed: true, expectedPlan: digest(plan) });
+    expect(done).toMatchObject({ phase: "installed", startsNow: false });
+    expect(await f.command("status", { start: false })).toMatchObject({ phase: "installed" });
+    const remove = await f.command("uninstall", { start: false });
+    expect(await f.command("uninstall", { start: false, confirmed: true, expectedPlan: digest(remove) }))
+      .toMatchObject({ phase: "retired" });
+    expect(f.calls).toEqual(["reload", "enable", "disable", "reload"]);
   } finally { await f.close(); }
 });
