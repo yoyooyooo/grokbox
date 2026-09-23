@@ -130,3 +130,35 @@ test("cancelled native observations do not send a request", async () => {
   await expect(f.gateway.listBots(AbortSignal.abort())).rejects.toMatchObject({ code: "source_timeout" });
   expect(f.state.calls).toHaveLength(0);
 });
+
+test("trusted message dispatch callback executes after discovery and is never serialized", async () => {
+  const f = await fixture(); f.state.raw = JSON.stringify({ accepted: true });
+  const gateway = createManagementGateway({ discoveryPath: f.path, configurationRoot: f.root });
+  let authorized = 0;
+  const body = { agentId: A, prompt: "synthetic input", clientNonce: B };
+  await gateway.continuityAccess(signal()).rpc("sendPrompt", body, { timeoutMs: 1000,
+    beforeDispatch: async owner => { owner.throwIfAborted(); authorized++; } });
+  expect(authorized).toBe(1); expect(f.state.calls).toEqual([{ path: "/api/sendPrompt", input: body }]);
+  // Invalid discovery is rejected before granting a dispatch capability.
+  await writeFile(f.path, JSON.stringify({ ...f.descriptor, host: "outside.invalid" }), { mode: 0o600 });
+  await expect(gateway.continuityAccess(signal()).rpc("sendPrompt", body, { timeoutMs: 1000,
+    beforeDispatch: async () => { authorized++; } })).rejects.toBeDefined();
+  expect(authorized).toBe(1); expect(f.state.calls).toHaveLength(1);
+});
+
+test("revocation at the actual post-discovery transport boundary emits no HTTP request", async () => {
+  const f = await fixture();
+  const gateway = createManagementGateway({ discoveryPath: f.path, configurationRoot: f.root });
+  let checked = false;
+  await expect(gateway.continuityAccess(signal()).rpc("sendPrompt", { agentId: A }, { timeoutMs: 1000,
+    beforeDispatch: async () => { checked = true; throw Error("synthetic-write-revoked"); } })).rejects.toThrow("synthetic-write-revoked");
+  expect(checked).toBe(true); expect(f.state.calls).toHaveLength(0);
+});
+
+test("shutdown during final dispatch authorization aborts before native HTTP", async () => {
+  const f = await fixture(), owner = new AbortController();
+  const gateway = createManagementGateway({ discoveryPath: f.path, configurationRoot: f.root });
+  await expect(gateway.continuityAccess(owner.signal).rpc("sendPrompt", { agentId: A }, { timeoutMs: 1000,
+    beforeDispatch: async () => { owner.abort(); } })).rejects.toBeDefined();
+  expect(f.state.calls).toHaveLength(0);
+});

@@ -27,7 +27,7 @@ async function fixture() {
   let lastNonce: string | undefined;
   let scopeId = "a".repeat(64), revoke = false, missingIdentity = false, switchAfterSend = false, switchDuringRead = false;
   let entries: unknown[] | undefined, sourceUnavailable = false, accepted = true, ack: unknown;
-  let afterRoster: (() => void) | undefined, afterOwnership: (() => void) | undefined;
+  let afterRoster: (() => void) | undefined, afterOwnership: (() => void) | undefined, beforeNativeSend: (() => void) | undefined;
   let sendHold: Promise<void> | undefined, sendEntered: (() => void) | undefined;
   const transcriptPins: unknown[] = [];
   const signals: AbortSignal[] = [];
@@ -39,6 +39,8 @@ async function fixture() {
   const gateway: ContinuityGateway = {
     rpc: async (method, input, options) => {
       if (method === "sendPrompt") {
+        beforeNativeSend?.();
+        await options.beforeDispatch?.(signals.at(-1)!);
         calls.send++;
         sendEntered?.();
         const owner = signals.at(-1), held = sendHold;
@@ -108,6 +110,7 @@ async function fixture() {
     switchAfterSend: () => { switchAfterSend = true; }, switchDuringRead: () => { switchDuringRead = true; },
     duringRoster: (fn: () => void) => { afterRoster = fn; },
     duringOwnership: (fn: () => void) => { afterOwnership = fn; },
+    beforeNativeSend: (fn: () => void) => { beforeNativeSend = fn; },
     restoreGrant: () => { grants[0]!.principalId = "owner"; grants[0]!.capabilities = [...CAPABILITIES]; },
     holdSend: () => {
       let release!: () => void;
@@ -471,4 +474,16 @@ test("Server shutdown aborts the owned send transport and keeps the original unk
   assert.equal((await client.messageOperation(input.requestId)).data.state, "unknown");
   await denied(client.sendMessage(input), "operation_unknown");
   assert.equal(f.calls.send, 1);
+});
+
+
+for (const subjectChange of [false, true]) test(`final native transport boundary refuses ${subjectChange ? "changed principal" : "revoked write"} after domain preflight`, async () => {
+  const f = await fixture(), input = sendInput(f);
+  f.beforeNativeSend(() => { if (subjectChange) f.grants[0]!.principalId = "new-owner"; else dropWrite(f.grants); });
+  await denied(f.client().sendMessage(input), "operation_unknown");
+  assert.equal(f.calls.send, 0);
+  f.restoreGrant();
+  const saved = (await f.client().messageOperation(input.requestId)).data;
+  assert.equal(saved.state, "unknown"); assert.equal(saved.clientNonce, input.clientNonce);
+  await denied(f.client().sendMessage(input), "operation_unknown"); assert.equal(f.calls.send, 0);
 });

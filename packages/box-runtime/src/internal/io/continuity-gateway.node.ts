@@ -13,7 +13,7 @@ export type ContinuityRpc = Exclude<RoutineRpc, "getAutomationWebhookCredential"
   | "getAgentTranscriptTail" | "grokboxCurrentStateControl"
   | "getHostSettings" | "setHostSettings" | "assignAgentToSidebarSection" | "updateAgent" | "setGroupMembers" | "sendPrompt";
 export type ContinuityCall = (method: ContinuityRpc | "grokboxContextControl", input: Record<string, unknown>, signal: AbortSignal, timeoutMs: number,
-  maxBytes: number, expectedGeneration?: string) => Promise<{ result: unknown; source: ContinuityDiscovery }>;
+  maxBytes: number, expectedGeneration?: string, beforeDispatch?: (signal: AbortSignal) => Promise<void>) => Promise<{ result: unknown; source: ContinuityDiscovery }>;
 export type ContinuityRpcOptions = {
   timeoutMs: number;
   maxResponseBytes?: number;
@@ -22,6 +22,8 @@ export type ContinuityRpcOptions = {
   unknownOutcomeCode?: "operation_outcome_unknown";
   /** Bind a write to the discovery generation already read for this operation. */
   expectedGeneration?: string;
+  /** Trusted in-process capability; never serialized into native request input. */
+  beforeDispatch?: (signal: AbortSignal) => Promise<void>;
 };
 export type ContinuityGateway = {
   /** Management-owned manual maintenance. Not advertised by the old CLI RPC client. */
@@ -48,13 +50,13 @@ const allowed = new Set<ContinuityRpc>(["listAgents", "getHostStatus", "getAgent
  * transport retry; the CONT/provision owners reserve every external effect. */
 export function createContinuityGatewayIO(call: ContinuityCall, root: string, signal: AbortSignal, programs: ContinuityPrograms): ContinuityGateway {
   let pinned: string | undefined, latest: ContinuityDiscovery | undefined;
-  const invoke: ContinuityCall = async (method, input, owner, timeoutMs, maxBytes, expected) => {
+  const invoke: ContinuityCall = async (method, input, owner, timeoutMs, maxBytes, expected, beforeDispatch) => {
     if (method !== "grokboxContextControl" && !allowed.has(method) || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 180000
       || !Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > (method === "grokboxCurrentStateControl" ? MAX_CURRENT_STATE_WIRE_BYTES : 2 * 1024 * 1024)) throw new CurrentStateFailure("invalid_request");
     if (expected !== undefined && pinned !== undefined && expected !== pinned) throw new CurrentStateFailure("source_changed");
     const bounded = AbortSignal.any([signal, owner, AbortSignal.timeout(timeoutMs)]);
     bounded.throwIfAborted();
-    const result = await call(method, input, bounded, timeoutMs, maxBytes, pinned ?? expected);
+    const result = await call(method, input, bounded, timeoutMs, maxBytes, pinned ?? expected, beforeDispatch);
     const observed = generation(result.source);
     if (pinned !== undefined && pinned !== observed || expected !== undefined && expected !== observed) throw new CurrentStateFailure("source_changed");
     pinned = observed;
@@ -64,7 +66,7 @@ export function createContinuityGatewayIO(call: ContinuityCall, root: string, si
   };
   const rpc: ContinuityGateway["rpc"] = async (method, input, options) => {
     if (!allowed.has(method)) throw new CurrentStateFailure("invalid_request");
-    const reply = await invoke(method, input, signal, options.timeoutMs, options.maxResponseBytes ?? 512 * 1024, options.expectedGeneration);
+    const reply = await invoke(method, input, signal, options.timeoutMs, options.maxResponseBytes ?? 512 * 1024, options.expectedGeneration, options.beforeDispatch);
     return { result: reply.result, discovery: reply.source };
   };
   const routine = (owner: AbortSignal) => createRoutineGateway(async (method, input, signal, deadline, bytes, expected) => {

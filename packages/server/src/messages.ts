@@ -292,6 +292,7 @@ export function messageApplication(domain: MessageDomain, principal: Principal, 
         try: signal => submissionGateway!.rpc("sendPrompt", { agentId: botId, prompt: request.text, clientNonce: request.clientNonce }, {
           timeoutMs: 15_000, maxResponseBytes: 64 * 1024, write: true, singleAttempt: true,
           unknownOutcomeCode: "operation_outcome_unknown", expectedGeneration: native.source.generation,
+          beforeDispatch: async owner => { await domain.authorize(owner, "messages.write"); owner.throwIfAborted(); },
         }),
         catch: error => error,
       }));

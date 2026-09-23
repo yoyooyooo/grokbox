@@ -53,3 +53,4 @@ Agent 或未来页面先读取 Bot 快照，再接续变化；断线后能识别
 ## 实施前验证
 
 持续采集与存储差额继续归 [T41](T41-continuous-observation-and-alerting.md)。本票不复制 collector 实现票，也不宣称新增 Host 补丁已通过资格。
+消息管理授权的最终派发边界、原请求恢复与寿命复验证据见 [消息授权报告](../reports/2026-09-23-message-dispatch-authorization.md)。

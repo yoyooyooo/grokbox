@@ -103,12 +103,16 @@ export function createManagementGatewayIO(options: { discoveryPath: string; conf
   const timeoutMs = options.timeoutMs ?? 10_000;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000) throw unavailable();
   if (options.configurationRoot !== undefined && !isAbsolute(options.configurationRoot)) throw unavailable();
-  const call = async (method: "listAgents" | "getHostStatus" | "grokboxContextControl" | RoutineRpc | ContinuityRpc, input: Record<string, unknown>, parent: AbortSignal, deadlineMs = timeoutMs, maxBytes = RESPONSE_BYTES, expectedGeneration?: string) => {
+  const call = async (method: "listAgents" | "getHostStatus" | "grokboxContextControl" | RoutineRpc | ContinuityRpc, input: Record<string, unknown>, parent: AbortSignal, deadlineMs = timeoutMs, maxBytes = RESPONSE_BYTES, expectedGeneration?: string, beforeDispatch?: (signal: AbortSignal) => Promise<void>) => {
     const signal = AbortSignal.any([parent, AbortSignal.timeout(Math.min(deadlineMs, method === "grokboxCurrentStateControl" || method === "grokboxContextControl" ? 180000 : timeoutMs))]);
     if (signal.aborted) throw new ManagementSourceError("source_timeout");
     const source = await discovery(options.discoveryPath);
     if (expectedGeneration !== undefined && expectedGeneration !== sha256Text(canonicalJson([source.baseUrl, source.pid, source.startedAt]))) throw invalid();
     if (signal.aborted) throw new ManagementSourceError("source_timeout");
+    // Management permission is sampled after discovery and immediately before
+    // the actual request. Callbacks are trusted in-process capabilities only.
+    if (beforeDispatch) await beforeDispatch(signal);
+    signal.throwIfAborted();
     let response: Response;
     try {
       response = await (options.fetch ?? globalThis.fetch)(`${source.baseUrl}/api/${method}`, {
