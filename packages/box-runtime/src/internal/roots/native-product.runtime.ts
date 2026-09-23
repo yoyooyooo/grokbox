@@ -13,7 +13,7 @@ import { withManagedLifecycleGate } from "./managed-lifecycle.runtime.ts";
 
 export type ProductManagement = {
   root: string; installationId: string; principalId: string;
-  native: (signal: AbortSignal) => NativeProductAccess;
+  native: (signal: AbortSignal, authorizeWrite?: () => Promise<void>) => NativeProductAccess;
   authorize: (intent: ProductIntent, signal: AbortSignal) => Promise<void>;
 };
 export type ProductManagementHooks = {
@@ -70,7 +70,8 @@ export async function submitNativeProduct(d: ProductManagement, input: ProductSu
   const result = await withManagedLifecycleGate(d.root, async () => {
     const prior = await readNativeProductOperation(d, request.scopeId, request.requestId);
     if (prior) return sameRequest(prior, request);
-    const native = d.native(signal), plan = await native.preview(intent);
+    const native = d.native(signal, async () => { await d.authorize(intent, signal); signal.throwIfAborted(); });
+    const plan = await native.preview(intent);
     if (plan.scopeId !== request.scopeId || plan.revision !== request.expectedRevision) throw new NativeProductError("revision_conflict");
     await d.authorize(intent, signal); signal.throwIfAborted();
     const store = productManagementPrograms(d.root, request.scopeId, hooks.store);
@@ -81,13 +82,10 @@ export async function submitNativeProduct(d: ProductManagement, input: ProductSu
     // Authorization lost after admission is a locally known non-dispatch. It
     // does not erase the first declaration or authorize a changed replay.
     try { await d.authorize(intent, signal); signal.throwIfAborted(); }
-    catch { return Effect.runPromise(store.settle(operationId, baseResult(intent.targetId, false, "not-applicable"))); }
+    catch { return Effect.runPromise(store.settle(operationId, baseResult(intent.action === "duplicate" ? null : intent.targetId, false, "not-applicable"))); }
     let created: ProductNativeReceipt | null = null;
     if (intent.action === "duplicate") {
-      const original = openAgentDuplication({ durableRoot: d.root, scopeId: request.scopeId, native: {
-        ...native.duplicate,
-        duplicate: async (q, current) => { await d.authorize(intent, signal); signal.throwIfAborted(); return native.duplicate.duplicate(q, current); },
-      } });
+      const original = openAgentDuplication({ durableRoot: d.root, scopeId: request.scopeId, native: native.duplicate });
       try {
         const outcome = await original.execute({ sourceAgentId: intent.targetId!, operationId,
           expectedPlanRevision: plan.duplicateRevision!, confirmed: true }, signal);

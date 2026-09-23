@@ -29,7 +29,7 @@ const WRITE = new Set(["createAgent", "createGroup", "updateAgent", "deleteAgent
 export async function productFixture() {
   const root = await mkdtemp(join(tmpdir(), "native-product-")), discoveryPath = join(root, "gateway.json");
   const state = { rows: new Map<string, Record<string, any>>([[P_A, productRow(P_A)], [P_B, productRow(P_B)], [P_GROUP, productRow(P_GROUP, true)]]),
-    calls: [] as Array<{ method: string; input: any }>, writes: 0, cleanupCalls: 0, scopeId: P_SCOPE, owner: true,
+    calls: [] as Array<{ method: string; input: any }>, writes: 0, cleanupCalls: 0, scopeId: P_SCOPE, owner: true, ownershipAgeMs: 0,
     token: "synthetic-product-native", startedAt: 1000, failNative: false, failAfterWrite: false, failWriteStatus: 503, failReadBack: false,
     filterMembers: false, failCleanup: false, nativeCleanup: false, routines: [] as unknown[], transcript: [] as unknown[],
     holdWrite: undefined as undefined | (() => Promise<void>), afterWrite: undefined as undefined | (() => Promise<void>),
@@ -53,6 +53,7 @@ export async function productFixture() {
         output = [...state.rows.values()];
       } else if (method === "getHostStatus") {
         const proof = ownedOwnershipSnapshot(input.grokboxOwnershipAgentIds, { scopeId: state.scopeId });
+        proof.serverObservedAt = new Date(Date.now() - state.ownershipAgeMs).toISOString();
         for (const row of proof.agents) {
           if (!state.rows.has(row.agentId) || state.rows.get(row.agentId)!.isGroup) {
             Object.assign(row, { serverEvidence: "not_returned", server: null, local: { before: null, after: null, stable: true } });

@@ -291,7 +291,7 @@ test("title show paints from user text and models.json when Server ownership is 
   }
 });
 
-test("title hide strips trailers; sync skips hidden Bots; update coexists when showing", async () => {
+test("title hide strips trailers; sync skips hidden Bots and retains exact skip IDs", async () => {
   const gateway = await startMockGateway({
     agents: [
       { ...agents[0]!, title: "coding | owner=box,m=old" },
@@ -300,11 +300,6 @@ test("title hide strips trailers; sync skips hidden Bots; update coexists when s
     hostStatus: { grokboxOwnership: ownershipSnapshot([ownershipRow(A, "box"), ownershipRow(TEMPORAL, "temporal")]) },
   });
   try {
-    const updated = await run(["agents", "update", "box-bot", "--title", "new"], gateway);
-    expect(updated.code).toBe(0);
-    expect((parseJson(updated.stdout) as { data: { agent: { title: string | null } } }).data.agent.title)
-      .toBe("new | owner=box,m=old");
-
     const synced = await run(["agents", "title", "sync"], gateway);
     expect(synced.code).toBe(0);
     expect((parseJson(synced.stdout) as { data: { examined: number } }).data.examined).toBe(2);
@@ -422,100 +417,6 @@ test("title sync paints a resolved token onto a showing trailer", async () => {
   }
 });
 
-test("confirmed box create does not paint a trailer", async () => {
-  const gateway = await startMockGateway({
-    createAgentId: A,
-    hostStatus: { grokboxOwnership: ownershipSnapshot([ownershipRow(A, "box")]) },
-  });
-  try {
-    const created = await run(["agents", "create", "--name", "Ada"], gateway);
-    expect(created.code).toBe(0);
-    const body = parseJson(created.stdout) as { data: { agent: { title: string | null }; creation: { ownershipConfirmed: boolean } } };
-    expect(body.data.creation.ownershipConfirmed).toBe(true);
-    expect(body.data.agent.title).toBeNull();
-    expect(gateway.requests.some((request) => request.pathname === "/api/updateAgent")).toBe(false);
-  } finally {
-    gateway.stop();
-  }
-});
-
-test("agents update --title preserves m= when the token is missing or unresolved", async () => {
-  const showing = [{ ...agents[0]!, title: "coding | owner=box,m=old" }];
-  const gateway = await startMockGateway({
-    agents: structuredClone(showing),
-    hostStatus: { grokboxOwnership: ownershipSnapshot([ownershipRow(A, "box")]) },
-  });
-  const unresolvedRoot = await mkdtemp(join(tmpdir(), "grokbox-update-unresolved-"));
-  await writeFile(join(unresolvedRoot, "models.json"), JSON.stringify({
-    version: 3,
-    models: {},
-    assignments: { main: null, agents: { [A]: { modelId: "openai-responses/grok-4.6" } } },
-  }), { mode: 0o600 });
-  try {
-    const missing = await run(["agents", "update", "box-bot", "--title", "new"], gateway);
-    expect(missing.code).toBe(0);
-    expect((parseJson(missing.stdout) as { data: { agent: { title: string | null } } }).data.agent.title)
-      .toBe("new | owner=box,m=old");
-
-    const unresolved = await run(["agents", "update", "box-bot", "--title", "later"], gateway, {
-      boxRuntimeRoot: unresolvedRoot,
-    });
-    expect(unresolved.code).toBe(0);
-    expect((parseJson(unresolved.stdout) as { data: { agent: { title: string | null } } }).data.agent.title)
-      .toBe("later | owner=box,m=old");
-  } finally {
-    gateway.stop();
-  }
-});
-
-test("agents update --title clears m= only when models.json confirms no assignment", async () => {
-  const showing = [{ ...agents[0]!, title: "coding | owner=box,m=old" }];
-  const gateway = await startMockGateway({
-    agents: structuredClone(showing),
-    hostStatus: { grokboxOwnership: ownershipSnapshot([ownershipRow(A, "box")]) },
-  });
-  const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-update-empty-"));
-  await writeFile(join(boxRuntimeRoot, "models.json"), JSON.stringify({
-    version: 3,
-    models: {},
-    assignments: { main: null, agents: { [TEMPORAL]: { modelId: "openai-responses/grok-4.6" } } },
-  }), { mode: 0o600 });
-  try {
-    const updated = await run(["agents", "update", "box-bot", "--title", "new"], gateway, { boxRuntimeRoot });
-    expect(updated.code).toBe(0);
-    expect((parseJson(updated.stdout) as { data: { agent: { title: string | null } } }).data.agent.title)
-      .toBe("new | owner=box");
-  } finally {
-    gateway.stop();
-  }
-});
-
-test("agents update --title paints a resolved token onto a showing trailer", async () => {
-  const showing = [{ ...agents[0]!, title: "coding | owner=box,m=old" }];
-  const gateway = await startMockGateway({
-    agents: structuredClone(showing),
-    hostStatus: { grokboxOwnership: ownershipSnapshot([ownershipRow(A, "box")]) },
-  });
-  const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-update-resolved-"));
-  await writeFile(join(boxRuntimeRoot, "models.json"), JSON.stringify({
-    version: 3,
-    models: {
-      "openai-responses/grok-4.6": {
-        provider: "openai-responses",
-        model: "grok-4.6",
-        endpoint: "https://example.invalid/v1",
-        apiKeyRef: "env:GROKBOX_KEY",
-        alias: "g46",
-      },
-    },
-    assignments: { main: null, agents: { [A]: { modelId: "openai-responses/grok-4.6" } } },
-  }), { mode: 0o600 });
-  try {
-    const updated = await run(["agents", "update", "box-bot", "--title", "new"], gateway, { boxRuntimeRoot });
-    expect(updated.code).toBe(0);
-    expect((parseJson(updated.stdout) as { data: { agent: { title: string | null } } }).data.agent.title)
-      .toBe("new | owner=box,m=g46");
-  } finally {
-    gateway.stop();
-  }
-});
+// General Bot create/update tests moved to packages/server/test/products.node.ts.
+// Explicit title synchronization above still owns model-token refresh; the
+// reviewed product update preserves existing metadata without a hidden refresh.

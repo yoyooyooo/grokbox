@@ -1,4 +1,27 @@
-# AH-138 原生产品管理：施工验证与未解决审查项
+# AH-138 原生产品管理：修复与交付验证
+
+## 本轮续接结论
+
+原 WIP 检查点后的三处已复现问题均已修复并进入正式 Node HTTP 回归：管理授权在最终原生传输前复核；roster 与关系读取以同代际、前后账号/目标身份采样约束；回执验证 action、目标、派发、读回与清理字段的相容性。先运行的七个反例全部失败，再在修复后全部通过；没有降低原断言或恢复旧写入口。新鲜度与采样不是跨 App 原子锁。
+
+扩大调用方检查后，删除了无调用者的旧 `gateway-duplication`、CLI management helpers 和七个通用 Gateway 写包装。原 `openAgentDuplication` 和 CONT 原始记录仍保留；旧历史查询只读。明确 title sync 的模型标签刷新仍归原标题 owner，用户 profile update 只保留已有元数据，不隐藏刷新。相应旧测试已经迁到共享管理入口；跳过原因中的实际 Bot ID 投影也修复。
+
+只读核对当前原生 roster 的结构（不输出内容或身份）发现 52 个对象中有 6 个头像字段为 null。解析已保留原生 null；资料更新省略尚未设置的头像字段，不将缺省误写成空字符串，也不向原生 `.trim()` 传 null。新增读取/更新/显式设置头像的隔离回归。此次只读探测没有原生写入，也不能代签真实修改或 App 验收。
+
+新发现的消息域管理撤权问题已单列 Linear AH-163：在实际管理 HTTP 和合成原生端点，名单读取期间撤销 messages.write 后仍尝试 sendPrompt。它不反向锁住独立产品管理，作为明确必要修复进入核心候选依赖。该消息回归不由本报告冒充已修复。
+
+原生来源仍为下文明确的 Host/worker。新的 current guide 是 [原生产品管理](../maintainers/native-product-management.md)。本报告记录实现和验证；是否合入与可解锁关系由 Linear 的精确提交回执决定，以下历史检查点保留。
+
+## 修复后的实际验证
+
+- 首次负例窗口：原 35 个 Node 用例通过，新增 7 个安全反例全部失败；修复后反例全部通过，保留原失败日志。
+- 最终产品/CLI/desktop/title/identity 八文件：143 个外层测试通过；产品 wrapper 内部为 50 个真实 Node HTTP/CONT SQLite/打包 CLI 用例，0 fail/skip，不重复累计。
+- 根/Web 类型、完整 build、runtime boundaries、docs 16 项、diff 检查均通过。较早的修复窗口交叉七文件 59 项通过（Server wrapper 内部 36 项），原生 product/duplicate 6 项隔离验证通过；各窗口独立，不相加冒充覆盖率。
+- 原生 roster 的只读结构观察仅报告字段类型计数，发现并修复 nullable-avatar 与合成 fixture 的差异。没有输出人设、消息或账号标识，也没有实际用户写入。
+
+本报告不代替新的 V2 合流回执、独立整候选审查或 LIVE 签收。上述验证与下方历史失败分开，工具被拒的可选变更不算已经实施。
+
+## 历史 WIP 检查点（已被上述修复续接）
 
 ## 结论与范围
 

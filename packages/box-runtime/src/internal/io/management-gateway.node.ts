@@ -156,10 +156,16 @@ export function createManagementGatewayIO(options: { discoveryPath: string; conf
     },
     readNotificationReceiver: receiver.readExplicit,
     routineAccess: createRoutineGateway(call),
-    productAccess: (signal: AbortSignal) => createNativeProductAccess(async (method, input, owner, deadline, maxBytes, expected) => {
-      const reply = await call(method, input, owner, deadline, maxBytes, undefined, expected);
+    productAccess: (signal: AbortSignal, authorizeWrite?: () => Promise<void>) => createNativeProductAccess(async (method, input, owner, deadline, maxBytes, expected, beforeDispatch) => {
+      // Keep product's local refusal mapping in its adapter. Message callbacks
+      // retain their own error contract through the shared transport.
+      const productAuthorization = beforeDispatch ? async (gateSignal: AbortSignal) => {
+        try { await beforeDispatch(); gateSignal.throwIfAborted(); }
+        catch { throw new ProductDispatchRefused("permission_denied"); }
+      } : undefined;
+      const reply = await call(method, input, owner, deadline, maxBytes, undefined, expected, productAuthorization);
       return { result: reply.result, generation: reply.source.credentialGeneration };
-    }, signal),
+    }, signal, 60000, authorizeWrite),
     continuityAccess: (signal: AbortSignal) => {
       if (!options.configurationRoot) throw unavailable();
       return createContinuityGatewayIO((method, input, owner, deadline, maxBytes, expected, beforeDispatch) =>

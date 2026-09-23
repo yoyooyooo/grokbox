@@ -13,7 +13,7 @@ import { HttpFailure, requireCapability, type Principal } from "./access.ts";
 import { boundedPage, pageInput } from "./pagination.ts";
 
 export type ProductDomain = {
-  root: string; installationId: string; native: (signal: AbortSignal) => NativeProductAccess;
+  root: string; installationId: string; native: (signal: AbortSignal, authorizeWrite?: () => Promise<void>) => NativeProductAccess;
   authorize: (signal: AbortSignal, capability: Capability) => Promise<void>; hooks?: ProductManagementHooks;
 };
 function failure(error: unknown): HttpFailure {

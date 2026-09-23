@@ -56,3 +56,7 @@ R01 的重放/首次准入顺序由 CLI-02 负责。R02/R03/R04 的产品取舍�
 ## 后继
 
 [CLI-05](CLI-05-implementation-follow-through.md)拥有跨域重建与最终完整交付，领域票拥有各自差额。按已闭合用例推进实现、迁移调用方并退出旧边界，Web UI 纳入同一交付目标。中间版本可不完整或不可用；具体包搬迁和数据库设计留给实施，实现按当前 W3 排程进行；源码提交和离线验证不自动授权现场采用。
+
+## Bot/Group 原生产品管理迁移
+
+正式 `bot create/update/delete/duplicate`、`group create/update/delete/members set` 与独立 hidden/notify 使用同一管理 Server 和原 CONT 安全记录。旧 `agents`/`groups` 通用写命令及八个产品 daemon RPC 退出；历史只读回执和明确 title/template 消费者仍按本域收口。精确入口、权限、非原子性与读回语义见 [原生产品管理指南](../maintainers/native-product-management.md)。

@@ -78,7 +78,7 @@ export async function runAgentsTitle(
   const written = applied.rows.filter((row) => row.written).length;
   const skippedRows = applied.rows.filter((row) => row.skipped), skipped = skippedRows.length;
   const pending = applied.rows.filter((row) => row.changed && !row.written).length;
-  const skips = skippedRows.map((row) => ({ agent: row.name || row.agentId, id: row.id, reason: row.skipped }));
+  const skips = skippedRows.map((row) => ({ agent: row.name || row.agentId, id: row.agentId, reason: row.skipped }));
   const data = { action, dryRun: Boolean(raw.dryRun), examined: applied.rows.length, written, skipped,
     ...(raw.dryRun ? { pending } : {}), ...(skips.length > 0 ? { skips } : {}),
   };

@@ -8,13 +8,14 @@ export const PRODUCT_ACTIONS = ["create", "update", "delete", "duplicate", "memb
 export type ProductAction = typeof PRODUCT_ACTIONS[number];
 export type ProductKind = "bot" | "group";
 export type ProductProfile = { name: string; description: string; title: string; avatarShape: string; avatarColor: string };
+export type ObservedProductProfile = Omit<ProductProfile, "avatarShape" | "avatarColor"> & { avatarShape: string | null; avatarColor: string | null };
 export type ProductIntent = {
   requestId: string; kind: ProductKind; action: ProductAction; targetId: string | null;
   profile: Partial<ProductProfile> | null; memberIds: string[] | null;
   harness: "box" | "temporal" | null; value: boolean | null; deferStart: boolean;
 };
 export type ProductObject = {
-  id: string; kind: ProductKind; profile: ProductProfile; memberIds: string[];
+  id: string; kind: ProductKind; profile: ObservedProductProfile; memberIds: string[];
   harness: "box" | "temporal" | null; hidden: boolean | null; notify: boolean | null;
   revision: string;
 };
@@ -114,11 +115,14 @@ export function productSubmission(raw: unknown): ProductSubmission {
     scopeId: raw.scopeId, expectedRevision: raw.expectedRevision, confirmed: true, acceptNonAtomic: true };
 }
 export function productObject(raw: unknown): ProductObject {
-  if (!object(raw) || !isContinuityUuid(raw.id) || PRODUCT_PROFILE_KEYS.some(key => typeof raw[key] !== "string")
+  if (!object(raw) || !isContinuityUuid(raw.id) || PRODUCT_PROFILE_KEYS.some(key =>
+    typeof raw[key] !== "string" && !(["avatarShape", "avatarColor"].includes(key) && raw[key] === null))
     || !(raw.isGroup === undefined || typeof raw.isGroup === "boolean")) throw new NativeProductError("source_incomplete");
-  let profile: ProductProfile;
-  try { profile = productProfile(Object.fromEntries(PRODUCT_PROFILE_KEYS.map(k => [k, raw[k]]))) as ProductProfile; }
-  catch { throw new NativeProductError("source_incomplete"); }
+  let profile: ObservedProductProfile;
+  try {
+    const text = productProfile(Object.fromEntries(PRODUCT_PROFILE_KEYS.filter(k => raw[k] !== null).map(k => [k, raw[k]]))) as ProductProfile;
+    profile = { ...text, avatarShape: raw.avatarShape === null ? null : text.avatarShape, avatarColor: raw.avatarColor === null ? null : text.avatarColor };
+  } catch { throw new NativeProductError("source_incomplete"); }
   const kind = raw.isGroup === true ? "group" : "bot";
   if (kind === "group" && (!Array.isArray(raw.memberIds) || raw.memberIds.length > 64 || raw.memberIds.some(id => !isContinuityUuid(id)))) throw new NativeProductError("source_incomplete");
   const memberIds = kind === "group" ? (raw.memberIds as string[]).map(id => id.toLowerCase()).sort() : [];
@@ -131,7 +135,10 @@ export function productObject(raw: unknown): ProductObject {
 }
 export function productProfileAfter(intent: ProductIntent, target: ProductObject | null): Partial<ProductProfile> | null {
   if (intent.profile === null) return null;
-  const profile = { ...(intent.action === "update" ? target?.profile : {}), ...intent.profile };
+  // Native roster null means no explicit avatar. Preserve it in reads, but
+  // never send null to native .trim() or invent an empty avatar write.
+  const before = Object.fromEntries(Object.entries(target?.profile ?? {}).filter(([, value]) => value !== null)) as Partial<ProductProfile>;
+  const profile = { ...(intent.action === "update" ? before : {}), ...intent.profile };
   if (intent.kind === "bot" && intent.profile.title !== undefined) {
     const user = parseAgentTitle(intent.profile.title).user;
     profile.title = intent.action === "create" ? user : composeAgentTitle(target?.profile.title, { type: "set-user", user, owner: "leave" }).title;
@@ -173,6 +180,9 @@ export function assertProductResult(raw: ProductResult): ProductResult {
     || !["matched", "mismatch", "not-observed"].includes(raw.readBack)
     || !["not-applicable", "native-lifecycle", "complete", "unavailable", "unknown"].includes(raw.cleanup)
     || raw.atomicCompareAndSet !== false || raw.relationshipsTransferred !== false || raw.fullClone !== false) throw new ContinuityFailure("integrity_failure");
+  if (raw.nativeReceipt === "not-dispatched" && (raw.readBack !== "not-observed" || raw.object !== null || raw.cleanup !== "not-applicable")
+    || raw.nativeReceipt === "returned" && raw.targetId === null
+    || raw.readBack === "not-observed" && raw.object !== null) throw new ContinuityFailure("integrity_failure");
   if (raw.object !== null) {
     const v = raw.object;
     if (!object(v) || Object.keys(v).sort().join() !== "harness,hidden,id,kind,memberIds,notify,profile,revision" || v.id !== raw.targetId) throw new ContinuityFailure("integrity_failure");
@@ -189,6 +199,18 @@ export function assertProductReceipt(raw: ProductReceipt): ProductReceipt {
     || !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$/.test(raw.principalId) || canonicalJson(productIntent(raw.intent)) !== canonicalJson(raw.intent)
     || raw.intent.requestId !== raw.requestId || !["prepared", "effect_unknown", "complete"].includes(raw.state)
     || !Number.isSafeInteger(raw.createdAtMs) || raw.createdAtMs < 1 || (raw.state === "complete") !== (raw.result !== null)) throw new ContinuityFailure("integrity_failure");
-  if (raw.result !== null) assertProductResult(raw.result);
+  if (raw.result !== null) {
+    const result = assertProductResult(raw.result), intent = raw.intent;
+    const createsIdentity = intent.action === "create" || intent.action === "duplicate";
+    if (createsIdentity ? result.nativeReceipt === "not-dispatched" ? result.targetId !== null
+      : result.targetId === intent.targetId : result.targetId !== intent.targetId) throw new ContinuityFailure("integrity_failure");
+    if (result.nativeReceipt === "returned") {
+      if (intent.action !== "delete" && result.cleanup !== "not-applicable"
+        || intent.action === "delete" && (intent.kind === "group" ? result.cleanup !== "native-lifecycle" : result.cleanup === "native-lifecycle")) throw new ContinuityFailure("integrity_failure");
+      if (result.readBack === "matched") {
+        if (!productResultMatches(intent, result.object, result.object)) throw new ContinuityFailure("integrity_failure");
+      } else if (result.readBack === "mismatch" && intent.action === "delete" && result.object === null) throw new ContinuityFailure("integrity_failure");
+    }
+  }
   return raw;
 }

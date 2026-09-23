@@ -12,7 +12,7 @@ export type ProductRpc = "listAgents" | "getHostStatus" | "getAgentAutomations" 
   | "createAgent" | "createGroup" | "updateAgent" | "deleteAgent" | "duplicateAgent" | "setGroupMembers"
   | "setAgentNotifyOnUpdates" | "setAgentHiddenFromSidebar";
 export type ProductCall = (method: ProductRpc, input: Record<string, unknown>, signal: AbortSignal, timeoutMs: number,
-  maxBytes: number, expectedGeneration?: string) => Promise<{ result: unknown; generation: string }>;
+  maxBytes: number, expectedGeneration?: string, beforeDispatch?: () => Promise<void>) => Promise<{ result: unknown; generation: string }>;
 export type ProductNativeReceipt = { targetId: string; desktop: DesktopReapResult | null };
 export type NativeProductAccess = ReturnType<typeof createNativeProductAccess>;
 /** Constructed only at a local gate before the native transport starts. */
@@ -25,10 +25,10 @@ const changed = (): never => { throw new NativeProductError("source_changed"); }
 /** One authenticated native Gateway generation per operation, including its
  * credential digest. This is a bounded observation, not an account lock or CAS.
  * Callers cannot select an arbitrary RPC or supply a native credential. */
-export function createNativeProductAccess(call: ProductCall, signal: AbortSignal, timeoutMs = 60000) {
+export function createNativeProductAccess(call: ProductCall, signal: AbortSignal, timeoutMs = 60000, authorizeWrite?: () => Promise<void>) {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 180000) throw new NativeProductError("invalid_input");
   const deadline = performance.now() + timeoutMs;
-  let generation: string | undefined;
+  let generation: string | undefined, accountScope: string | undefined;
   const remaining = () => {
     signal.throwIfAborted();
     const left = Math.floor(deadline - performance.now());
@@ -36,7 +36,11 @@ export function createNativeProductAccess(call: ProductCall, signal: AbortSignal
     return left;
   };
   const rpc = async (method: ProductRpc, body: Record<string, unknown>, maxBytes = 2 * 1024 * 1024) => {
-    const response = await call(method, body, signal, remaining(), maxBytes, generation);
+    const writing = !["listAgents", "getHostStatus", "getAgentAutomations", "getAgentTranscriptTail"].includes(method);
+    // Only the management driver supplies this capability. The transport calls
+    // it after discovery, immediately before starting the one native request.
+    if (writing && !authorizeWrite) throw new ProductDispatchRefused("permission_denied");
+    const response = await call(method, body, signal, remaining(), maxBytes, generation, writing ? authorizeWrite : undefined);
     if (!/^[a-f0-9]{64}$/.test(response.generation)) return unavailable();
     if (generation !== undefined && generation !== response.generation) return changed();
     generation = response.generation;
@@ -58,6 +62,8 @@ export function createNativeProductAccess(call: ProductCall, signal: AbortSignal
     if (proof.serverRead.state !== "observed" || proof.scope?.stable !== true || !proof.scope.id
       || proof.localMigrationWindow !== "inactive" || !Number.isSafeInteger(at) || at > now || now - at > OWNERSHIP_EVIDENCE_MAX_AGE_MS
       || performance.now() - began > OWNERSHIP_EVIDENCE_MAX_AGE_MS) return unavailable();
+    if (accountScope !== undefined && accountScope !== proof.scope.id) return changed();
+    accountScope = proof.scope.id;
     return { scopeId: proof.scope.id, sourceGeneration: generation!, observedAtMs: at,
       agents: proof.agents.map(row => ({ id: row.agentId, state: row.state, serverId: row.server?.serverId ?? null, viewerIsOwner: row.server?.viewerIsOwner ?? null })),
       coverage: "requested-native-registration", executionQualified: false };
@@ -65,8 +71,10 @@ export function createNativeProductAccess(call: ProductCall, signal: AbortSignal
   const snapshot = async (probeId: string, targetId: string | null = null, requireOwnedBot = false): Promise<ProductSnapshot> => {
     // A creation's request UUID is only a scope probe. Its absent registration
     // is never reported as a Bot identity or permission over an existing Bot.
+    const before = await ownership([targetId ?? probeId]);
     const objects = await roster();
     const proof = await ownership([targetId ?? probeId]);
+    if (canonicalJson(before.agents) !== canonicalJson(proof.agents)) return changed();
     if (requireOwnedBot) {
       const target = proof.agents.find(row => row.id === targetId);
       if (!target || target.viewerIsOwner !== true || !["confirmed_box", "confirmed_temporal"].includes(target.state)) throw new NativeProductError("permission_denied");
@@ -94,7 +102,7 @@ export function createNativeProductAccess(call: ProductCall, signal: AbortSignal
       if (generation !== request.source.generation || current.generation !== generation) throw new DuplicateDispatchRefused("generation_changed");
       if (age < 0 || age > OWNERSHIP_EVIDENCE_MAX_AGE_MS) throw new DuplicateDispatchRefused("evidence_expired");
       const raw = await rpc("duplicateAgent", { id: request.source.agentId }).catch(error => {
-        if (error instanceof ProductDispatchRefused) throw new DuplicateDispatchRefused("generation_changed");
+        if (error instanceof ProductDispatchRefused) throw new DuplicateDispatchRefused(error.code === "permission_denied" ? "cancelled" : "generation_changed");
         throw error;
       });
       if (!record(raw) || !record(raw.agent) || raw.agent.isGroup === true) return unavailable();
@@ -166,6 +174,8 @@ export function createNativeProductAccess(call: ProductCall, signal: AbortSignal
       const catalog = await routines(botId);
       routineView = { ...routineView, state: "observed", items: catalog.routines.map(row => ({ id: row.id, revision: row.revision, enabled: row.enabled, mutable: row.mutable })) };
     } catch (error) { if (error instanceof NativeProductError && error.code === "source_changed") throw error; }
+    const finalIdentity = await ownership([botId]);
+    if (sha256Text(canonicalJson(finalIdentity.agents)) !== view.authority.identityRevision) return changed();
     signal.throwIfAborted();
     return { botId, scopeId: view.authority.scopeId, sourceGeneration: generation!, observedAtMs: view.authority.observedAtMs,
       groups: groups.slice(0, 128).map(row => ({ id: row.id, memberIds: row.memberIds, revision: row.revision })), groupsTruncated: groups.length > 128,

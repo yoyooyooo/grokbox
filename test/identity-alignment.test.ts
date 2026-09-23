@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { mergedProfile } from "../packages/cli/src/commands/management.ts";
+import { productIntent, productObject, productProfileAfter } from "@grokbox/runtime-kernel/continuity";
 import { GatewayClient } from "../packages/cli/src/gateway.ts";
 import { startDaemonHost } from "../packages/cli/src/daemon/host.ts";
 import { createProductionDeps, type CliDeps } from "../packages/cli/src/deps.ts";
@@ -11,8 +11,10 @@ import { captureCli, startMockGateway, writeDiscovery } from "./helpers.ts";
 
 for (const harness of [undefined, "box", "temporal", "unknown"]) {
   test(`ordinary profile update never writes a ${harness ?? "missing"} harness back`, () => {
-    const result = mergedProfile({ id: "agent", name: "owned", description: "owned", harness }, { title: "new title" });
-    expect(result).toEqual({ name: "owned", description: "owned", title: "new title" });
+    const target = productObject({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "owned", description: "owned", title: "", avatarShape: "", avatarColor: "", harness });
+    const intent = productIntent({ requestId: "11111111-1111-4111-8111-111111111111", kind: "bot", action: "update", targetId: target.id, profile: { title: "new title" } });
+    const result = productProfileAfter(intent, target);
+    expect(result).toEqual({ name: "owned", description: "owned", title: "new title", avatarShape: "", avatarColor: "" });
     expect(result).not.toHaveProperty("harness");
   });
 }
@@ -29,7 +31,7 @@ test("explicit harness edits fail before even reading Gateway roster", async () 
 });
 
 for (const daemonMode of [false, true]) {
-  test(`${daemonMode ? "daemon" : "direct"} typed update refuses harness and omits it on ordinary writes`, async () => {
+  test(`${daemonMode ? "daemon" : "direct"} retired general update cannot bypass management or change harness`, async () => {
     const dir = await mkdtemp(join(tmpdir(), "grokbox-identity-write-"));
     const gateway = await startMockGateway({ agents: [{ id: "agent", name: "owned", description: "owned", harness: "temporal", isGroup: false }] });
     const discoveryPath = await writeDiscovery({ port: gateway.port, pid: gateway.pid, startedAt: gateway.startedAt, token: gateway.token });
@@ -39,10 +41,8 @@ for (const daemonMode of [false, true]) {
     const daemon = daemonMode ? await startDaemonHost({ ...createProductionDeps(), ...deps, transport: "local" }, socket) : undefined;
     try {
       const result = await captureCli(["agents", "update", "agent", "--title", "new"], deps);
-      expect(result.code).toBe(0);
-      expect(gateway.requests.filter(r => r.pathname === "/api/updateAgent").map(r => r.body)).toEqual([
-        { id: "agent", profile: { name: "owned", description: "owned", title: "new" } },
-      ]);
+      expect(result.code).not.toBe(0);
+      expect(gateway.requests.filter(r => r.pathname === "/api/updateAgent")).toHaveLength(0);
       const count = gateway.requests.length;
       const client = new GatewayClient({ ...createProductionDeps(), ...deps });
       await expect(client.updateAgent({ id: "agent", profile: { harness: "box" } }, 1000)).rejects.toMatchObject({ code: "invalid_usage" });

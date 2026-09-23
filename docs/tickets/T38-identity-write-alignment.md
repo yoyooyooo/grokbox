@@ -16,7 +16,7 @@ Spec：[Server归属优先](../roadmap/box-runtime-impl-spec.md#server-authority
 
 ## Current gap / reuse
 
-当前`commands/management.ts`的普通资料更新已不携带harness；显式existing-harness修改在读Gateway之前拒绝，底层typed Gateway/daemon入口也拒绝。创建只执行一次，并用原operation/目标身份核对Server读回；不支持/错误/缺证输出已创建但未确认，不重复创建或删除。
+当前`native-product`合同与管理Server的普通资料更新不携带harness；原`commands/management.ts`已退出；显式existing-harness修改在读Gateway之前拒绝，底层typed Gateway/daemon入口也拒绝。创建只执行一次，并用原operation/目标身份核对Server读回；不支持/错误/缺证输出已创建但未确认，不重复创建或删除。
 
 当前候选已去除`harness-profile-rpc / harness-update-trim / harness-agent-write / harness-local-write / harness-server-write`。保留`harness-blank / harness-summary`只读观测与ownership桥。原生local/server writer原文在转换后不变，不再注入自定义本地优先策略。**2026-09-13 现场：** 含 writer 退场的 18-slice profile 已 re-adopt（Host REDACTED_PROCESS_ID）；test2 本地已对齐 Server `temporal`（`confirmed_temporal`/`blocked`）。阻断回归已有 CLI 证据；test2 两历史未合并、desktop replica 仍 not_observed，本票校准/Done 仍未关。
 

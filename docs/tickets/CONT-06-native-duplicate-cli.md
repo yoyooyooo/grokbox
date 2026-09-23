@@ -6,7 +6,7 @@
 
 ## 目标与模块
 
-在既有agents命令、registry、Gateway/daemon有限写接口中暴露官方duplicate。CLI位于`commands/agent-duplicate.ts`，正式Gateway适配为`gateway-duplication.ts`，Effect用例为`roots/agent-duplicate.runtime.ts`；复用CONT管理库与安全claim，不使用通用RPC转发。官方复制人设/设置但清会话的语义保留；原Routine定义是否启用、可见性及活动聊天副作用在预检披露。
+在既有agents命令、registry、Gateway/daemon有限写接口中暴露官方duplicate。正式CLI由`commands/management-api.ts`消费共享client，原生适配为`io/native-product.node.ts`，Effect复制用例仍为`roots/agent-duplicate.runtime.ts`；复用CONT管理库与安全claim，不使用通用RPC转发。官方复制人设/设置但清会话的语义保留；原Routine定义是否启用、可见性及活动聊天副作用在预检披露。
 
 创建回读actual ownership，不保证新对象是Box，不自动复制自定义模型分配，不迁移关系或删除源。duplicate与clone是两个明确功能，不能把内部history flag改true后冒充clone。Box/Temporal源是否被当前原生路径支持，逐条资格化，未知拒绝而非改源状态。
 
@@ -25,3 +25,7 @@ CONT私有管理库显式升级到v3：意图与源保护原子登记，未知�
 ## 非目标
 
 不提供会话复制、业务接替、状态注入或永久Box保证；不把隐藏对象当作未执行状态。官方语义无法安全预检时明确提示/拒绝，不静默换成另一种复制。
+
+## 管理入口迁移
+
+原生复制已迁入 `bot duplicate` 的严格预览/确认与 `product operation get/reconcile`；原 `openAgentDuplication` 仍为唯一复制安全记录与派发 owner。旧 `agents duplicate` 写入口退出；历史 `agents operations show` 仅保留读取原记录。当前操作方法见 [原生产品指南](../maintainers/native-product-management.md) 与 [duplicate 指南](../maintainers/native-agent-duplicate.md)。

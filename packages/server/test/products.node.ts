@@ -8,6 +8,7 @@ import { DAEMON_METHODS, DAEMON_CAPABILITIES } from "../../cli/src/daemon/protoc
 import { LEAF_COMMANDS } from "../../cli/src/registry.ts";
 import { join } from "node:path";
 import { ManagementClient, normalizeProductIntent, productReference, productIdentity, type ProductIntent } from "@grokbox/client";
+import { assertProductReceipt } from "@grokbox/runtime-kernel/continuity";
 import { openAgentDuplication } from "@grokbox/box-runtime/runtime";
 import { startManagementServer } from "../src/server.ts";
 import { productFixture, productCommand, productRow, P_INSTALL, P_A, P_B, P_GROUP, P_SCOPE, P_OWNER, P_OTHER, P_READER } from "./product-fixture.node.ts";
@@ -345,5 +346,127 @@ test("product pagination binds kind, native generation, account scope and releva
     await rejects(f.client().products({ kind: "group", limit: 1, cursor: first.nextCursor! }), "cursor_gap");
     f.state.rows.get(P_A)!.name = "Changed fields";
     await rejects(f.client().products({ kind: "bot", limit: 1, cursor: first.nextCursor! }), "cursor_gap");
+  } finally { await f.close(); }
+});
+
+
+for (const [action, kind] of [["create", "bot"], ["update", "bot"], ["delete", "bot"], ["duplicate", "bot"], ["members", "group"]] as const) {
+  test(`final native observation cannot carry ${kind}/${action} past revoked management permission`, async () => {
+    const f = await productFixture();
+    try {
+      const { command } = await reviewed(f, productCommand(action, kind));
+      let revoked = false;
+      f.state.afterCommit = async label => {
+        if (label !== "native-product-admit") return;
+        const row = f.state.rows.get(P_A)!, title = row.title;
+        Object.defineProperty(row, "title", { enumerable: true, configurable: true,
+          get() { revoked = true; f.revoke("products.write"); return title; } });
+      };
+      const result = (await f.client().submitProduct(command)).data;
+      assert.equal(revoked, true); assert.equal(f.state.writes, 0);
+      assert.equal(result.state, "complete"); assert.equal(result.result?.nativeReceipt, "not-dispatched");
+      assert.equal(result.result?.readBack, "not-observed"); assert.equal(f.state.cleanupCalls, 0);
+    } finally { await f.close(); }
+  });
+}
+
+test("account changes inside a native roster cannot produce a mixed-scope preview", async () => {
+  const f = await productFixture();
+  try {
+    const row = f.state.rows.get(P_A)!, name = row.name;
+    Object.defineProperty(row, "name", { enumerable: true, configurable: true,
+      get() { f.state.scopeId = "f".repeat(64); return name; } });
+    await rejects(f.client().previewProduct(productCommand()), "source_changed");
+    assert.equal(f.state.writes, 0);
+    await assert.rejects(lstat(join(f.root, "continuity")), (e: any) => e.code === "ENOENT");
+  } finally { await f.close(); }
+});
+
+test("correlated native receipts refuse contradictory dispatch, target, readback and cleanup facts", async () => {
+  const f = await productFixture();
+  try {
+    const { result } = await submit(f);
+    for (const patch of [
+      { nativeReceipt: "not-dispatched" }, { targetId: null, object: null },
+      { readBack: "not-observed" }, { cleanup: "complete" }, { object: null },
+    ]) assert.throws(() => assertProductReceipt({ ...result, result: { ...result.result!, ...patch } } as any));
+    const updated = (await submit(f, productCommand("update"))).result;
+    assert.throws(() => assertProductReceipt({ ...updated, result: { ...updated.result!, targetId: P_B, object: null, readBack: "not-observed" } }));
+    const copied = (await submit(f, productCommand("duplicate"))).result;
+    assert.throws(() => assertProductReceipt({ ...copied, result: { ...copied.result!, targetId: P_A, object: null, readBack: "not-observed" } }));
+    const deleted = (await submit(f, productCommand("delete"))).result;
+    assert.throws(() => assertProductReceipt({ ...deleted, result: { ...deleted.result!, object: updated.result!.object } }));
+  } finally { await f.close(); }
+});
+
+
+test("managed native creation does not paint a title or hide a second profile write", async () => {
+  const f = await productFixture();
+  try {
+    const { result } = await submit(f);
+    assert.equal(result.result?.object?.profile.title, "");
+    assert.equal(f.state.calls.filter(c => c.method === "updateAgent").length, 0);
+    assert.equal(f.state.writes, 1);
+  } finally { await f.close(); }
+});
+
+for (const trailer of ["owner=box,m=old", "owner=box,m=current,e=high", "owner=temporal,custom=value"]) {
+  test(`reviewed user title preserves ${trailer} without silently performing title sync`, async () => {
+    const f = await productFixture();
+    try {
+      f.state.rows.get(P_A)!.title = `Coding | ${trailer}`;
+      const { result } = await submit(f, productCommand("update", "bot", { profile: { title: "New user title" } }));
+      assert.equal(result.result?.object?.profile.title, `New user title | ${trailer}`);
+      assert.equal(result.result?.readBack, "matched");
+      assert.equal(f.state.calls.filter(c => c.method === "updateAgent").length, 1);
+    } finally { await f.close(); }
+  });
+}
+
+test("a scope change during relationship reads refuses the mixed account observation", async () => {
+  const f = await productFixture();
+  try {
+    const incoming = { id: "synthetic-incoming", fromAgent: { id: P_B }, toAgent: { id: P_A } };
+    Object.defineProperty(incoming, "requestId", { enumerable: true, get() { f.state.scopeId = "f".repeat(64); return "synthetic-request"; } });
+    f.state.transcript = [incoming];
+    await rejects(f.client().productRelations(P_A), "source_changed");
+    assert.equal(f.state.writes, 0);
+  } finally { await f.close(); }
+});
+
+
+test("expired native ownership refuses duplication through the current management entry", async () => {
+  const f = await productFixture();
+  try {
+    f.state.ownershipAgeMs = 6000;
+    await rejects(f.client().previewProduct(productCommand("duplicate")), "source_unavailable");
+    assert.equal(f.state.writes, 0);
+    assert.equal(f.state.calls.filter(c => c.method === "duplicateAgent").length, 0);
+  } finally { await f.close(); }
+});
+
+
+test("native null avatar defaults survive roster and profile update without invented writes", async () => {
+  const f = await productFixture();
+  try {
+    f.state.rows.get(P_A)!.avatarShape = null; f.state.rows.get(P_A)!.avatarColor = null;
+    const view = (await f.client().products({ kind: "bot", target: P_A })).data.objects[0]!;
+    assert.equal(view.profile.avatarShape, null); assert.equal(view.profile.avatarColor, null);
+    const { plan, result } = await submit(f, productCommand("update", "bot", { profile: { title: "Only user title" } }));
+    assert.equal(Object.hasOwn(plan.profileAfter!, "avatarShape"), false);
+    assert.equal(Object.hasOwn(plan.profileAfter!, "avatarColor"), false);
+    const write = f.state.calls.find(c => c.method === "updateAgent")!;
+    assert.equal(Object.hasOwn(write.input.profile, "avatarShape"), false);
+    assert.equal(result.result?.readBack, "matched"); assert.equal(result.result?.object?.profile.avatarShape, null);
+  } finally { await f.close(); }
+});
+
+test("null native avatar defaults still permit an explicit reviewed avatar change", async () => {
+  const f = await productFixture();
+  try {
+    f.state.rows.get(P_A)!.avatarShape = null; f.state.rows.get(P_A)!.avatarColor = null;
+    const { result } = await submit(f, productCommand("update", "bot", { profile: { avatarShape: "circle", avatarColor: "purple" } }));
+    assert.equal(result.result?.readBack, "matched"); assert.equal(result.result?.object?.profile.avatarShape, "circle");
+    assert.equal(f.state.writes, 1);
   } finally { await f.close(); }
 });
