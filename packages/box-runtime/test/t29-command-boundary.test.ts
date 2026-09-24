@@ -12,11 +12,11 @@ describe("shared configuration writer import boundaries", () => {
   test("model publication uses the shared protected publisher and process lease", () => {
     const writer = source("packages/box-runtime/src/internal/io/configuration.node.ts");
     expect(writer).toContain("acquireConfigurationLease");
-    expect(writer).toContain("publishConfigFile(modelsPath(root), persisted)");
+    expect(writer).toContain("publishConfigFile(modelsPath(root), persisted,");
     expect(writer).toContain("expectedRevision");
     expect(writer).not.toContain("writeJsonAtomic");
     const operations = source("packages/box-runtime/src/internal/io/model-management.node.ts");
-    expect(operations).toContain("store.saveModels(next, persistedModelsRevision(current.models))");
+    expect(operations).toContain("store.saveModels(next, persistedModelsRevision(current.models),");
     expect(operations).not.toContain("publishConfigFile(modelsPath");
   });
 

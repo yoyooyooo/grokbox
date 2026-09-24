@@ -107,8 +107,10 @@ test("explicit Temporal creation and native profile normalization do not reasser
     const write = f.state.calls.find(row => row.method === "createAgent")!;
     assert.equal(write.input.harness, "temporal"); assert.equal(write.input.name, "Temporal test");
     assert.equal(created.result.result?.readBack, "matched"); assert.ok(created.plan.effects.includes("native-startup-may-run"));
-    await submit(f, productCommand("update", "bot", { profile: { title: "  Trimmed user title  " } }));
+    const createdId = created.result.result?.targetId; assert.ok(createdId);
+    await submit(f, productCommand("update", "bot", { targetId: createdId, profile: { title: "  Trimmed user title  " } }));
     const update = f.state.calls.find(row => row.method === "updateAgent")!;
+    assert.equal(update.input.profile.name, "Temporal test"); assert.equal(update.input.profile.description, "instructions");
     assert.equal(update.input.profile.title, "Trimmed user title"); assert.equal(Object.hasOwn(update.input, "harness"), false); assert.equal(Object.hasOwn(update.input.profile, "harness"), false);
   } finally { await f.close(); }
 });

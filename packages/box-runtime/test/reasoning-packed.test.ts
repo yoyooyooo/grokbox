@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { build } from "esbuild";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -8,6 +8,9 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { ensurePackedCli } from "../../../test/packed-cli-fixture.ts";
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const safeEnv = (home: string) => ({ PATH: process.env.PATH ?? "", HOME: home, GROKBOX_TEST_NATIVE_HOST: "0", GROKBOX_TEST_ALLOW_NATIVE: "0" });
+// The owned build has its own 60-second subprocess bound. Keep it out of the
+// five-second command scenario, matching the other packed CLI fixtures.
+beforeAll(() => { ensurePackedCli(); }, 90000);
 test("Node bundle executes both qualified reasoning backends with synthetic HTTP only", async () => {
   const home = await mkdtemp(join(tmpdir(), "reasoning-node-")), outfile = join(home, "proof.mjs");
   try {
