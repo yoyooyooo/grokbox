@@ -73,7 +73,7 @@ export function managementService(value: unknown): value is ManagementServiceVie
 
 function observationHealth(value: unknown): boolean {
   return record(value) && exact(value, ["pressureState", "droppedEvents", "rejectedBatches"])
-    && ["normal", "storage_pressure"].includes(String(value.pressureState))
+    && (value.pressureState === "normal" || value.pressureState === "storage_pressure")
     && time(value.droppedEvents) && time(value.rejectedBatches);
 }
 

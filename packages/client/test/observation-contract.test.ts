@@ -83,6 +83,7 @@ test("observation health keeps historical loss after recovery and refuses missin
   }
   for (const health of [undefined, null, {},
     { pressureState: "healthy", droppedEvents: 0, rejectedBatches: 0 },
+    { pressureState: ["normal"], droppedEvents: 0, rejectedBatches: 0 },
     { pressureState: "normal", droppedEvents: -1, rejectedBatches: 0 },
     { pressureState: "normal", droppedEvents: 0, rejectedBatches: 0.5 },
     { pressureState: "normal", droppedEvents: Number.MAX_SAFE_INTEGER + 1, rejectedBatches: 0 },
