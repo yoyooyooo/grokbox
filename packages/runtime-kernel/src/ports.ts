@@ -142,6 +142,19 @@ export type FrozenControllerCommand = Readonly<{
   fingerprint: string;
 }>;
 
+/** Bounded facts only: never exception messages, command lines or child output. */
+export type ControllerDiagnostic = {
+  code: string | null;
+  phase: string;
+  recoveryRequired: boolean;
+  guardianEnd: "active" | "released" | "expired" | "lost" | "unarmed";
+  /** null: independent CONT outcome was not yet observed, never proof of no signal. */
+  guardianContinued?: boolean | null;
+  signals?: Array<{ pid: number; start: number; signal: "SIGSTOP" | "SIGTERM"; sent: boolean }>;
+  child?: { pid: number; start: number; exitCode: number | null; signal: string | null };
+  readiness?: { expectedPid: number; gatewayPid: number | null; compiled: boolean; alive: boolean };
+};
+
 export type ControllerReceipt = {
   outcome: "preview" | "refused" | "signaled" | "partial" | "recovery-required" | "unknown" | "converged";
   reason: string | null;
@@ -149,6 +162,7 @@ export type ControllerReceipt = {
   spawned: boolean;
   guardian: boolean;
   operationId: string;
+  diagnostic?: ControllerDiagnostic;
 };
 
 export type LeaseDecision =
@@ -160,6 +174,7 @@ export type LeaseDecision =
   | { status: "corrupt" };
 
 export type OperationPrefix = {
+  diagnostic?: ControllerDiagnostic;
   signaled: boolean;
   spawned: boolean;
   guardian: boolean;
@@ -177,11 +192,11 @@ export class ControlResources extends Context.Service<ControlResources, {
   readonly settle: (input: { operationId: string; boxRoot: string; state: "running" | "unknown" | "terminal"; prefix?: OperationPrefix }) => Effect.Effect<void, unknown>;
   readonly preflight: (input: FrozenControllerCommand) => Effect.Effect<{ ok: boolean; reason: string | null; strategy?: LaunchStrategy }, unknown>;
   readonly recheck: (input: FrozenControllerCommand) => Effect.Effect<{ ok: boolean; reason: string | null }, unknown>;
-  readonly signal: (input: FrozenControllerCommand) => Effect.Effect<{ signaled: boolean }, unknown>;
-  readonly spawn: (input: FrozenControllerCommand) => Effect.Effect<{ spawned: boolean }, unknown>;
+  readonly signal: (input: FrozenControllerCommand) => Effect.Effect<{ signaled: boolean; diagnostic?: ControllerDiagnostic }, unknown>;
+  readonly spawn: (input: FrozenControllerCommand) => Effect.Effect<{ spawned: boolean; signaled?: boolean; guardian?: boolean; diagnostic?: ControllerDiagnostic }, unknown>;
   readonly armGuardian: (input: FrozenControllerCommand) => Effect.Effect<{ guardian: boolean }, unknown>;
   readonly wait: (input: FrozenControllerCommand) => Effect.Effect<void, unknown>;
-  readonly commit: (input: FrozenControllerCommand) => Effect.Effect<{ committed: boolean }, unknown>;
+  readonly commit: (input: FrozenControllerCommand) => Effect.Effect<{ committed: boolean; diagnostic?: ControllerDiagnostic }, unknown>;
 }>()("grokbox/ControlResources") {}
 
 export class ObservationRead extends Context.Service<ObservationRead, {

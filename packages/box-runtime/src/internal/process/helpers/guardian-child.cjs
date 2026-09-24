@@ -1,5 +1,5 @@
 "use strict";
-const { readFileSync, readlinkSync } = require("node:fs");
+const { readFileSync, readlinkSync, writeFileSync, renameSync, openSync, closeSync, fsyncSync } = require("node:fs");
 
 const identityPath = process.argv[2];
 if (!identityPath) process.exit(2);
@@ -29,20 +29,32 @@ function sameIdentity(expected, observed) {
   return expected.cmdline.every((value, index) => value === observed.cmdline[index]);
 }
 
-function contExact() {
+function contExact(reason) {
   if (released) return;
   released = true;
+  const continued = [];
   for (const ident of frozen) {
     try {
-      if (sameIdentity(ident, inspect(ident.pid))) process.kill(ident.pid, "SIGCONT");
+      if (sameIdentity(ident, inspect(ident.pid))) { process.kill(ident.pid, "SIGCONT"); continued.push({ pid: ident.pid, start: ident.start }); }
     } catch {
       /* gone or mismatch */
     }
   }
+  try {
+    const target = `${identityPath}.result.json`, temporary = `${target}.${process.pid}.tmp`;
+    const fd = openSync(temporary, "wx", 0o600);
+    try { writeFileSync(fd, `${JSON.stringify({ operationId: payload.operationId ?? null, reason, continued })}\n`); fsyncSync(fd); } finally { closeSync(fd); }
+    renameSync(temporary, target);
+    const directory = openSync(require("node:path").dirname(target), "r");
+    try { fsyncSync(directory); } finally { closeSync(directory); }
+  } catch { /* Receipt absence is not proof that CONT was not sent. */ }
+  process.stdout.end(`${reason}\n`, () => process.exit(0));
 }
 
+process.stdout.on("error", () => { if (released) process.exit(0); });
 process.stdout.write("armed\n");
-process.stdin.on("end", contExact);
-process.stdin.on("error", contExact);
+process.stdin.on("data", chunk => { if (String(chunk).trim() === "release") contExact("released"); });
+process.stdin.on("end", () => contExact("owner-ended"));
+process.stdin.on("error", () => contExact("lost"));
 process.stdin.resume();
-setTimeout(contExact, Math.max(1, deadlineMs));
+setTimeout(() => contExact("expired"), Math.max(1, Math.min(deadlineMs, (payload.expiresAt ?? Date.now() + deadlineMs) - Date.now())));

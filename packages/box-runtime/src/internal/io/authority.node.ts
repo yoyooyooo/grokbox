@@ -99,8 +99,8 @@ export async function readAttestation(root = ephemeralRuntimeRoot()): Promise<Co
   }
 }
 
-export async function writeAttestation(root: string, value: CoverageAttestation): Promise<void> {
-  await writeRuntimeArtifact(attestationPath(root), value);
+export async function writeAttestation(root: string, value: CoverageAttestation, beforePublish?: () => void): Promise<void> {
+  await writeRuntimeArtifact(attestationPath(root), value, beforePublish);
 }
 
 export async function clearAttestation(root = ephemeralRuntimeRoot()): Promise<void> {

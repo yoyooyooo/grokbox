@@ -6,8 +6,11 @@ const child = spawn(process.execPath, [guardian, identityPath], {
   stdio: ["pipe", "pipe", "ignore"],
   detached: true,
 });
-child.stdout?.once("data", (chunk) => {
+child.stdout?.on("data", (chunk) => {
   process.stdout.write(chunk);
 });
+process.on("SIGTERM", () => child.stdin?.end("release\n"));
+child.stdin?.on("error", () => {});
+child.on("exit", () => process.exit(0));
 child.unref();
 setInterval(() => {}, 1000);

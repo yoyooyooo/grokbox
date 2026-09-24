@@ -8,6 +8,7 @@ import { sha256Bytes, sha256Text, canonicalJson } from "@grokbox/runtime-kernel/
 import {
   ControlResources,
   type ControllerReceipt,
+  type ControllerDiagnostic,
   type ControllerRequest,
   type FrozenControllerCommand,
   type LeaseDecision,
@@ -35,11 +36,12 @@ import {
 } from "../process/h3-live.ts";
 import { decideH3LaunchStrategy } from "../process/launch-strategy.ts";
 import { fillMissingLaunchEnv, IDENTITY_LAUNCH_ALLOWLIST } from "../process/launch.node.ts";
-import { linuxProcessPort, roleOf, readNamedProcEnv } from "../process/linux.node.ts";
+import { linuxProcessPort, roleOf, readNamedProcEnv, strictLinuxObservationPort, hasRelevantPreloadStrict } from "../process/linux.node.ts";
 import { proveStableOfficialState, type RoleClassifier } from "../process/official-chain.ts";
 import type { ProcessIdentity, ProcessPort } from "../process/process-port.ts";
 import { resolveNodeRequireablePreload } from "../process/helpers/runtime-helpers.ts";
 import { runTransientAdoptOperation, writeAdoptOpState, readAdoptOpState } from "../process/transient-adopt.ts";
+import { prepareOriginalRestoration, type RestorationPorts } from "../process/adopt-restoration.ts";
 import type { IdentityMarker, IdentityOpResult } from "../process/identity-op.ts";
 import { probeModeldHealth } from "../wire/modeld-probe.node.ts";
 import { isDeepStrictEqual } from "node:util";
@@ -97,7 +99,38 @@ function parsePrefix(value: unknown): OperationPrefix | undefined {
   if (typeof row.signaled !== "boolean" || typeof row.spawned !== "boolean" || typeof row.guardian !== "boolean") {
     return undefined;
   }
-  return { signaled: row.signaled, spawned: row.spawned, guardian: row.guardian };
+  let diagnostic: ControllerDiagnostic | undefined;
+  if (row.diagnostic !== undefined) {
+    const value = row.diagnostic as ControllerDiagnostic;
+    const natural = (v: unknown): v is number => Number.isSafeInteger(v) && Number(v) >= 0;
+    const code = (v: unknown): v is string => typeof v === "string" && /^[a-z][a-z0-9_-]{0,79}$/.test(v);
+    if (!value || typeof value !== "object" || !(value.code === null || code(value.code)) || !code(value.phase)
+      || typeof value.recoveryRequired !== "boolean" || !["active", "released", "expired", "lost", "unarmed"].includes(value.guardianEnd)) return undefined;
+    diagnostic = { code: value.code, phase: value.phase, recoveryRequired: value.recoveryRequired, guardianEnd: value.guardianEnd };
+    if (value.guardianContinued !== undefined) {
+      if (value.guardianContinued !== null && typeof value.guardianContinued !== "boolean") return undefined;
+      diagnostic.guardianContinued = value.guardianContinued;
+    }
+    if (value.child !== undefined) {
+      const child = value.child;
+      if (!child || !natural(child.pid) || child.pid === 0 || !natural(child.start)
+        || !(child.exitCode === null || natural(child.exitCode))
+        || !(child.signal === null || typeof child.signal === "string" && /^SIG[A-Z]{1,12}$/.test(child.signal))) return undefined;
+      diagnostic.child = { pid: child.pid, start: child.start, exitCode: child.exitCode, signal: child.signal };
+    }
+    if (value.readiness !== undefined) {
+      const ready = value.readiness;
+      if (!ready || !natural(ready.expectedPid) || !(ready.gatewayPid === null || natural(ready.gatewayPid))
+        || typeof ready.compiled !== "boolean" || typeof ready.alive !== "boolean") return undefined;
+      diagnostic.readiness = { expectedPid: ready.expectedPid, gatewayPid: ready.gatewayPid, compiled: ready.compiled, alive: ready.alive };
+    }
+    if (value.signals !== undefined) {
+      if (!Array.isArray(value.signals) || value.signals.length > 8 || value.signals.some(event => !event || !natural(event.pid)
+        || !natural(event.start) || !["SIGSTOP", "SIGTERM"].includes(event.signal) || typeof event.sent !== "boolean")) return undefined;
+      diagnostic.signals = value.signals.map(event => ({ pid: event.pid, start: event.start, signal: event.signal, sent: event.sent }));
+    }
+  }
+  return { signaled: row.signaled, spawned: row.spawned, guardian: row.guardian, ...(diagnostic ? { diagnostic } : {}) };
 }
 
 function parseStore(raw: string): { ok: true; store: StoreFile } | { ok: false } {
@@ -115,7 +148,7 @@ function parseStore(raw: string): { ok: true; store: StoreFile } | { ok: false }
     if (typeof row.fingerprint !== "string" || row.fingerprint.length === 0) return { ok: false };
     if (typeof row.state !== "string" || !RECORD_STATES.has(row.state)) return { ok: false };
     const leaseOwner = row.leaseOwner === undefined ? undefined : parseOperationLeaseOwner(row.leaseOwner);
-    if (leaseOwner === null) return { ok: false };
+    if (leaseOwner === null || row.prefix !== undefined && !parsePrefix(row.prefix)) return { ok: false };
     store[id] = {
       fingerprint: row.fingerprint,
       state: row.state as OperationRecord["state"],
@@ -308,11 +341,12 @@ export function inspectControllerFacts(
   }
 }
 
-function emptyAdoptResult(code: string): IdentityOpResult {
+function emptyAdoptResult(code: string, phase = "preflight"): IdentityOpResult {
   return {
     ok: false,
     recoveryRequired: true,
     code,
+    diagnostic: { code, phase, recoveryRequired: true, guardianEnd: "unarmed", guardianContinued: false },
     signaled: false,
     diskShaBefore: "",
     diskShaAfter: "",
@@ -416,7 +450,8 @@ export async function commitObservedAdopt(input: {
   const lock = await acquireOperationLease(operationLockPath(input.ephemeralRoot), input.operationId);
   if (!lock.ok) return emptyAdoptResult("lock-conflict");
   let committedAttestation: CoverageAttestation | undefined;
-  const fail = (code: string): IdentityOpResult => ({ ...emptyAdoptResult(code),
+  let phase = "observed-adopt-preflight";
+  const fail = (code: string): IdentityOpResult => ({ ...emptyAdoptResult(code, phase),
     ...(committedAttestation ? { committedAttestation } : {}) });
   try {
     const snapshot = input.observe();
@@ -447,6 +482,7 @@ export async function commitObservedAdopt(input: {
       host: { pid: captured.host.pid, uid: captured.host.uid, start: captured.host.start,
         exe: captured.host.exe, cmdline: captured.host.cmdline },
     };
+    phase = "commit-attestation";
     await writeAdoptOpState(input.ephemeralRoot, journal);
     const atCommit = await recheck(); if (atCommit) return fail(atCommit);
     let persistFailed = false;
@@ -457,6 +493,7 @@ export async function commitObservedAdopt(input: {
     committedAttestation = record!;
     if (persistFailed) return fail("attestation-persist-failed");
     const afterCommit = await recheck(); if (afterCommit) return fail(afterCommit);
+    phase = "attested";
     const done = { ...journal, phase: "attested" as const };
     await writeAdoptOpState(input.ephemeralRoot, done);
     if (!isDeepStrictEqual(await readAdoptOpState(input.ephemeralRoot), done)) return fail("journal-uncommitted");
@@ -547,8 +584,10 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
     diskSha: liveDiskSha,
     ephemeralRoot,
     operationId: command.operationId,
-    readMarker: () => null,
+    readMarker: () => { const marker = readMarkerFile(markerPath); return marker?.operationId === command.operationId ? marker : null; },
     waitGone: ports.waitHostGone,
+    childEvidence: ports.childEvidence,
+    tempSpawned: ports.tempSpawned,
     waitReady: ports.waitReady,
     prepareTempLaunch: async (admitted) => {
       const profilePath = await pinLaunchProfile(ephemeralRoot, admitted);
@@ -572,26 +611,26 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
     adoptProveMs: ports.adoptProveMs,
     armGuardian: async (frozen) => {
       const guardian = await spawnIndependentGuardian({
-        frozen,
+        operationId: command.operationId, frozen,
         deadlineMs: ports.guardianDeadlineMs ?? 8000,
         stateDir: ephemeralRoot,
         execPath,
       });
       if (!guardian.armed) return { ok: false };
-      return { ok: true, release: guardian.release };
+      return { ok: true, release: guardian.release, signal: guardian.signal, end: guardian.end, continued: guardian.continued, dispose: guardian.dispose };
     },
     expectedMode,
     hasGrokboxPreload: ports.hasGrokboxPreload,
-    modeldReady: () => probeModeldHealth(ephemeralRoot),
+    modeldReady: signal => probeModeldHealth(ephemeralRoot, 80, signal),
     now: () => Date.now(),
   });
-  if (spawned.ok) return spawned;
-  const after = await tryCommitObserved();
-  if (after) return { ...after, signaled: spawned.signaled || after.signaled };
   return spawned;
 }
 
-export function liveControlResourcesLayer(): Layer.Layer<ControlResources> {
+export function liveControlResourcesLayer(ports: {
+  adopt: (command: FrozenControllerCommand) => Promise<IdentityOpResult>;
+  inspect: (boxRoot: string) => ReturnType<typeof inspectControllerFacts>;
+} = { adopt: applyLiveControllerAdopt, inspect: boxRoot => inspectControllerFacts(boxRoot, defaultLiveAdmissionPorts()) }): Layer.Layer<ControlResources> {
   const operationAdoptions = new Map<string, IdentityOpResult>();
   return Layer.succeed(ControlResources, {
     lease: (input: FrozenControllerCommand) => Effect.gen(function* () {
@@ -654,36 +693,36 @@ export function liveControlResourcesLayer(): Layer.Layer<ControlResources> {
       },
       catch: (error) => error,
     }),
-    preflight: (input: FrozenControllerCommand) => Effect.sync(() => inspectControllerFacts(input.boxRoot, defaultLiveAdmissionPorts())),
-    recheck: (input: FrozenControllerCommand) => Effect.sync(() => inspectControllerFacts(input.boxRoot, defaultLiveAdmissionPorts())),
+    preflight: (input: FrozenControllerCommand) => Effect.sync(() => ports.inspect(input.boxRoot)),
+    recheck: (input: FrozenControllerCommand) => Effect.sync(() => ports.inspect(input.boxRoot)),
     signal: (input: FrozenControllerCommand) => Effect.tryPromise({
       try: async () => {
         liveMutationAttempts.signal += 1;
-        const operationAdopt = await applyLiveControllerAdopt(input);
+        const operationAdopt = await ports.adopt(input);
         operationAdoptions.set(input.operationId, operationAdopt);
-        return { signaled: operationAdopt.signaled === true };
+        return { signaled: operationAdopt.signaled === true, diagnostic: operationAdopt.diagnostic };
       },
       catch: (error) => error,
     }),
     spawn: (input: FrozenControllerCommand) => Effect.tryPromise({
       try: async () => {
         liveMutationAttempts.spawn += 1;
-        const operationAdopt = await applyLiveControllerAdopt(input);
+        const operationAdopt = await ports.adopt(input);
         operationAdoptions.set(input.operationId, operationAdopt);
-        return { spawned: operationAdopt.signaled === true };
+        return { spawned: operationAdopt.spawned === true, signaled: operationAdopt.signaled, guardian: operationAdopt.guardian === true, diagnostic: operationAdopt.diagnostic };
       },
       catch: (error) => error,
     }),
     armGuardian: (input: FrozenControllerCommand) => Effect.sync(() => {
       liveMutationAttempts.guardian += 1;
       const operationAdopt = operationAdoptions.get(input.operationId);
-      return { guardian: operationAdopt?.ok === true || operationAdopt?.signaled === true };
+      return { guardian: operationAdopt?.guardian === true };
     }),
     wait: (_input: FrozenControllerCommand) => Effect.void,
     commit: (input: FrozenControllerCommand) => Effect.sync(() => {
       const operationAdopt = operationAdoptions.get(input.operationId);
       operationAdoptions.delete(input.operationId);
-      return { committed: operationAdopt?.ok === true };
+      return { committed: operationAdopt?.ok === true, diagnostic: operationAdopt?.diagnostic };
     }),
   });
 }
@@ -696,7 +735,8 @@ export async function startControlOperation(request: ControllerRequest): Promise
 
 export type OperationRecoveryReport = {
   process: "operation-recovery";
-  outcome: "clear" | "ready" | "blocked" | "recovered";
+  restoration?: ReturnType<typeof prepareOriginalRestoration>["receipt"];
+  outcome: "clear" | "ready" | "blocked" | "recovered" | "restored";
   reason: string | null;
   locks: Array<OperationLeaseObservation & { name: "controller" | "identity" }>;
   operations: { running: number; unknown: number; terminal: number };
@@ -741,7 +781,7 @@ async function operationRecoveryFacts(boxRoot: string, runRoot: string) {
  * remain owned by this Effect Scope. A partial metadata commit leaves unknown,
  * never a fabricated attestation or permission to replay business work.
  */
-export async function recoverControllerOperationState(input: { boxRoot: string; ephemeralRoot?: string; confirm?: boolean; signal?: AbortSignal }): Promise<OperationRecoveryReport> {
+export async function recoverControllerOperationState(input: { boxRoot: string; ephemeralRoot?: string; confirm?: boolean; signal?: AbortSignal; restoreOperation?: string }, restorationPorts?: RestorationPorts): Promise<OperationRecoveryReport> {
   const runRoot = input.ephemeralRoot ?? ephemeralRuntimeRoot();
   if (!isAbsolute(input.boxRoot) || !isAbsolute(runRoot)) throw new BoxRuntimeError("invalid_usage", "Operation recovery requires absolute local roots.");
   // acquireRelease deliberately masks interruption until resource ownership is
@@ -749,7 +789,10 @@ export async function recoverControllerOperationState(input: { boxRoot: string; 
   if (input.signal?.aborted) throw new BoxRuntimeError("invalid_usage", "Operation metadata recovery was cancelled before inspection; no recovery was attempted.",
     { next: "grokbox runtime operation-recovery --json" });
   const program = Effect.gen(function* () {
-    if (input.confirm !== true) return (yield* Effect.tryPromise(() => operationRecoveryFacts(input.boxRoot, runRoot))).report;
+    if (input.confirm !== true) {
+      const facts = yield* Effect.tryPromise(() => operationRecoveryFacts(input.boxRoot, runRoot));
+      return input.restoreOperation ? { ...facts.report, outcome: "blocked" as const, reason: "restoration-confirm-required" } : facts.report;
+    }
     const paths = [lockPath(input.boxRoot), operationLockPath(runRoot)];
     const gate = yield* Effect.acquireRelease(
       Effect.tryPromise(() => acquireOperationRecoveryGates(paths)),
@@ -757,6 +800,27 @@ export async function recoverControllerOperationState(input: { boxRoot: string; 
     );
     const facts = yield* Effect.tryPromise(() => operationRecoveryFacts(input.boxRoot, runRoot));
     if (!gate) return { ...facts.report, outcome: "blocked" as const, reason: "operation_busy", next: "grokbox runtime status --json" };
+    if (input.restoreOperation) {
+      if (facts.report.reason || !facts.loaded.ok) return facts.report;
+      const row = facts.loaded.store[input.restoreOperation];
+      if (!row || row.state !== "unknown" || !row.leaseOwner
+        || (yield* Effect.tryPromise(() => operationOwnerState(row.leaseOwner!))) !== "stale") {
+        return { ...facts.report, outcome: "blocked" as const, reason: "restoration-original-owner-unproven" };
+      }
+      const prepared = yield* Effect.result(Effect.try(() => prepareOriginalRestoration({
+        operationId: input.restoreOperation!, runRoot, storePath: storePath(input.boxRoot), expectedOperation: row,
+        ports: restorationPorts ?? { processes: strictLinuxObservationPort(), classify: roleOf,
+          gatewayPid: () => readGatewayPid(), hasRelevantPreload: hasRelevantPreloadStrict },
+      })));
+      if (prepared._tag === "Failure") return { ...facts.report, outcome: "blocked" as const, reason: "restoration-evidence-unproven" };
+      return yield* Effect.uninterruptible(Effect.tryPromise(async () => {
+        for (const snapshot of facts.snapshots) await recheckOperationLease(snapshot);
+        // No lease cleanup, store rewrite or new business operation. Preserve
+        // every original byte and unknown even after physical restoration.
+        const restoration = prepared.success.publish();
+        return { ...facts.report, outcome: "restored" as const, restoration, next: "grokbox runtime status --json" };
+      }));
+    }
     if (facts.report.outcome !== "ready" || !facts.loaded.ok) return facts.report;
     const store = facts.loaded.store;
     // Only the short commit/cleanup boundary is uninterruptible: the gate must

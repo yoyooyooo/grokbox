@@ -28,6 +28,10 @@ test("operation recovery preview is read-only and remains box-local", async () =
     expect(preview.code, preview.stderr).toBe(0);
     expect(JSON.parse(preview.stdout).data).toMatchObject({ outcome: "clear", signaled: false, adopted: false, replayAuthorized: false });
     expect(await readdir(deps.boxRuntimeRoot)).toEqual([]);
+    const restoration = await captureCli(["runtime", "operation-recovery", "--restore-operation", "original", "--json"], deps);
+    expect(restoration.code, restoration.stderr).toBe(0);
+    expect(JSON.parse(restoration.stdout).data).toMatchObject({ outcome: "blocked", reason: "restoration-confirm-required", adopted: false, replayAuthorized: false });
+    expect(await readdir(deps.boxRuntimeRoot)).toEqual([]);
     const remote = await captureCli(["runtime", "operation-recovery", "--profile", "remote", "--confirm", "--json"], deps);
     expect(remote.code).toBe(2);
     expect(await readdir(deps.boxRuntimeRoot)).toEqual([]);

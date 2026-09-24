@@ -12,6 +12,7 @@ function replay(changes: Partial<Identity> = {}) {
   let deadline: (() => void) | undefined;
   const signals: Array<[number, string]> = [];
   const writes: string[] = [];
+  let exits = 0;
   const fs = {
     readFileSync(path: string) {
       if (path === "/owned/identity.json") return JSON.stringify({ frozen: [expected], deadlineMs: 8000 });
@@ -32,8 +33,8 @@ function replay(changes: Partial<Identity> = {}) {
   runInNewContext(source, {
     require(name: string) { if (name !== "node:fs") throw new Error("unqualified-import"); return fs; },
     process: { argv: ["node", "owned-guardian", "/owned/identity.json"],
-      exit() { throw new Error("unexpected-exit"); }, kill(pid: number, signal: string) { signals.push([pid, signal]); },
-      stdout: { write(value: string) { writes.push(value); } },
+      exit(code: number) { expect(code).toBe(0); exits++; }, kill(pid: number, signal: string) { signals.push([pid, signal]); },
+      stdout: { write(value: string) { writes.push(value); }, on() {}, end(value: string, done: () => void) { writes.push(value); done(); } },
       stdin: { on(event: string, callback: () => void) { stdin.set(event, callback); }, resume() {} },
     },
     setTimeout(callback: () => void, timeout: number) { expect(timeout).toBe(8000); deadline = callback; },
@@ -43,6 +44,7 @@ function replay(changes: Partial<Identity> = {}) {
     const callback = kind === "deadline" ? deadline : stdin.get(kind);
     if (!callback) throw new Error("missing-release-handler");
     callback();
+    expect(exits).toBe(1);
   } };
 }
 

@@ -410,10 +410,13 @@ export const RUNTIME_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["runtime", "operation-recovery"],
-    usage: "grokbox runtime operation-recovery [--confirm]",
+    usage: "grokbox runtime operation-recovery [--confirm] [--restore-operation <id>]",
     summary: "Inspect controller/identity leases; explicitly recover proven stale metadata without Host signals or replay.",
     arguments: [],
-    options: options([{ flags: "--confirm", description: "Recover only proven stale operation metadata under both gates; does not adopt or replay" }]),
+    options: options([
+      { flags: "--confirm", description: "Recover proven stale metadata or publish an original-operation physical restoration receipt; does not adopt or replay" },
+      { flags: "--restore-operation <id>", description: "With --confirm, attest observed physical restoration for this exact failed operation; preserve all unknowns and original evidence" },
+    ]),
     stdin: "none", table: false, timeout: false, destructive: false, gateway: false,
     streaming: false, profile: false, localOnly: true,
   },

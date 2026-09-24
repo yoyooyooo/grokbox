@@ -1,3 +1,4 @@
+import type { ControllerDiagnostic } from "@grokbox/runtime-kernel/ports";
 import { operationLockPath, acquireOperationLease } from "../io/operation-lease.node.ts";
 import { findUniqueOfficialChain, loadReviewedProfile, type RoleClassifier } from "./official-chain.ts";
 import {
@@ -29,6 +30,9 @@ export type IdentityMarker = {
 };
 
 export type IdentityOpResult = {
+  spawned?: boolean;
+  guardian?: boolean;
+  diagnostic?: ControllerDiagnostic;
   ok: boolean;
   recoveryRequired: boolean;
   code?: string;

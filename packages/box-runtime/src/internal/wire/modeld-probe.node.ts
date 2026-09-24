@@ -21,7 +21,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Finite read-only probe. Does not create, unlink or repair a socket. */
-async function probe(runRoot: string, method: "health" | "service-info" | "execution-status", timeoutMs: number, version: 4 | 5 | 6 | 7 | typeof WIRE_VERSION = WIRE_VERSION): Promise<Record<string, unknown> | null> {
+async function probe(runRoot: string, method: "health" | "service-info" | "execution-status", timeoutMs: number, version: 4 | 5 | 6 | 7 | typeof WIRE_VERSION = WIRE_VERSION, signal?: AbortSignal): Promise<Record<string, unknown> | null> {
+  if (signal?.aborted) return null;
   return await new Promise((resolve) => {
     const socket = createConnection({ path: modeldSocketPath(runRoot) });
     let buf: Buffer = Buffer.alloc(0);
@@ -31,9 +32,12 @@ async function probe(runRoot: string, method: "health" | "service-info" | "execu
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener("abort", aborted);
       socket.destroy();
       resolve(value);
     };
+    const aborted = () => finish(null);
+    signal?.addEventListener("abort", aborted, { once: true });
     socket.on("connect", () => {
       try { socket.write(encodeModeldFrame({ method, version })); }
       catch { finish(null); }
@@ -59,8 +63,8 @@ async function probe(runRoot: string, method: "health" | "service-info" | "execu
 }
 
 /** Health alone intentionally makes no claim about configuration scope. */
-export async function probeModeldHealth(runRoot: string, timeoutMs = 80): Promise<boolean> {
-  return (await probe(runRoot, "health", timeoutMs)) !== null;
+export async function probeModeldHealth(runRoot: string, timeoutMs = 80, signal?: AbortSignal): Promise<boolean> {
+  return (await probe(runRoot, "health", timeoutMs, WIRE_VERSION, signal)) !== null;
 }
 
 export async function probeModeldIdentity(runRoot: string, timeoutMs = 200): Promise<{ rootId: string; generation: string } | null> {

@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -38,6 +39,7 @@ export type AdoptOpState = {
   phase?: AdoptOpPhase;
   operationId?: string;
   compile?: CompileReceipt;
+  failure?: IdentityOpResult["diagnostic"];
   tempSupervisor: ProcessIdentity | null;
   adoptingSupervisor: ProcessIdentity | null;
   host: StableProcessIdentity | null;
@@ -68,35 +70,6 @@ export function adoptJournalNeedsRecovery(state: AdoptOpState | null): boolean {
   if (state.phase === "recovery-required") return true;
   if (state.phase && !DONE_PHASES.has(state.phase)) return true;
   return false;
-}
-
-/** Complete a stuck journal when its host is gone, no temp owner remains, and a unique official chain is gateway-proven. */
-export function settleStaleAdoptJournal(input: {
-  state: AdoptOpState | null;
-  inspect: (pid: number) => ProcessIdentity | null;
-  uniqueHost: ProcessIdentity | null;
-  uniqueSupervisor: ProcessIdentity | null;
-  gatewayPid: number | null;
-}): AdoptOpState | null {
-  const state = input.state;
-  if (!state || !adoptJournalNeedsRecovery(state) || state.phase === "commit-attestation") return state;
-  if (state.tempSupervisor) {
-    const temp = input.inspect(state.tempSupervisor.pid);
-    if (temp && temp.start === state.tempSupervisor.start) return state;
-  }
-  if (state.host) {
-    const live = input.inspect(state.host.pid);
-    if (live && live.start === state.host.start) return state;
-  }
-  if (!input.uniqueHost || !input.uniqueSupervisor) return state;
-  if (input.gatewayPid !== input.uniqueHost.pid) return state;
-  return {
-    launchMode: "transient-adopt",
-    phase: "direct-official",
-    tempSupervisor: null,
-    adoptingSupervisor: input.uniqueSupervisor,
-    host: stableOf(input.uniqueHost),
-  };
 }
 
 function stableOf(ident: ProcessIdentity): StableProcessIdentity {
@@ -180,18 +153,21 @@ export type TransientAdoptContext = {
   ephemeralRoot: string;
   operationId: string;
   readMarker: () => IdentityMarker | null;
-  waitGone: (old: ProcessIdentity) => Promise<boolean>;
-  waitReady: (hostPid: number) => Promise<IdentityMarker | null>;
+  waitGone: (old: ProcessIdentity, signal?: AbortSignal) => Promise<boolean>;
+  waitReady: (hostPid: number, signal?: AbortSignal) => Promise<IdentityMarker | null>;
   prepareTempLaunch?: (profile: PatchProfile) => Promise<void>;
   /** Coordinator-supplied admission recheck under the operation lock, before arming a guardian. */
   beforeSignal?: BeforeAdoptSignal;
-  spawnTempSupervisor: () => Promise<ProcessIdentity | null>;
-  waitNewHost: (oldHostPid: number) => Promise<ProcessIdentity | null>;
+  spawnTempSupervisor: (signal?: AbortSignal) => Promise<ProcessIdentity | null>;
+  waitNewHost: (oldHostPid: number, signal?: AbortSignal) => Promise<ProcessIdentity | null>;
   readGatewayPid: () => number | null;
-  armGuardian: (frozen: ProcessIdentity[]) => Promise<{ ok: true; release: () => void } | { ok: false }>;
+  armGuardian: (frozen: ProcessIdentity[]) => Promise<{ ok: true; release: () => void;
+    signal?: AbortSignal; end?: () => "active" | "released" | "expired" | "lost"; dispose?: () => void; continued?: () => boolean | null } | { ok: false }>;
+  tempSpawned?: () => boolean;
+  childEvidence?: () => NonNullable<IdentityOpResult["diagnostic"]>["child"] | undefined;
   /** Storage port only: the operation owns the marker-derived value and canonical read-back. */
-  persistAttestation?: (value: CoverageAttestation) => Promise<void>;
-  modeldReady?: () => Promise<boolean>;
+  persistAttestation?: (value: CoverageAttestation, beforePublish: () => void) => Promise<void>;
+  modeldReady?: (signal?: AbortSignal) => Promise<boolean>;
   hasGrokboxPreload: (ident: ProcessIdentity) => boolean;
   now: () => number;
   adoptProveMs?: number;
@@ -202,21 +178,56 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
   const shaBefore = ctx.diskSha();
   let signaled = false;
   let complete = false;
+  let spawned = false, guardianArmed = false;
+  let phase: AdoptOpPhase = "preflight";
+  let lifetime: AbortSignal | undefined;
+  let guardianEnd: () => "active" | "released" | "expired" | "lost" | "unarmed" = () => "unarmed";
+  let dispose: (() => void) | undefined;
+  let guardianContinued: () => boolean | null = () => null;
+  let ownedTemp: ProcessIdentity | null = null, ownedHost: ProcessIdentity | null = null;
+  let lastFailure: IdentityOpResult["diagnostic"];
+  const signals: NonNullable<NonNullable<IdentityOpResult["diagnostic"]>["signals"]> = [];
+  const reap = (temp: ProcessIdentity | null, host: ProcessIdentity | null) =>
+    reapOperationOwned(ctx, temp, host, lifetime, event => { if (signals.length < 8) signals.push(event); });
+  const signalOwned = (identity: ProcessIdentity, signal: "SIGSTOP" | "SIGTERM") => {
+    assertOwned();
+    const result = signalIfMatch(ctx.processes, identity, signal);
+    if (signals.length < 8) signals.push({ pid: identity.pid, start: identity.start, signal, sent: result.ok });
+    if (result.ok) signaled = true;
+    return result;
+  };
+  const assertOwned = () => { guardianEnd(); if (lifetime?.aborted) throw new Error("guardian-ownership-ended"); };
+  const checkpoint = async (root: string, state: AdoptOpState) => {
+    assertOwned();
+    phase = state.phase!;
+    await writeAdoptOpState(root, state);
+    assertOwned();
+  };
   let committedAttestation: CoverageAttestation | undefined;
   const profile = structuredClone(ctx.reviewedProfile);
   const expectedCompile = expectedCompileReceipt(profile);
-  const fail = (code: string, didSignal: boolean, recoveryRequired = true): IdentityOpResult => ({
-    ok: false,
-    recoveryRequired,
-    code,
-    signaled: signaled || didSignal,
-    ...(committedAttestation ? { committedAttestation } : {}),
-    diskShaBefore: shaBefore,
-    diskShaAfter: failureDiskSha(ctx.diskSha),
-    census: failureCensus(ctx.processes, ctx.classify),
-    coverage: signaled || didSignal ? "window-open" : "none",
-    launchMode: "transient-adopt",
-  });
+  const fail = (code: string, didSignal: boolean, recoveryRequired = true): IdentityOpResult => {
+    spawned ||= ctx.tempSpawned?.() === true;
+    let marker: IdentityMarker | null = null;
+    let child: NonNullable<IdentityOpResult["diagnostic"]>["child"];
+    try { marker = ctx.readMarker(); child = ctx.childEvidence?.(); } catch { /* Evidence remains absent. */ }
+    const expectedPid = ownedHost?.pid ?? child?.pid;
+    const end = guardianEnd();
+    lastFailure = {
+      code: lifetime?.aborted ? "guardian-ownership-ended" : code,
+      phase, recoveryRequired, guardianEnd: end, guardianContinued: guardianContinued(), signals: [...signals],
+      ...(child ? { child } : {}),
+      ...(expectedPid ? { readiness: { expectedPid, gatewayPid: ctx.readGatewayPid(),
+        compiled: marker?.operationId === ctx.operationId && marker.pid === expectedPid && marker.compiled === true,
+        alive: !!ctx.processes.inspect(expectedPid) && (!ownedHost || stableIdentitiesMatch(ownedHost, ctx.processes.inspect(expectedPid))) } } : {}),
+    };
+    return { ok: false, recoveryRequired, code: lastFailure.code!, signaled: signaled || didSignal || lastFailure.guardianContinued === true,
+      spawned, guardian: guardianArmed, diagnostic: lastFailure,
+      ...(committedAttestation ? { committedAttestation } : {}),
+      diskShaBefore: shaBefore, diskShaAfter: failureDiskSha(ctx.diskSha),
+      census: failureCensus(ctx.processes, ctx.classify), coverage: signaled || didSignal ? "window-open" : "none",
+      launchMode: "transient-adopt" };
+  };
 
   const lock = await acquireOperationLease(operationLockPath(ctx.ephemeralRoot), ctx.operationId);
   if (!lock.ok) return fail("lock-conflict", false, false);
@@ -245,24 +256,29 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
     } catch {
       return fail("launch-preparation-failed", false, false);
     }
-    await writeAdoptOpState(ctx.ephemeralRoot, {
+    await checkpoint(ctx.ephemeralRoot, {
       launchMode: "transient-adopt", phase: "wrapper-stop", operationId: ctx.operationId,
       tempSupervisor: null, adoptingSupervisor: null, host: stableOf(host),
     });
     const guardian = await ctx.armGuardian([wrapper]);
     if (!guardian.ok) return fail("guardian-not-armed", false, false);
+    guardianArmed = true;
+    lifetime = guardian.signal;
+    guardianEnd = guardian.end ?? (() => released ? "released" : "active");
+    dispose = guardian.dispose;
+    guardianContinued = guardian.continued ?? (() => null);
     const started = ctx.now();
     let failureCode: string | undefined;
     let released = false;
     const release = () => {
       if (released) return;
       released = true;
-      signaled = true; // Guardian release can emit CONT, including a failed STOP attempt.
       guardian.release();
     };
 
     try {
-      if (!signalIfMatch(ctx.processes, wrapper, "SIGSTOP").ok) {
+      assertOwned();
+      if (!signalOwned(wrapper, "SIGSTOP").ok) {
         release();
         return fail("identity-mismatch", false, true);
       }
@@ -271,7 +287,7 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         release();
         return fail("disk-sha-changed", true, true);
       }
-      await writeAdoptOpState(ctx.ephemeralRoot, {
+      await checkpoint(ctx.ephemeralRoot, {
         launchMode: "transient-adopt",
         phase: "term-old-host",
         operationId: ctx.operationId,
@@ -279,11 +295,11 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         adoptingSupervisor: null,
         host: stableOf(host),
       });
-      if (!signalIfMatch(ctx.processes, host, "SIGTERM").ok) {
+      if (!signalOwned(host, "SIGTERM").ok) {
         release();
         return fail("identity-mismatch", true, true);
       }
-      await writeAdoptOpState(ctx.ephemeralRoot, {
+      await checkpoint(ctx.ephemeralRoot, {
         launchMode: "transient-adopt",
         phase: "term-old-supervisor",
         operationId: ctx.operationId,
@@ -291,19 +307,19 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         adoptingSupervisor: supervisor,
         host: stableOf(host),
       });
-      if (!signalIfMatch(ctx.processes, supervisor, "SIGTERM").ok) {
+      if (!signalOwned(supervisor, "SIGTERM").ok) {
         release();
         return fail("identity-mismatch", true, true);
       }
-      if (!(await ctx.waitGone(host))) {
+      if (!(await ctx.waitGone(host, lifetime))) {
         release();
         return fail("host-still-alive", true, true);
       }
-      if (!(await ctx.waitGone(supervisor))) {
+      if (!(await ctx.waitGone(supervisor, lifetime))) {
         release();
         return fail("supervisor-still-alive", true, true);
       }
-      await writeAdoptOpState(ctx.ephemeralRoot, {
+      await checkpoint(ctx.ephemeralRoot, {
         launchMode: "transient-adopt",
         phase: "spawn-temp",
         operationId: ctx.operationId,
@@ -311,12 +327,16 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         adoptingSupervisor: null,
         host: null,
       });
-      const temp = await ctx.spawnTempSupervisor();
+      assertOwned();
+      const temp = await ctx.spawnTempSupervisor(lifetime);
+      ownedTemp = temp;
+      spawned = temp != null || ctx.tempSpawned?.() === true;
+      assertOwned();
       if (!temp) {
         release();
         return fail("temp-spawn-failed", true, true);
       }
-      await writeAdoptOpState(ctx.ephemeralRoot, {
+      await checkpoint(ctx.ephemeralRoot, {
         launchMode: "transient-adopt",
         phase: "spawn-temp",
         operationId: ctx.operationId,
@@ -324,22 +344,25 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         adoptingSupervisor: null,
         host: null,
       });
-      await ctx.waitNewHost(host.pid);
+      await ctx.waitNewHost(host.pid, lifetime);
+      assertOwned();
       const hosts = ctx.processes.list().filter((ident) => ctx.classify(ident) === "host" && ident.pid !== host.pid);
       const owned = hosts.filter((ident) => ident.ppid === temp.pid);
       const competitors = hosts.filter((ident) => ident.ppid !== temp.pid);
       if (competitors.length > 0) {
-        await reapOperationOwned(ctx, temp, owned[0] ?? null);
+        await reap(temp, owned[0] ?? null);
         release();
         return fail("competitor-host", true, true);
       }
       const replacement = owned[0];
+      ownedHost = replacement ?? null;
       if (!replacement) {
-        await reapOperationOwned(ctx, temp, null);
+        await reap(temp, null);
         release();
         return fail("relaunch-failed", true, true);
       }
-      const marker = structuredClone(await ctx.waitReady(replacement.pid));
+      const marker = structuredClone(await ctx.waitReady(replacement.pid, lifetime));
+      assertOwned();
       const expectedMode = ctx.expectedMode ?? "identity";
       if (
         !marker ||
@@ -352,12 +375,12 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         marker.modeld !== false ||
         !compileReceiptAgrees(marker.compile, expectedCompile)
       ) {
-        await reapOperationOwned(ctx, temp, replacement);
+        await reap(temp, replacement);
         release();
         return fail("marker-mismatch", true, true);
       }
       const stableHost = stableOf(replacement);
-      await writeAdoptOpState(ctx.ephemeralRoot, {
+      await checkpoint(ctx.ephemeralRoot, {
         launchMode: "transient-adopt",
         phase: "temp-host-ready",
         operationId: ctx.operationId,
@@ -366,17 +389,17 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         host: stableHost,
       });
       const handoffMs = ctx.adoptProveMs ?? 8000;
-      if (!(await waitHandoffReady(ctx, replacement.pid, handoffMs))) {
-        await reapOperationOwned(ctx, temp, replacement);
+      if (!(await waitHandoffReady(ctx, replacement.pid, handoffMs, lifetime))) {
+        await reap(temp, replacement);
         release();
         return fail("gateway-unproven", true, true);
       }
       if (ctx.diskSha() !== shaBefore) {
-        await reapOperationOwned(ctx, temp, replacement);
+        await reap(temp, replacement);
         release();
         return fail("disk-sha-changed", true, true);
       }
-      await writeAdoptOpState(ctx.ephemeralRoot, {
+      await checkpoint(ctx.ephemeralRoot, {
         launchMode: "transient-adopt",
         phase: "term-temp",
         operationId: ctx.operationId,
@@ -384,13 +407,13 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         adoptingSupervisor: null,
         host: stableHost,
       });
-      if (!signalIfMatch(ctx.processes, temp, "SIGTERM").ok) {
-        await reapOperationOwned(ctx, temp, replacement);
+      if (!signalOwned(temp, "SIGTERM").ok) {
+        await reap(temp, replacement);
         release();
         return fail("identity-mismatch", true, true);
       }
-      if (!(await ctx.waitGone(temp))) {
-        await reapOperationOwned(ctx, null, replacement);
+      if (!(await ctx.waitGone(temp, lifetime))) {
+        await reap(null, replacement);
         release();
         return fail("temp-still-alive", true, true);
       }
@@ -406,12 +429,14 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
           identityHostAlive: true,
         })
       ) {
-        await reapOperationOwned(ctx, null, afterTemp);
+        await reap(null, afterTemp);
         release();
         return fail("gateway-unproven", true, true);
       }
+      ownedTemp = null;
+      ownedHost = null; // Handoff ends child-cleanup authority.
       release();
-      await writeAdoptOpState(ctx.ephemeralRoot, {
+      await checkpoint(ctx.ephemeralRoot, {
         launchMode: "transient-adopt",
         phase: "await-adopt",
         operationId: ctx.operationId,
@@ -419,7 +444,7 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         adoptingSupervisor: null,
         host: stableHost,
       });
-      const adopted = await waitAdopted(ctx, wrapper, stableHost, ctx.adoptProveMs ?? 8000);
+      const adopted = await waitAdopted(ctx, wrapper, stableHost, ctx.adoptProveMs ?? 8000, lifetime);
       if (!adopted) return fail("adopt-unproven", true, true);
       if (adopted.host.ppid === adopted.supervisor.pid) return fail("still-supervisor-child", true, true);
       if (ctx.hasGrokboxPreload(adopted.supervisor)) return fail("supervisor-preloaded", true, true);
@@ -430,7 +455,9 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
       const shaAfter = ctx.diskSha();
       const windowMs = Math.max(0, ctx.now() - started);
       const finalCheck = async (): Promise<string | null> => {
-        if (expectedMode === "route" && ctx.modeldReady && !await ctx.modeldReady()) return "modeld_not_ready";
+        assertOwned();
+        if (expectedMode === "route" && ctx.modeldReady && !await ctx.modeldReady(lifetime)) return "modeld_not_ready";
+        assertOwned();
         if (ctx.diskSha() !== shaBefore) return "disk-sha-changed";
         const current = findAdoptedHostState(ctx.processes, ctx.classify, {
           gatewayPid: ctx.readGatewayPid(), expectedHost: stableHost,
@@ -457,12 +484,12 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         tempSupervisor: null, adoptingSupervisor: adopted.supervisor, host: stableHost,
       };
       failureCode = "attestation-persist-failed";
-      await writeAdoptOpState(ctx.ephemeralRoot, journal);
+      await checkpoint(ctx.ephemeralRoot, journal);
       const atCommit = await finalCheck();
       if (atCommit) return fail(atCommit, true);
       let persistFailed = false;
       try {
-        await (ctx.persistAttestation ?? ((value) => writeAttestation(ctx.ephemeralRoot, value)))(structuredClone(proposed));
+        await (ctx.persistAttestation ?? ((value, beforePublish) => writeAttestation(ctx.ephemeralRoot, value, beforePublish)))(structuredClone(proposed), assertOwned);
       } catch {
         persistFailed = true;
       }
@@ -474,7 +501,7 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
       if (afterCommit) return fail(afterCommit, true);
       const done: AdoptOpState = { ...journal, phase: "attested" };
       failureCode = "journal-persist-failed";
-      await writeAdoptOpState(ctx.ephemeralRoot, done);
+      await checkpoint(ctx.ephemeralRoot, done);
       if (!isDeepStrictEqual(await readAdoptOpState(ctx.ephemeralRoot), done)) return fail("journal-uncommitted", true);
       committedAttestation = undefined;
       const finalRecord = await readAttestation(ctx.ephemeralRoot);
@@ -486,7 +513,8 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
       return {
         ok: true,
         recoveryRequired: false,
-        signaled: true,
+        signaled: true, spawned, guardian: guardianArmed,
+        diagnostic: { code: null, phase: "attested", recoveryRequired: false, guardianEnd: guardianEnd(), guardianContinued: guardianContinued(), signals: [...signals] },
         diskShaBefore: shaBefore,
         diskShaAfter: shaAfter,
         census,
@@ -496,19 +524,28 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         launchMode: "transient-adopt",
         committedAttestation,
       };
-    } catch (error) {
+    } catch {
+      // A child can have appeared during an interrupted spawn/new-host wait.
+      // Capture only a child of the exact supervisor lifetime still owned here.
+      if (!ownedHost && ownedTemp && stableIdentitiesMatch(ownedTemp, ctx.processes.inspect(ownedTemp.pid))) {
+        const children = ctx.processes.list().filter(row => row.ppid === ownedTemp!.pid && ctx.classify(row) === "host");
+        if (children.length === 1) ownedHost = children[0]!;
+      }
+      try { await reap(ownedTemp, ownedHost); }
+      catch { failureCode = "owned-cleanup-unproven"; }
       release();
-      return fail(failureCode ?? (error instanceof Error ? error.message : "inject-error"), true, true);
+      return fail(failureCode ?? "adopt-stage-failed", signaled, signaled);
     }
   } catch {
     return fail("adopt-persistence-failed", signaled, signaled);
   } finally {
+    dispose?.();
     if (signaled && !complete) {
       try {
         const journal = await readAdoptOpState(ctx.ephemeralRoot);
         await writeAdoptOpState(ctx.ephemeralRoot, {
           launchMode: "transient-adopt", tempSupervisor: null, adoptingSupervisor: null, host: null,
-          ...journal, phase: "recovery-required",
+          ...journal, phase: "recovery-required", operationId: ctx.operationId, failure: lastFailure,
         });
       } catch { /* An unreadable/pending journal remains fail-closed. */ }
     }
@@ -521,9 +558,10 @@ async function waitHandoffReady(
   ctx: TransientAdoptContext,
   hostPid: number,
   ms: number,
+  signal?: AbortSignal,
 ): Promise<boolean> {
   const start = Date.now();
-  while (Date.now() - start < ms) {
+  while (!signal?.aborted && Date.now() - start < ms) {
     if (
       canHandoffAdopt({
         gatewayPid: ctx.readGatewayPid(),
@@ -533,8 +571,9 @@ async function waitHandoffReady(
     ) {
       return true;
     }
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await delay(50, undefined, { signal }).catch(error => { if (!signal?.aborted) throw error; });
   }
+  if (signal?.aborted) return false;
   return canHandoffAdopt({
     gatewayPid: ctx.readGatewayPid(),
     hostPid,
@@ -551,7 +590,7 @@ function isOperationOwnedHost(
   if (!live || !stableIdentitiesMatch(host, live)) return false;
   if (temp) {
     const liveTemp = ctx.processes.inspect(temp.pid);
-    if (liveTemp && live.ppid === liveTemp.pid) return true;
+    if (liveTemp && stableIdentitiesMatch(temp, liveTemp) && live.ppid === liveTemp.pid) return true;
     if (!liveTemp && ctx.hasGrokboxPreload(live)) return true;
     return false;
   }
@@ -562,16 +601,24 @@ async function reapOperationOwned(
   ctx: TransientAdoptContext,
   temp: ProcessIdentity | null,
   host: ProcessIdentity | null,
+  signal?: AbortSignal,
+  record?: (event: { pid: number; start: number; signal: "SIGTERM"; sent: boolean }) => void,
 ): Promise<void> {
   if (host && isOperationOwnedHost(ctx, temp, host)) {
     const liveHost = ctx.processes.inspect(host.pid);
-    if (liveHost) signalIfMatch(ctx.processes, liveHost, "SIGTERM");
-    await ctx.waitGone(host);
+    if (liveHost && stableIdentitiesMatch(host, liveHost)) {
+      const result = signalIfMatch(ctx.processes, liveHost, "SIGTERM");
+      record?.({ pid: host.pid, start: host.start, signal: "SIGTERM", sent: result.ok });
+    }
+    await ctx.waitGone(host, signal);
   }
   if (temp) {
     const liveTemp = ctx.processes.inspect(temp.pid);
-    if (liveTemp) signalIfMatch(ctx.processes, liveTemp, "SIGTERM");
-    await ctx.waitGone(temp);
+    if (liveTemp) {
+      const result = signalIfMatch(ctx.processes, temp, "SIGTERM");
+      record?.({ pid: temp.pid, start: temp.start, signal: "SIGTERM", sent: result.ok });
+    }
+    await ctx.waitGone(temp, signal);
   }
 }
 
@@ -580,9 +627,10 @@ async function waitAdopted(
   wrapper: ProcessIdentity,
   expectedHost: StableProcessIdentity,
   ms: number,
+  signal?: AbortSignal,
 ): Promise<OfficialChain | null> {
   const start = Date.now();
-  while (Date.now() - start < ms) {
+  while (!signal?.aborted && Date.now() - start < ms) {
     const hosts = ctx.processes.list().filter((ident) => ctx.classify(ident) === "host");
     if (hosts.some((ident) => ident.pid !== expectedHost.pid)) return null;
     const liveWrapper = ctx.processes.inspect(wrapper.pid);
@@ -593,8 +641,9 @@ async function waitAdopted(
       });
       if (found.ok && found.state.wrapper.pid === wrapper.pid) return found.state;
     }
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await delay(50, undefined, { signal }).catch(error => { if (!signal?.aborted) throw error; });
   }
+  if (signal?.aborted) return null;
   const found = findAdoptedHostState(ctx.processes, ctx.classify, {
     gatewayPid: ctx.readGatewayPid(),
     expectedHost,
@@ -608,7 +657,7 @@ export type TransientAdoptDeactivateContext = {
   diskSha: () => string;
   ephemeralRoot: string;
   attestation: { identity: ProcessIdentity; diskSha: string } | null;
-  waitGone: (old: ProcessIdentity) => Promise<boolean>;
+  waitGone: (old: ProcessIdentity, signal?: AbortSignal) => Promise<boolean>;
   waitReplacement: (oldPid: number) => Promise<ProcessIdentity | null>;
   hasGrokboxPreload: (host: ProcessIdentity) => boolean;
   readGatewayPid: () => number | null;

@@ -3,7 +3,7 @@ import { mkdir, open, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 /** Publish one protected, complete JSON artifact. Failed staging is left for operator cleanup. */
-export async function writeRuntimeArtifact(path: string, value: unknown): Promise<void> {
+export async function writeRuntimeArtifact(path: string, value: unknown, beforePublish?: () => void): Promise<void> {
   const bytes = `${JSON.stringify(value)}\n`;
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const staging = join(dirname(path), `.runtime-${randomUUID()}.tmp`);
@@ -19,5 +19,6 @@ export async function writeRuntimeArtifact(path: string, value: unknown): Promis
   } finally {
     await file.close();
   }
+  beforePublish?.();
   await rename(staging, path);
 }

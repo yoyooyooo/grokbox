@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -24,7 +25,7 @@ import {
 } from "./linux.node.ts";
 import { decideH3LaunchStrategy, type H3LaunchStrategy } from "./launch-strategy.ts";
 import { resolveRuntimeHelper, RUNTIME_HELPER_TEMP_SUPERVISOR } from "./helpers/runtime-helpers.ts";
-import { findUniqueOfficialChain, loadReviewedProfile } from "./official-chain.ts";
+import { findUniqueOfficialChain, loadReviewedProfile, type RoleClassifier } from "./official-chain.ts";
 import {
   countRoles,
   type Census,
@@ -163,13 +164,13 @@ export function readGatewayPid(path = LIVE_GATEWAY_JSON): number | null {
   }
 }
 
-async function waitUntil(pred: () => boolean | Promise<boolean>, ms: number): Promise<boolean> {
+async function waitUntil(pred: () => boolean | Promise<boolean>, ms: number, signal?: AbortSignal): Promise<boolean> {
   const start = Date.now();
-  while (Date.now() - start < ms) {
+  while (!signal?.aborted && Date.now() - start < ms) {
     if (await pred()) return true;
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await delay(50, undefined, { signal }).catch(error => { if (!signal?.aborted) throw error; });
   }
-  return pred();
+  return !signal?.aborted && await pred();
 }
 
 function readMarkerFile(path: string): IdentityMarker | null {
@@ -237,8 +238,14 @@ export function createLiveH3AdoptPorts(input: {
   execPath: string;
   hostBundle?: string;
   waitMs?: number;
+  processes?: ProcessPort;
+  classify?: RoleClassifier;
+  gatewayPath?: string;
 }): H3AdoptPorts {
-  const port = linuxProcessPort();
+  const port = input.processes ?? linuxProcessPort();
+  const classify = input.classify ?? liveClassify;
+  const gatewayPid = () => readGatewayPid(input.gatewayPath);
+  let spawned = false;
   const waitMs = input.waitMs ?? LIVE_WAIT_MS;
   const hostBundle = input.hostBundle ?? LIVE_HOST_BUNDLE;
   return {
@@ -255,24 +262,25 @@ export function createLiveH3AdoptPorts(input: {
       }),
     },
     processes: port,
-    classify: liveClassify,
-    waitHostGone: async (old) =>
+    classify,
+    waitHostGone: async (old, signal) =>
       await waitUntil(() => {
-        const observed = inspectPid(old.pid);
+        const observed = port.inspect(old.pid);
         return observed == null || observed.start !== old.start;
-      }, waitMs),
+      }, waitMs, signal),
     supervisorRelaunch: async () => null,
-    waitReady: async (hostPid) => {
-      const ready = await waitUntil(
-        () =>
-          identityHostReady({
-            marker: readMarkerFile(input.markerPath),
-            gatewayPid: readGatewayPid(),
-            hostPid,
-          }),
-        waitMs,
-      );
-      return ready ? readMarkerFile(input.markerPath) : null;
+    waitReady: async (hostPid, signal) => {
+      const expected = port.inspect(hostPid);
+      if (!expected) return null;
+      let ready = false;
+      await waitUntil(() => {
+        const current = port.inspect(hostPid);
+        if (!current || current.start !== expected.start) return true;
+        const marker = readMarkerFile(input.markerPath);
+        ready = marker?.start === expected.start && identityHostReady({ marker, gatewayPid: gatewayPid(), hostPid });
+        return ready;
+      }, waitMs, signal);
+      return ready && !signal?.aborted ? readMarkerFile(input.markerPath) : null;
     },
     applyLaunchEnv: async (env) => {
       const spec = liveAdoptLaunchSpec(env, {
@@ -285,24 +293,42 @@ export function createLiveH3AdoptPorts(input: {
     },
     hasGrokboxPreload: (host) =>
       procEnvHas(host.pid, "NODE_OPTIONS", input.preloadNeedle) || procEnvHas(host.pid, "GROKBOX_PRELOAD_MODE"),
-    spawnTempSupervisor: async () => {
-      spawn(input.execPath, [TEMP_SUPERVISOR, input.overlayPath], { stdio: "ignore" });
-      const ok = await waitUntil(
-        () => port.list().some((ident) => liveClassify(ident) === "temp-supervisor"),
-        waitMs,
-      );
-      if (!ok) return null;
-      return port.list().find((ident) => liveClassify(ident) === "temp-supervisor") ?? null;
+    tempSpawned: () => spawned,
+    childEvidence: () => {
+      try {
+        const bytes = readFileSync(`${input.overlayPath}.child.json`);
+        if (bytes.length > 1024) return undefined;
+        const row = JSON.parse(bytes.toString());
+        const spec = JSON.parse(readFileSync(input.overlayPath, "utf8"));
+        if (row.operationId !== spec.env?.GROKBOX_OPERATION_ID || !Number.isSafeInteger(row.pid)
+          || row.pid <= 0 || !Number.isSafeInteger(row.start) || row.start <= 0
+          || !(row.exitCode === null || Number.isSafeInteger(row.exitCode))
+          || !(row.signal === null || /^SIG[A-Z]{1,12}$/.test(row.signal))) return undefined;
+        return { pid: row.pid, start: row.start, exitCode: row.exitCode, signal: row.signal };
+      } catch { return undefined; }
     },
-    waitNewHost: async (oldHostPid) => {
+    spawnTempSupervisor: async (signal) => {
+      if (signal?.aborted) return null;
+      const child = spawn(input.execPath, [TEMP_SUPERVISOR, input.overlayPath], { stdio: "ignore" });
+      child.on("error", () => {}); // Fixed result only; never expose spawn argv/env/errors.
+      spawned = child.pid != null;
+      if (!child.pid) return null;
+      await waitUntil(() => {
+        const current = port.inspect(child.pid!);
+        return !!current && classify(current) === "temp-supervisor";
+      }, waitMs, signal);
+      const current = port.inspect(child.pid);
+      return current && classify(current) === "temp-supervisor" ? current : null;
+    },
+    waitNewHost: async (oldHostPid, signal) => {
       const ok = await waitUntil(() => {
-        const host = port.list().find((ident) => liveClassify(ident) === "host");
-        return Boolean(host && host.pid !== oldHostPid && inspectPid(host.pid));
-      }, waitMs);
+        const host = port.list().find((ident) => classify(ident) === "host");
+        return Boolean(host && host.pid !== oldHostPid && port.inspect(host.pid));
+      }, waitMs, signal);
       if (!ok) return null;
-      return port.list().find((ident) => liveClassify(ident) === "host" && ident.pid !== oldHostPid) ?? null;
+      return port.list().find((ident) => classify(ident) === "host" && ident.pid !== oldHostPid) ?? null;
     },
-    readGatewayPid: () => readGatewayPid(),
+    readGatewayPid: () => gatewayPid(),
     guardianDeadlineMs: waitMs,
     waitBudgetMs: waitMs,
     adoptProveMs: waitMs,

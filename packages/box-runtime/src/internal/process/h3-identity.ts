@@ -21,9 +21,9 @@ import type { PatchProfile } from "../host/profile.ts";
 export type H3OfflinePorts = {
   processes: ProcessPort;
   classify: RoleClassifier;
-  waitHostGone: (old: ProcessIdentity) => Promise<boolean>;
+  waitHostGone: (old: ProcessIdentity, signal?: AbortSignal) => Promise<boolean>;
   supervisorRelaunch: (supervisor: ProcessIdentity) => Promise<ProcessIdentity | null>;
-  waitReady: (hostPid: number) => Promise<import("./identity-op.ts").IdentityMarker | null>;
+  waitReady: (hostPid: number, signal?: AbortSignal) => Promise<import("./identity-op.ts").IdentityMarker | null>;
   applyLaunchEnv: (env: Record<string, string>) => Promise<void>;
   hasGrokboxPreload: (host: ProcessIdentity) => boolean;
   now?: () => number;
@@ -31,8 +31,10 @@ export type H3OfflinePorts = {
 
 export type H3AdoptPorts = H3OfflinePorts & {
   target?: AdoptTargetPorts;
-  spawnTempSupervisor: () => Promise<ProcessIdentity | null>;
-  waitNewHost: (oldHostPid: number) => Promise<ProcessIdentity | null>;
+  tempSpawned?: () => boolean;
+  childEvidence?: () => NonNullable<IdentityOpResult["diagnostic"]>["child"] | undefined;
+  spawnTempSupervisor: (signal?: AbortSignal) => Promise<ProcessIdentity | null>;
+  waitNewHost: (oldHostPid: number, signal?: AbortSignal) => Promise<ProcessIdentity | null>;
   readGatewayPid: () => number | null;
   guardianDeadlineMs?: number;
   waitBudgetMs?: number;
@@ -129,13 +131,13 @@ export async function runH3OfflineInject(input: {
     },
     armGuardian: async (frozen) => {
       const guardian = await spawnIndependentGuardian({
-        frozen,
+        operationId: input.operationId, frozen,
         deadlineMs: 8000,
         stateDir: input.ephemeralRoot,
         execPath: input.execPath,
       });
       if (!guardian.armed) return { ok: false };
-      return { ok: true, release: guardian.release };
+      return { ok: true, release: () => { guardian.release(); guardian.dispose(); } };
     },
     persistAttestation: async (host, sha, windowMs) => {
       await writeAttestation(input.ephemeralRoot, {
@@ -244,6 +246,8 @@ export async function runH3OfflineAdopt(input: {
     operationId: input.operationId,
     readMarker: () => null,
     waitGone: input.ports.waitHostGone,
+    childEvidence: input.ports.childEvidence,
+    tempSpawned: input.ports.tempSpawned,
     waitReady: input.ports.waitReady,
     prepareTempLaunch: async (admittedProfile) => {
       const profilePath = await pinLaunchProfile(input.ephemeralRoot, admittedProfile);
@@ -264,13 +268,13 @@ export async function runH3OfflineAdopt(input: {
     adoptProveMs: input.ports.adoptProveMs,
     armGuardian: async (frozen) => {
       const guardian = await spawnIndependentGuardian({
-        frozen,
+        operationId: input.operationId, frozen,
         deadlineMs: input.ports.guardianDeadlineMs ?? 8000,
         stateDir: input.ephemeralRoot,
         execPath: input.execPath,
       });
       if (!guardian.armed) return { ok: false };
-      return { ok: true, release: guardian.release };
+      return { ok: true, release: guardian.release, signal: guardian.signal, end: guardian.end, continued: guardian.continued, dispose: guardian.dispose };
     },
     hasGrokboxPreload: input.ports.hasGrokboxPreload,
     now: input.ports.now ?? (() => Date.now()),

@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ProcessIdentity } from "./process-port.ts";
 import {
@@ -16,21 +17,47 @@ export type IndependentGuardian = {
   pid: number | null;
   injectorPid: number | null;
   release: () => void;
+  signal: AbortSignal;
+  dispose: () => void;
+  continued: () => boolean | null;
+  end: () => "active" | "released" | "expired" | "lost";
   killInjector: () => void;
 };
 
 export async function spawnIndependentGuardian(input: {
   frozen: ProcessIdentity[];
+  operationId?: string;
   deadlineMs: number;
   stateDir: string;
   execPath?: string;
   readyMs?: number;
 }): Promise<IndependentGuardian> {
+  const ownership = new AbortController();
+  let end: "active" | "released" | "expired" | "lost" = "active";
+  const expiresAt = Date.now() + input.deadlineMs;
+  const expire = () => { if (end !== "lost") end = "expired"; ownership.abort(); };
+  const timer = setTimeout(expire, input.deadlineMs);
+  timer.unref();
+  const lifetime = {
+    signal: ownership.signal,
+    end: () => { if (Date.now() >= expiresAt) expire(); return end; },
+    dispose: () => clearTimeout(timer),
+    continued: (): boolean | null => {
+      try {
+        const bytes = readFileSync(`${identityPath}.result.json`);
+        if (bytes.length > 2048) return null;
+        const record = JSON.parse(bytes.toString());
+        if (record.operationId !== (input.operationId ?? null) || !Array.isArray(record.continued) || !["released", "expired", "owner-ended", "lost"].includes(record.reason)
+          || record.continued.some((row: { pid: number; start: number }) => !input.frozen.some(identity => identity.pid === row.pid && identity.start === row.start))) return null;
+        return record.continued.length > 0;
+      } catch { return null; }
+    },
+  };
   mkdirSync(input.stateDir, { recursive: true, mode: 0o700 });
-  const identityPath = join(input.stateDir, `guardian-${process.pid}-${Date.now()}.json`);
+  const identityPath = join(input.stateDir, `guardian-${process.pid}-${randomUUID()}.json`);
   writeFileSync(
     identityPath,
-    `${JSON.stringify({ frozen: input.frozen, deadlineMs: input.deadlineMs })}\n`,
+    `${JSON.stringify({ frozen: input.frozen, deadlineMs: input.deadlineMs, expiresAt, operationId: input.operationId })}\n`,
     { mode: 0o600 },
   );
   const execPath = input.execPath ?? process.execPath;
@@ -38,22 +65,37 @@ export async function spawnIndependentGuardian(input: {
     stdio: ["ignore", "pipe", "ignore"],
   });
   const empty = {
+    ...lifetime,
     armed: false,
     pid: holder.pid ?? null,
     injectorPid: holder.pid ?? null,
     release() {},
     killInjector() {},
   };
-  if (holder.pid == null) return empty;
+  holder.once("error", () => { end = "lost"; ownership.abort(); });
+  holder.once("exit", () => { if (end === "active") { end = "lost"; ownership.abort(); } });
+  let notices = "";
+  holder.stdout?.on("data", (chunk: Buffer) => {
+    notices = (notices + String(chunk)).slice(-128);
+    if (notices.includes("expired\n")) expire();
+    else if (end === "active" && /(?:owner-ended|lost|released)\n/.test(notices)) {
+      end = "lost"; ownership.abort();
+    }
+  });
+  if (holder.pid == null) { lifetime.dispose(); return empty; }
   const armed = await new Promise<boolean>((resolve) => {
-    const timer = setTimeout(() => resolve(false), input.readyMs ?? 2000);
+    const finish = (value: boolean) => {
+      clearTimeout(timer); ownership.signal.removeEventListener("abort", aborted); resolve(value);
+    };
+    const aborted = () => finish(false);
+    const timer = setTimeout(() => finish(false), input.readyMs ?? 2000);
+    ownership.signal.addEventListener("abort", aborted, { once: true });
+    if (ownership.signal.aborted) finish(false);
     holder.stdout?.once("data", (chunk: Buffer) => {
-      clearTimeout(timer);
-      resolve(String(chunk).includes("armed"));
+      finish(String(chunk).includes("armed"));
     });
     holder.once("exit", () => {
-      clearTimeout(timer);
-      resolve(false);
+      finish(false);
     });
   });
   if (!armed) {
@@ -62,13 +104,16 @@ export async function spawnIndependentGuardian(input: {
     } catch {
       /* ignore */
     }
+    lifetime.dispose();
     return { ...empty, pid: holder.pid, injectorPid: holder.pid };
   }
   return {
-    armed: true,
+    ...lifetime,
+    armed: !ownership.signal.aborted,
     pid: holder.pid,
     injectorPid: holder.pid,
     release: () => {
+      if (end === "active") end = "released";
       try {
         holder.kill("SIGTERM");
       } catch {

@@ -180,3 +180,31 @@ export function readNamedProcEnv(pid: number, keys: readonly string[]): Record<s
   }
   return env;
 }
+
+/** Recovery proof cannot silently omit a process whose identity is unreadable. */
+export function strictLinuxObservationPort(): ProcessPort {
+  const inspect = (pid: number): ProcessIdentity | null => {
+    const identity = inspectPid(pid);
+    if (identity) return identity;
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      const state = stat.slice(stat.lastIndexOf(")") + 2).split(" ")[0];
+      if (state === "Z" || state === "X") return null;
+    } catch (error) {
+      if (["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "")) return null;
+    }
+    throw new Error("restoration-process-unavailable");
+  };
+  return { inspect, list: () => readdirSync("/proc").filter(name => /^\d+$/.test(name)).flatMap(name => {
+    const row = inspect(Number(name)); return row ? [row] : [];
+  }), signal: () => { throw new Error("observation-only"); } };
+}
+
+/** Fail-closed presence only; no environment values leave this leaf. */
+export function hasRelevantPreloadStrict(pid: number): boolean {
+  let present = false;
+  forEachProcEnv(pid, (key, value) => {
+    if (key.startsWith("GROKBOX_") || key === "NODE_OPTIONS" && /grokbox|--require|--import/.test(value)) present = true;
+  });
+  return present;
+}

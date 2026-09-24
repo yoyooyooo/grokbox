@@ -60,6 +60,7 @@ function receipt(
     spawned: extras.spawned === true,
     guardian: extras.guardian === true,
     operationId: command.operationId,
+    ...(extras.diagnostic ? { diagnostic: extras.diagnostic } : {}),
   };
 }
 
@@ -215,6 +216,9 @@ export function runControllerOperation(request: ControllerRequest) {
           return receipt(command, "partial", { reason: "spawn-failed", ...progress });
         }
         progress.spawned = spawnedResult.success.spawned === true;
+        progress.signaled = spawnedResult.success.signaled === true;
+        progress.guardian = spawnedResult.success.guardian === true;
+        progress.diagnostic = spawnedResult.success.diagnostic;
         const spawnCheckpoint = yield* persistRunningPrefix(control, command, progress);
         if (spawnCheckpoint) return spawnCheckpoint;
         const armed = yield* Effect.result(control.armGuardian(command));
@@ -232,6 +236,7 @@ export function runControllerOperation(request: ControllerRequest) {
           return receipt(command, "partial", { reason: "signal-failed", ...progress });
         }
         progress.signaled = signaledResult.success.signaled === true;
+        progress.diagnostic = signaledResult.success.diagnostic;
         const signalCheckpoint = yield* persistRunningPrefix(control, command, progress);
         if (signalCheckpoint) return signalCheckpoint;
       } else {
@@ -244,9 +249,10 @@ export function runControllerOperation(request: ControllerRequest) {
         return receipt(command, "unknown", { reason: "wait-failed", ...progress });
       }
       const committed = yield* Effect.result(control.commit(command));
+      if (committed._tag === "Success" && committed.success.diagnostic) progress.diagnostic = committed.success.diagnostic;
       if (committed._tag === "Failure" || !committed.success.committed) {
         yield* markUnknown(control, command, progress);
-        return receipt(command, "recovery-required", { reason: "commit-failed", ...progress });
+        return receipt(command, "recovery-required", { reason: progress.diagnostic?.code ?? "commit-failed", ...progress });
       }
       yield* control.settle({ operationId: command.operationId, boxRoot: command.boxRoot, state: "terminal", prefix: progress });
       return receipt(command, "signaled", progress);
