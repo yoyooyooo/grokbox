@@ -37,9 +37,12 @@ test("operation recovery preview is read-only and remains box-local", async () =
     expect(await readdir(deps.boxRuntimeRoot)).toEqual([]);
     await mkdir(join(root, "run", "state"), { recursive: true });
     const receipt = { version: 1, operationId: "original", physicallyRestored: true, adopted: false, replayAuthorized: false,
-      evidence: { operations: "a".repeat(64), journal: "b".repeat(64), marker: "c".repeat(64), attestation: null },
+      evidence: { ownerClaim: "d".repeat(64), operations: "a".repeat(64), journal: "b".repeat(64), marker: "c".repeat(64), attestation: null },
       chain: { wrapper: { pid: 11, start: 1, uid: 1000, ppid: 1 }, supervisor: { pid: 12, start: 2, uid: 1000, ppid: 11 }, host: { pid: 13, start: 3, uid: 1000, ppid: 12 } }, gatewayPid: 13 };
-    await writeFile(join(root, "run", "state", "adopt-restoration-original.json"), JSON.stringify(receipt));
+    const pending = JSON.stringify({ ...receipt, physicallyRestored: false, publication: "prepared" });
+    await writeFile(join(root, "run", "state", "adopt-restoration-original.json"), pending);
+    const { createHash } = await import("node:crypto");
+    await writeFile(join(root, "run", "state", "adopt-restoration-original.json.complete.json"), JSON.stringify({ version: 1, operationId: "original", publication: "complete", receiptSha256: createHash("sha256").update(pending).digest("hex") }));
     const recorded = await captureCli(["runtime", "operation-recovery", "--restore-operation", "original", "--json"], deps);
     expect(recorded.code, recorded.stderr).toBe(0);
     expect(JSON.parse(recorded.stdout).data).toMatchObject({ outcome: "recorded", restorationHistorical: true, restoration: receipt, replayAuthorized: false });

@@ -32,6 +32,7 @@ export type H3OfflinePorts = {
 export type H3AdoptPorts = H3OfflinePorts & {
   target?: AdoptTargetPorts;
   tempSpawned?: () => boolean;
+  creationEvidence?: import("./transient-adopt.ts").TransientAdoptContext["creationEvidence"];
   childEvidence?: () => NonNullable<IdentityOpResult["diagnostic"]>["child"] | undefined;
   spawnTempSupervisor: (signal?: AbortSignal) => Promise<ProcessIdentity | null>;
   waitNewHost: (oldHostPid: number, signal?: AbortSignal) => Promise<ProcessIdentity | null>;
@@ -244,9 +245,12 @@ export async function runH3OfflineAdopt(input: {
     diskSha: input.diskSha,
     ephemeralRoot: input.ephemeralRoot,
     operationId: input.operationId,
-    readMarker: () => null,
+    readMarker: () => { try { const marker = JSON.parse(readFileSync(input.markerPath, "utf8")); return marker.operationId === input.operationId ? marker : null; } catch { return null; } },
     waitGone: input.ports.waitHostGone,
     childEvidence: input.ports.childEvidence,
+    markerPath: input.markerPath,
+    preloadSha256: (await import("@grokbox/runtime-kernel/hash")).sha256Bytes(readFileSync(input.preloadPath)),
+    creationEvidence: input.ports.creationEvidence,
     tempSpawned: input.ports.tempSpawned,
     waitReady: input.ports.waitReady,
     prepareTempLaunch: async (admittedProfile) => {
@@ -274,7 +278,7 @@ export async function runH3OfflineAdopt(input: {
         execPath: input.execPath,
       });
       if (!guardian.armed) return { ok: false };
-      return { ok: true, release: guardian.release, signal: guardian.signal, end: guardian.end, continued: guardian.continued, dispose: guardian.dispose };
+      return { ok: true, release: guardian.release, signal: guardian.signal, end: guardian.end, continued: guardian.continued, owners: guardian.owners, dispose: guardian.dispose };
     },
     hasGrokboxPreload: input.ports.hasGrokboxPreload,
     now: input.ports.now ?? (() => Date.now()),

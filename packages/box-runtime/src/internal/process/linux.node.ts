@@ -181,23 +181,63 @@ export function readNamedProcEnv(pid: number, keys: readonly string[]): Record<s
   return env;
 }
 
-/** Recovery proof cannot silently omit a process whose identity is unreadable. */
-export function strictLinuxObservationPort(): ProcessPort {
-  const inspect = (pid: number): ProcessIdentity | null => {
-    const identity = inspectPid(pid);
-    if (identity) return identity;
+/** Role discovery may exclude readable stable non-candidates without reading
+ * executable links. Exact recorded ownership never uses that exclusion. */
+export function strictLinuxObservationPort(procRoot = "/proc", fullIdentity: (pid: number) => ProcessIdentity | null = inspectPid): ProcessPort {
+  const missing = (error: unknown) => ["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "");
+  const stat = (pid: number) => {
     try {
-      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-      const state = stat.slice(stat.lastIndexOf(")") + 2).split(" ")[0];
-      if (state === "Z" || state === "X") return null;
-    } catch (error) {
-      if (["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "")) return null;
-    }
-    throw new Error("restoration-process-unavailable");
+      const text = readFileSync(`${procRoot}/${pid}/stat`, "utf8"), end = text.lastIndexOf(")");
+      const fields = text.slice(end + 2).split(" "), start = Number(fields[19]), ppid = Number(fields[1]);
+      if (end < 0 || !Number.isSafeInteger(start) || start <= 0 || !Number.isSafeInteger(ppid)) throw Error();
+      return ["Z", "X"].includes(fields[0]!) ? null : { pid, start, ppid };
+    } catch (error) { if (missing(error)) return null; throw Error("restoration-process-unavailable"); }
   };
-  return { inspect, list: () => readdirSync("/proc").filter(name => /^\d+$/.test(name)).flatMap(name => {
-    const row = inspect(Number(name)); return row ? [row] : [];
-  }), signal: () => { throw new Error("observation-only"); } };
+  const snapshot = (pid: number) => {
+    const before = stat(pid); if (!before) return null;
+    try {
+      const bytes = readFileSync(`${procRoot}/${pid}/cmdline`), after = stat(pid);
+      if (!after) return null;
+      const again = readFileSync(`${procRoot}/${pid}/cmdline`);
+      if (!bytes.length || bytes.length > 65536 || bytes[bytes.length - 1] !== 0 || !bytes.equals(again)
+        || before.start !== after.start || before.ppid !== after.ppid) throw Error();
+      const args = bytes.toString("utf8").split("\0").filter(Boolean);
+      if (!Buffer.from(bytes.toString("utf8")).equals(bytes) || !args.length) throw Error();
+      return { ...after, args };
+    } catch (error) { if (missing(error) && !stat(pid)) return null; throw Error("restoration-discovery-unavailable"); }
+  };
+  let exclusions: Array<NonNullable<ReturnType<typeof snapshot>>> = [];
+  const recheckDiscovery = () => {
+    for (const before of exclusions) {
+      const after = snapshot(before.pid);
+      if (after && JSON.stringify(after) !== JSON.stringify(before)) throw Error("restoration-discovery-changed");
+    }
+  };
+  const inspect = (pid: number) => {
+    const before = stat(pid); if (!before) return null;
+    const row = fullIdentity(pid), after = stat(pid);
+    if (!after) return null;
+    if (!row || row.start !== before.start || after.start !== before.start || row.ppid !== after.ppid) throw Error("restoration-process-unavailable");
+    return row;
+  };
+  return {
+    inspect, recheckDiscovery,
+    inspectLifetime: pid => { const before = stat(pid), after = stat(pid); if (!after) return null;
+      if (!before || before.start !== after.start) throw Error("restoration-owner-changed"); return { pid, start: after.start }; },
+    list: () => {
+      recheckDiscovery();
+      const next: typeof exclusions = [], rows: ProcessIdentity[] = [];
+      const predicates = new Set(["supervise-sand-supervisor", "sand-supervisor.mjs", "host-main.cjs", LIVE_TEMP_SUPERVISOR_NEEDLE, "guardian-child.cjs", "injector-hold.cjs"]);
+      for (const name of readdirSync(procRoot).filter(name => /^\d+$/.test(name))) {
+        const evidence = snapshot(Number(name)); if (!evidence) continue;
+        if (!evidence.args.some(arg => predicates.has(fileBasename(arg)))) { next.push(evidence); continue; }
+        const identity = inspect(evidence.pid);
+        if (identity) { if (JSON.stringify(snapshot(evidence.pid)) !== JSON.stringify(evidence)) throw Error("restoration-discovery-changed"); rows.push(identity); }
+      }
+      exclusions = next; return rows;
+    },
+    signal: () => { throw Error("observation-only"); },
+  };
 }
 
 /** Fail-closed presence only; no environment values leave this leaf. */

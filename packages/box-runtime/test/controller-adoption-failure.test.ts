@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import * as syncFs from "node:fs";
+import { expect, test, spyOn } from "bun:test";
 import { Effect } from "effect";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -71,7 +72,7 @@ for (const scenario of ["delayed-gateway", "guardian-expiry", "identity-reuse", 
   expect(readControllerOperation(root, "original")).toEqual(record);
 });
 
-test("ownership expiry at attestation publication preserves prior bytes and cannot become adoption success", async () => {
+for (const publication of ["before", "attestation-inflight", "journal-inflight"] as const) test(`ownership expiry ${publication} preserves publication uncertainty`, async () => {
   const { writeFile } = await import("node:fs/promises");
   const { writeAttestation } = await import("../src/internal/io/authority.node.ts");
   const root = await mkdtemp(join(tmpdir(), "grokbox-adopt-commit-expiry-"));
@@ -81,7 +82,9 @@ test("ownership expiry at attestation publication preserves prior bytes and cann
   tree.spawn("host", { parent: supervisor });
   const ownership = new AbortController();
   let host: ReturnType<typeof tree.spawn> | null = null;
-  const result = await runTransientAdoptOperation({
+  let restore: (() => void) | undefined, inFlightPublished = false;
+  let result;
+  try { result = await runTransientAdoptOperation({
     operationId: "original", ephemeralRoot: root, reviewedProfile: profile, diskSha: () => profile.sourceSha256,
     processes: tree, classify: row => {
       const role = tree.roles().find(item => item.pid === row.pid)?.role;
@@ -96,14 +99,30 @@ test("ownership expiry at attestation publication preserves prior bytes and cann
     } }),
     hasGrokboxPreload: row => row.pid === host?.pid,
     persistAttestation: async (value, beforePublish) => {
-      ownership.abort();
+      if (publication === "before") ownership.abort();
+      else {
+        const rename = syncFs.renameSync;
+        const spy = spyOn(syncFs, "renameSync").mockImplementation((from, to) => {
+          const selected = publication === "attestation-inflight" ? String(to).endsWith("/attestation.json")
+            : String(to).endsWith("/state/adopt-op.json") && JSON.parse(syncFs.readFileSync(from, "utf8")).phase === "attested";
+          if (selected) ownership.abort();
+          rename(from, to);
+          if (selected) inFlightPublished = true;
+        });
+        restore = () => spy.mockRestore();
+      }
       await writeAttestation(root, value, beforePublish);
     },
-  });
-  expect(result).toMatchObject({ ok: false, recoveryRequired: true, code: "guardian-ownership-ended", diagnostic: { phase: "commit-attestation" } });
-  expect(await readFile(join(root, "attestation.json"), "utf8")).toBe(previous);
+  }); } finally { restore?.(); }
+  expect(result).toMatchObject({ ok: false, recoveryRequired: true, code: "guardian-ownership-ended", diagnostic: { phase: publication === "journal-inflight" ? "attested" : "commit-attestation" } });
+  if (publication === "before") expect(await readFile(join(root, "attestation.json"), "utf8")).toBe(previous);
+  else {
+    expect(inFlightPublished).toBe(true);
+    expect(result?.committedAttestation?.operationId).toBe("original");
+    expect(JSON.parse(await readFile(join(root, "state", "adoption-owner.json"), "utf8"))).toMatchObject({ operationId: "original", state: "unresolved" });
+  }
   expect(tree.alive(host!.pid)).toBe(true); // Handoff ended cleanup authority; never signal a now-adopted Host.
-  expect(JSON.parse(await readFile(join(root, "state", "adopt-op.json"), "utf8"))).toMatchObject({ operationId: "original", phase: "recovery-required", failure: { phase: "commit-attestation" } });
+  expect(JSON.parse(await readFile(join(root, "state", "adopt-op.json"), "utf8"))).toMatchObject({ operationId: "original", phase: "recovery-required", failure: { phase: publication === "journal-inflight" ? "attested" : "commit-attestation" } });
 });
 
 test("an inner identity-lease failure reaches the kernel receipt without becoming commit-failed", async () => {

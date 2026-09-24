@@ -19,8 +19,10 @@ try {
   const stat = readFileSync(`/proc/${child.pid}/stat`, "utf8");
   start = Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19]);
 } catch { /* Unknown identity stays unknown. */ }
+const ownStat = readFileSync("/proc/self/stat", "utf8");
+const supervisor = { pid: process.pid, start: Number(ownStat.slice(ownStat.lastIndexOf(")") + 2).split(" ")[19]) };
 function record(exitCode, signal) {
-  const receipt = { operationId: spec.env.GROKBOX_OPERATION_ID, pid: child.pid, start, exitCode, signal };
+  const receipt = { supervisor, operationId: spec.env.GROKBOX_OPERATION_ID, pid: child.pid, start, exitCode, signal };
   try {
     const target = `${specPath}.child.json`, temporary = `${target}.${process.pid}.tmp`;
     const fd = openSync(temporary, "wx", 0o600);

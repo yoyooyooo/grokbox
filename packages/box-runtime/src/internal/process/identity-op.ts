@@ -1,3 +1,4 @@
+import { unresolvedAdoption } from "./adopt-evidence.ts";
 import type { ControllerDiagnostic } from "@grokbox/runtime-kernel/ports";
 import { operationLockPath, acquireOperationLease } from "../io/operation-lease.node.ts";
 import { findUniqueOfficialChain, loadReviewedProfile, type RoleClassifier } from "./official-chain.ts";
@@ -91,6 +92,7 @@ export async function runIdentityOperation(ctx: IdentityOpContext): Promise<Iden
   if (!lock.ok) return fail("lock-conflict", false, false);
 
   try {
+    if (unresolvedAdoption(ctx.ephemeralRoot)) return fail("unresolved-adoption-owner", false, false);
     const reviewed = loadReviewedProfile(ctx.reviewedProfile, shaBefore);
     if (!reviewed.ok) return fail(reviewed.code, false, false);
 
@@ -202,6 +204,7 @@ export async function runIdentityDeactivate(ctx: DeactivateContext): Promise<Ide
   const lock = await acquireOperationLease(operationLockPath(ctx.ephemeralRoot));
   if (!lock.ok) return fail("lock-conflict", false);
   try {
+  if (unresolvedAdoption(ctx.ephemeralRoot)) return fail("unresolved-adoption-owner", false);
   if (!ctx.attestation) {
     return {
       ok: false,

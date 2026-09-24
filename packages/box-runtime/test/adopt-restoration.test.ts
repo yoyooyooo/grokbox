@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { acquireOperationLease } from "../src/internal/io/operation-lease.node.ts";
 import { recoverControllerOperationState } from "../src/internal/roots/controller-program.node.ts";
 import { prepareOriginalRestoration, restorationReceiptPath, type RestorationPorts } from "../src/internal/process/adopt-restoration.ts";
+import { adoptionEvidencePath, unresolvedAdoption, writeAdoptionOwner } from "../src/internal/process/adopt-evidence.ts";
 import { FakeProcessTree } from "./fake-tree.ts";
 
 async function fixture() {
@@ -14,6 +15,7 @@ async function fixture() {
   const host = tree.spawn("host", { parent: supervisor });
   const oldTemp = tree.spawn("temp-supervisor"), oldHost = tree.spawn("host", { parent: oldTemp });
   tree.kill(oldHost); tree.kill(oldTemp);
+  const guardian = tree.spawn("guardian"), holder = tree.spawn("guardian"); tree.kill(guardian); tree.kill(holder);
   const claim = await acquireOperationLease(join(root, "owner.lock"), "original");
   if (!claim.ok) throw new Error("fixture owner unavailable");
   const leaseOwner = { ...claim.lock.owner, start: String(BigInt(claim.lock.owner.start) + 1n) };
@@ -21,11 +23,19 @@ async function fixture() {
   const files = [join(root, "state", "controller-operations.json"), join(runRoot, "state", "adopt-op.json"),
     join(runRoot, "state", "preload-marker.json"), join(runRoot, "attestation.json")];
   const store = Object.fromEntries(Array.from({ length: 5 }, (_, i) => [`unknown-${i}`, { state: "unknown", fingerprint: `prior-${i}` }]));
-  store.original = { state: "unknown", fingerprint: "original-fingerprint", leaseOwner } as never;
+  const diagnostic = { code: "guardian-ownership-ended", phase: "spawn-temp", recoveryRequired: true, guardianEnd: "expired", child: { pid: oldHost.pid, start: oldHost.start, exitCode: null, signal: null }, cleanup: [{ role: "host", pid: oldHost.pid, start: oldHost.start, signalSent: true, outcome: "unproven", observed: "same-identity" }] };
+  const compile = { profileId: "fixture", profileSha256: "a".repeat(64), sourceSha256: "b".repeat(64), transformedSha256: "c".repeat(64) };
+  const ref = (row: { pid: number; start: number }) => ({ pid: row.pid, start: row.start });
+  store.original = { prefix: { signaled: true, spawned: true, guardian: true, diagnostic }, state: "unknown", fingerprint: "original-fingerprint", leaseOwner } as never;
   const journal = { launchMode: "transient-adopt", phase: "recovery-required", operationId: "original",
-    tempSupervisor: oldTemp, adoptingSupervisor: null, host: null };
-  const marker = { operationId: "original", pid: oldHost.pid, start: oldHost.start, compiled: true, transformed: true, modeld: false };
+    tempSupervisor: oldTemp, adoptingSupervisor: null, host: null, failure: diagnostic,
+    creation: { version: 1, operationId: "original", tempSupervisor: ref(oldTemp), host: ref(oldHost), guardian: ref(guardian), holder: ref(holder), compile, preloadSha256: "d".repeat(64) } };
+  const marker = { operationId: "original", pid: oldHost.pid, start: oldHost.start, compiled: true, transformed: true, modeld: false, mode: "route", compile, preloadSha256: "d".repeat(64) };
   await Promise.all([store, journal, marker, { operationId: "prior-attestation" }].map((value, i) => writeFile(files[i]!, JSON.stringify(value))));
+  await mkdir(join(runRoot, "state", "adoptions", "original"), { recursive: true });
+  await writeFile(adoptionEvidencePath(runRoot, "original", "journal"), JSON.stringify(journal));
+  await writeFile(adoptionEvidencePath(runRoot, "original", "marker"), JSON.stringify(marker));
+  await writeAdoptionOwner(runRoot, "original", "unresolved");
   const ports: RestorationPorts = { processes: tree, classify: row => {
     const role = tree.roles().find(item => item.pid === row.pid)?.role;
     return role === "extra" ? null : role as ReturnType<RestorationPorts["classify"]>;
@@ -41,14 +51,14 @@ test("connected recovery publishes only original-operation restoration; all six 
   const result = await recoverControllerOperationState(f.input, f.ports);
   expect(result).toMatchObject({ outcome: "restored", adopted: false, signaled: false, replayAuthorized: false,
     clearedLocks: 0, markedUnknown: 0, operations: { unknown: 6 }, restoration: { operationId: "original", physicallyRestored: true } });
-  expect(JSON.parse(await readFile(restorationReceiptPath(f.runRoot, "original"), "utf8"))).toEqual(result.restoration);
+  expect(JSON.parse(await readFile(restorationReceiptPath(f.runRoot, "original"), "utf8"))).toEqual({ ...result.restoration, physicallyRestored: false, publication: "prepared" });
   const historical = await recoverControllerOperationState({ ...f.input, confirm: false }, {
     ...f.ports, gatewayPid: () => { throw Error("historical receipt inspection must not observe live Gateway"); },
   });
   expect(historical).toMatchObject({ outcome: "recorded", restorationHistorical: true, operations: { unknown: 6 },
     adopted: false, replayAuthorized: false, restoration: result.restoration });
   expect(await Promise.all(f.files.map(path => readFile(path)))).toEqual(before);
-  expect(f.tree.signals).toHaveLength(2); // Fixture disposal only, recovery never signals.
+  expect(f.tree.signals).toHaveLength(4); // Fixture disposal only, recovery never signals.
   await expect(recoverControllerOperationState(f.input, f.ports)).rejects.toMatchObject({ code: "invalid_usage" });
   expect(await Promise.all(f.files.map(path => readFile(path)))).toEqual(before);
 });
@@ -106,4 +116,54 @@ test("public recovery inspection refuses a malformed historical receipt without 
   expect(result).toMatchObject({ outcome: "blocked", reason: "restoration-receipt-unavailable", operations: { unknown: 6 } });
   expect(JSON.stringify(result)).not.toContain("excluded-fixture-output");
   expect(await Promise.all([...f.files, path].map(file => readFile(file)))).toEqual(before);
+});
+
+for (const source of ["contradictory-child", "exec-changed-child", "missing-creation", "missing-compile"] as const) test(`restoration rejects ${source} original provenance without role-based owner omission`, async () => {
+  const f = await fixture();
+  const journal = JSON.parse(await readFile(f.files[1]!, "utf8")), marker = JSON.parse(await readFile(f.files[2]!, "utf8"));
+  if (source === "contradictory-child") {
+    const survivor = f.tree.spawn("extra");
+    journal.failure.child = { pid: survivor.pid, start: survivor.start, exitCode: null, signal: null };
+    journal.failure.cleanup = [{ role: "host", pid: survivor.pid, start: survivor.start, signalSent: true, outcome: "unproven", observed: "same-identity" }];
+    const store = JSON.parse(await readFile(f.files[0]!, "utf8")); store.original.prefix.diagnostic = journal.failure;
+    await writeFile(f.files[0]!, JSON.stringify(store));
+  }
+  if (source === "exec-changed-child") {
+    const row = f.tree.procs.get(f.oldHost.pid)!; row.alive = true; row.role = "extra"; row.ident.cmdline = ["unclassified-fixture"]; row.ident.exe = "/fixture/changed";
+  }
+  if (source === "missing-creation") delete journal.creation;
+  if (source === "missing-compile") delete marker.compile;
+  for (const path of [f.files[1]!, adoptionEvidencePath(f.runRoot, "original", "journal")]) await writeFile(path, JSON.stringify(journal));
+  for (const path of [f.files[2]!, adoptionEvidencePath(f.runRoot, "original", "marker")]) await writeFile(path, JSON.stringify(marker));
+  const before = await Promise.all(f.files.map(path => readFile(path)));
+  expect(await recoverControllerOperationState(f.input, f.ports)).toMatchObject({ outcome: "blocked", operations: { unknown: 6 }, adopted: false });
+  expect(await Promise.all(f.files.map(path => readFile(path)))).toEqual(before);
+});
+
+test("failed post-link proof remains incomplete through public historical inspection", async () => {
+  const f = await fixture(); let reads = 0;
+  f.ports.gatewayPid = () => ++reads <= 2 ? f.host.pid : null;
+  await expect(recoverControllerOperationState(f.input, f.ports)).rejects.toMatchObject({ code: "invalid_usage" });
+  expect(reads).toBe(3);
+  const path = restorationReceiptPath(f.runRoot, "original"), preserved = await readFile(path);
+  expect(JSON.parse(preserved.toString())).toMatchObject({ publication: "prepared", physicallyRestored: false });
+  const historical = await recoverControllerOperationState({ ...f.input, confirm: false }, f.ports);
+  expect(historical).toMatchObject({ outcome: "blocked", operations: { unknown: 6 }, replayAuthorized: false });
+  expect(historical.restoration).toBeUndefined(); expect(reads).toBe(3);
+  expect(await readFile(path)).toEqual(preserved);
+  await expect(recoverControllerOperationState(f.input, { ...f.ports, gatewayPid: () => f.host.pid })).rejects.toMatchObject({ code: "invalid_usage" });
+});
+
+
+test("completed original restoration discharges only its resource boundary and preserves archived evidence across later writes", async () => {
+  const f = await fixture(), original = await readFile(adoptionEvidencePath(f.runRoot, "original", "journal"));
+  expect(unresolvedAdoption(f.runRoot)).toBe("original");
+  expect(await recoverControllerOperationState(f.input, f.ports)).toMatchObject({ outcome: "restored", operations: { unknown: 6 } });
+  expect(unresolvedAdoption(f.runRoot)).toBeNull();
+  const { writeAdoptOpState } = await import("../src/internal/process/transient-adopt.ts");
+  await writeAdoptionOwner(f.runRoot, "later", "unresolved");
+  await writeAdoptOpState(f.runRoot, { operationId: "later", launchMode: "transient-adopt", phase: "wrapper-stop", tempSupervisor: null, adoptingSupervisor: null, host: null });
+  expect(await readFile(adoptionEvidencePath(f.runRoot, "original", "journal"))).toEqual(original);
+  expect(unresolvedAdoption(f.runRoot)).toBe("later");
+  expect(await recoverControllerOperationState({ ...f.input, confirm: false }, f.ports)).toMatchObject({ outcome: "recorded", restorationHistorical: true, operations: { unknown: 6 }, replayAuthorized: false });
 });

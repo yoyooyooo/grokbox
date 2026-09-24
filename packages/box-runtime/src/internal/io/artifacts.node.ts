@@ -1,5 +1,6 @@
+import { renameSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { mkdir, open, rename } from "node:fs/promises";
+import { mkdir, open } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 /** Publish one protected, complete JSON artifact. Failed staging is left for operator cleanup. */
@@ -20,5 +21,7 @@ export async function writeRuntimeArtifact(path: string, value: unknown, beforeP
     await file.close();
   }
   beforePublish?.();
-  await rename(staging, path);
+  // No libuv queue may separate the ownership guard from the publication syscall.
+  renameSync(staging, path);
+  beforePublish?.();
 }

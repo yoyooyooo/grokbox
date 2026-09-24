@@ -14,7 +14,9 @@ function replay(changes: Partial<Identity> = {}) {
   const writes: string[] = [];
   let exits = 0;
   const fs = {
+    openSync() { return 9; }, closeSync() {}, fsyncSync() {}, writeFileSync() {},
     readFileSync(path: string) {
+      if (path === "/proc/99/stat") return `99 (guardian) S 1 ${Array(17).fill("0").join(" ")} 100`;
       if (path === "/owned/identity.json") return JSON.stringify({ frozen: [expected], deadlineMs: 8000 });
       if (path === `/proc/${expected.pid}/stat`) {
         if (observed.pid !== expected.pid) throw new Error("owned-gone");
@@ -32,7 +34,7 @@ function replay(changes: Partial<Identity> = {}) {
   };
   runInNewContext(source, {
     require(name: string) { if (name !== "node:fs") throw new Error("unqualified-import"); return fs; },
-    process: { argv: ["node", "owned-guardian", "/owned/identity.json"],
+    process: { pid: 99, ppid: 99, argv: ["node", "owned-guardian", "/owned/identity.json"],
       exit(code: number) { expect(code).toBe(0); exits++; }, kill(pid: number, signal: string) { signals.push([pid, signal]); },
       stdout: { write(value: string) { writes.push(value); }, on() {}, end(value: string, done: () => void) { writes.push(value); done(); } },
       stdin: { on(event: string, callback: () => void) { stdin.set(event, callback); }, resume() {} },

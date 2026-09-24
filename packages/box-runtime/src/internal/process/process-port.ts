@@ -6,6 +6,8 @@ export type SignalName = "SIGSTOP" | "SIGCONT" | "SIGTERM" | "SIGKILL";
 export type SignalResult = { ok: true } | { ok: false; reason: "identity-mismatch" | "not-found" };
 
 export type ProcessPort = {
+  inspectLifetime?: (pid: number) => { pid: number; start: number } | null;
+  recheckDiscovery?: () => void;
   inspect: (pid: number) => ProcessIdentity | null;
   list: () => ProcessIdentity[];
   signal: (expected: ProcessIdentity, signal: SignalName) => SignalResult;

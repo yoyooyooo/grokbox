@@ -235,7 +235,7 @@ export async function applyHostEnable(deps: CliDeps): Promise<unknown> {
       ...(profileSha256 ? { profileSha256 } : {}),
     }),
     boxRoot: runtime.root,
-  });
+  }, deps.signal);
 }
 
 function hostStopFailed(code: string): CliError {

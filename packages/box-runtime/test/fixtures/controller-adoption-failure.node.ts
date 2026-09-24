@@ -128,11 +128,11 @@ fs.writeFileSync(process.env.MARKER,JSON.stringify({operationId:'original',pid:p
         diskSha: () => "a".repeat(64), now: Date.now,
         readMarker: () => { try { return JSON.parse(readFileSync(markerPath, "utf8")); } catch { return null; } },
         readGatewayPid: ports.readGatewayPid, waitGone: ports.waitHostGone, waitReady: ports.waitReady,
-        childEvidence: ports.childEvidence, tempSpawned: ports.tempSpawned,
+        childEvidence: ports.childEvidence, tempSpawned: ports.tempSpawned, markerPath, preloadSha256: "d".repeat(64), creationEvidence: ports.creationEvidence,
         spawnTempSupervisor: async signal => { helper = await ports.spawnTempSupervisor(signal); return helper; },
         waitNewHost: async () => { await until(() => { const row = ports.childEvidence?.(); host = row ? inspectOwned(row.pid) : null; return host !== null; }); return host; },
         armGuardian: async () => { guardian = await spawnIndependentGuardian({ frozen: [victimIdentity], operationId: "original", deadlineMs: 250, stateDir: dir, execPath: process.execPath });
-          assert(guardian.armed); return { ok: true, release: guardian.release, signal: guardian.signal, end: guardian.end, continued: guardian.continued, dispose: guardian.dispose }; },
+          assert(guardian.armed); return { ok: true, release: guardian.release, signal: guardian.signal, end: guardian.end, continued: guardian.continued, owners: guardian.owners, dispose: guardian.dispose }; },
         hasGrokboxPreload: row => row.pid === host?.pid,
       }) });
     const request = { intent: "apply" as const, confirmed: true, operationId: "original", boxRoot: dir, strategy: "transient" as const };
@@ -145,7 +145,13 @@ fs.writeFileSync(process.env.MARKER,JSON.stringify({operationId:'original',pid:p
     const diagnostic = JSON.parse(JSON.stringify(row?.prefix?.diagnostic));
     assert.equal(diagnostic.cleanup?.find((item: { role: string }) => item.role === "host")?.outcome, "unproven", "delayed exit must be durable, not mistaken for joined cleanup");
     assert.deepEqual(receipt.diagnostic, row?.prefix?.diagnostic);
-    assert.deepEqual(JSON.parse(await readFile(join(dir, "state", "adopt-op.json"), "utf8")).failure, row?.prefix?.diagnostic);
+    const journal = JSON.parse(await readFile(join(dir, "state", "adopt-op.json"), "utf8"));
+    assert.deepEqual(journal.failure, row?.prefix?.diagnostic);
+    assert.equal(journal.creation.operationId, "original");
+    assert.deepEqual(journal.creation.host, { pid: (host as unknown as ProcessIdentity).pid, start: (host as unknown as ProcessIdentity).start });
+    assert.deepEqual(journal.creation.tempSupervisor, { pid: (helper as unknown as ProcessIdentity).pid, start: (helper as unknown as ProcessIdentity).start });
+    assert.deepEqual(journal.creation.guardian, guardian!.owners()!.guardian);
+    assert.deepEqual(journal.creation.holder, guardian!.owners()!.holder);
     await until(() => !inspectOwned((host as unknown as ProcessIdentity).pid));
     assert.deepEqual(readControllerOperation(dir, "original"), row, "late fixture exit must not rewrite unknown as success");
     assert.equal((await Effect.runPromise(runControllerOperation(request).pipe(Effect.provide(layer)))).reason, "uncertain-operation");

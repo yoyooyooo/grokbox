@@ -51,6 +51,16 @@ function contExact(reason) {
   process.stdout.end(`${reason}\n`, () => process.exit(0));
 }
 
+// Creation receipt precedes arming; PID/start survives argv or exec changes.
+function lifetime(pid) {
+  const text = readFileSync(`/proc/${pid}/stat`, "utf8");
+  return { pid, start: Number(text.slice(text.lastIndexOf(")") + 2).split(" ")[19]) };
+}
+const self = lifetime(process.pid), parent = lifetime(process.ppid);
+const created = { operationId: payload.operationId ?? null, guardian: { pid: self.pid, start: self.start }, holder: { pid: parent.pid, start: parent.start } };
+const createdFd = openSync(`${identityPath}.created.json`, "wx", 0o600);
+try { writeFileSync(createdFd, `${JSON.stringify(created)}\n`); fsyncSync(createdFd); } finally { closeSync(createdFd); }
+
 process.stdout.on("error", () => { if (released) process.exit(0); });
 process.stdout.write("armed\n");
 process.stdin.on("data", chunk => { if (String(chunk).trim() === "release") contExact("released"); });

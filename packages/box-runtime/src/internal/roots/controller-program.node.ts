@@ -1,3 +1,4 @@
+import { unresolvedAdoption } from "../process/adopt-evidence.ts";
 import { randomUUID } from "node:crypto";
 import { constants, closeSync, existsSync, fstatSync, fsyncSync, lstatSync, openSync, readFileSync, readSync, renameSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
@@ -453,14 +454,18 @@ export async function commitObservedAdopt(input: {
   operationId: string; ephemeralRoot: string;
   observe: () => ObservedAdoptState | null;
   modeldReady: () => Promise<boolean>;
+  signal?: AbortSignal;
 }): Promise<IdentityOpResult | null> {
   const lock = await acquireOperationLease(operationLockPath(input.ephemeralRoot), input.operationId);
   if (!lock.ok) return emptyAdoptResult("lock-conflict");
   let committedAttestation: CoverageAttestation | undefined;
   let phase = "observed-adopt-preflight";
+  const publicationGuard = () => { if (input.signal?.aborted) throw Error("operation-cancelled"); };
   const fail = (code: string): IdentityOpResult => ({ ...emptyAdoptResult(code, phase),
     ...(committedAttestation ? { committedAttestation } : {}) });
   try {
+    if (input.signal?.aborted) return fail("operation-cancelled");
+    if (unresolvedAdoption(input.ephemeralRoot)) return fail("unresolved-adoption-owner");
     const snapshot = input.observe();
     if (!snapshot || !observedAdoptCommitEligible(snapshot)) return null;
     const captured = structuredClone(snapshot);
@@ -470,7 +475,9 @@ export async function commitObservedAdopt(input: {
     const recheck = async (): Promise<string | null> => {
       // Readiness can suspend; inspect the captured identities and bytes after
       // that wait, without renewing them from a newer successful observation.
+      if (input.signal?.aborted) return "operation-cancelled";
       if (!await input.modeldReady()) return "modeld_not_ready";
+      if (input.signal?.aborted) return "operation-cancelled";
       const current = input.observe();
       return current && isDeepStrictEqual(current, captured) ? null : "observed-generation-changed";
     };
@@ -490,10 +497,10 @@ export async function commitObservedAdopt(input: {
         exe: captured.host.exe, cmdline: captured.host.cmdline },
     };
     phase = "commit-attestation";
-    await writeAdoptOpState(input.ephemeralRoot, journal);
+    await writeAdoptOpState(input.ephemeralRoot, journal, publicationGuard);
     const atCommit = await recheck(); if (atCommit) return fail(atCommit);
     let persistFailed = false;
-    try { await writeAttestation(input.ephemeralRoot, structuredClone(proposed)); }
+    try { await writeAttestation(input.ephemeralRoot, structuredClone(proposed), publicationGuard); }
     catch { persistFailed = true; }
     const record = await readAttestation(input.ephemeralRoot);
     if (!isDeepStrictEqual(record, proposed)) return fail("attestation-uncommitted");
@@ -502,7 +509,7 @@ export async function commitObservedAdopt(input: {
     const afterCommit = await recheck(); if (afterCommit) return fail(afterCommit);
     phase = "attested";
     const done = { ...journal, phase: "attested" as const };
-    await writeAdoptOpState(input.ephemeralRoot, done);
+    await writeAdoptOpState(input.ephemeralRoot, done, publicationGuard);
     if (!isDeepStrictEqual(await readAdoptOpState(input.ephemeralRoot), done)) return fail("journal-uncommitted");
     if (!isDeepStrictEqual(await readAttestation(input.ephemeralRoot), proposed)) return fail("attestation-uncommitted");
     const final = await recheck(); if (final) return fail(final);
@@ -520,7 +527,7 @@ export async function commitObservedAdopt(input: {
   }
 }
 
-async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promise<IdentityOpResult> {
+async function applyLiveControllerAdopt(command: FrozenControllerCommand, signal: AbortSignal): Promise<IdentityOpResult> {
   const ephemeralRoot = ephemeralRuntimeRoot();
   const markerPath = join(ephemeralRoot, "state", "preload-marker.json");
   const overlayPath = join(ephemeralRoot, "state", "launch-env.json");
@@ -539,7 +546,7 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
   if (!preloadSha) return emptyAdoptResult("preload-unavailable");
 
   const tryCommitObserved = () => commitObservedAdopt({
-    operationId: command.operationId, ephemeralRoot,
+    operationId: command.operationId, ephemeralRoot, signal,
     observe: () => {
       const identities = uniqueObservedAdoptIdentities(ports.processes, ports.classify);
       const currentProfile = loadDurableReviewedProfile(command.boxRoot);
@@ -553,7 +560,7 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
         hasGrokboxPreload: ports.hasGrokboxPreload(identities.host),
         supervisorPreloaded: ports.hasGrokboxPreload(identities.supervisor) };
     },
-    modeldReady: () => probeModeldHealth(ephemeralRoot),
+    modeldReady: () => probeModeldHealth(ephemeralRoot, 80, signal),
   });
 
   const observed = await tryCommitObserved();
@@ -585,6 +592,7 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
   );
   const expectedMode = command.strategy === "transient" ? "route" : "identity";
   const spawned = await runTransientAdoptOperation({
+    signal, markerPath, preloadSha256: preloadSha, creationEvidence: ports.creationEvidence,
     processes: ports.processes,
     classify: ports.classify,
     reviewedProfile: profile,
@@ -624,7 +632,7 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
         execPath,
       });
       if (!guardian.armed) return { ok: false };
-      return { ok: true, release: guardian.release, signal: guardian.signal, end: guardian.end, continued: guardian.continued, dispose: guardian.dispose };
+      return { ok: true, release: guardian.release, signal: guardian.signal, end: guardian.end, continued: guardian.continued, owners: guardian.owners, dispose: guardian.dispose };
     },
     expectedMode,
     hasGrokboxPreload: ports.hasGrokboxPreload,
@@ -635,10 +643,27 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand): Promi
 }
 
 export function liveControlResourcesLayer(ports: {
-  adopt: (command: FrozenControllerCommand) => Promise<IdentityOpResult>;
+  adopt: (command: FrozenControllerCommand, signal: AbortSignal) => Promise<IdentityOpResult>;
   inspect: (boxRoot: string) => ReturnType<typeof inspectControllerFacts>;
 } = { adopt: applyLiveControllerAdopt, inspect: boxRoot => inspectControllerFacts(boxRoot, defaultLiveAdmissionPorts()) }): Layer.Layer<ControlResources> {
   const operationAdoptions = new Map<string, IdentityOpResult>();
+  const execute = (input: FrozenControllerCommand) => Effect.callback<IdentityOpResult, unknown>((resume, signal) => {
+    // Cancellation aborts the SAME bounded operation; the disposer joins it
+    // before the surrounding controller lease/finalizers may settle or release.
+    const work = ports.adopt(input, signal).then(result => {
+      operationAdoptions.set(input.operationId, result);
+      const loaded = loadStore(input.boxRoot);
+      if (!loaded.ok || !loaded.store[input.operationId]) throw new Error("store-corrupt");
+      const row = loaded.store[input.operationId]!;
+      loaded.store[input.operationId] = { ...row, state: signal.aborted ? "unknown" : row.state,
+        prefix: { signaled: result.signaled, spawned: result.spawned === true, guardian: result.guardian === true,
+          ...(result.diagnostic ? { diagnostic: result.diagnostic } : {}) } };
+      saveStore(input.boxRoot, loaded.store);
+      return result;
+    });
+    work.then(result => resume(Effect.succeed(result)), error => resume(Effect.fail(error)));
+    return Effect.promise(async () => { try { await work; } catch { /* Original journal/claim remains unresolved. */ } });
+  });
   return Layer.succeed(ControlResources, {
     lease: (input: FrozenControllerCommand) => Effect.gen(function* () {
       const locked = yield* Effect.acquireRelease(
@@ -694,7 +719,12 @@ export function liveControlResourcesLayer(ports: {
         if (!loaded.ok) throw new Error("store-corrupt");
         const existing = loaded.store[input.operationId];
         if (existing) {
-          loaded.store[input.operationId] = { ...existing, state: input.state, prefix: input.prefix ?? existing.prefix };
+          loaded.store[input.operationId] = { ...existing, state: input.state, prefix: input.prefix ? {
+            signaled: input.prefix.signaled || existing.prefix?.signaled === true,
+            spawned: input.prefix.spawned || existing.prefix?.spawned === true,
+            guardian: input.prefix.guardian || existing.prefix?.guardian === true,
+            ...(input.prefix.diagnostic ?? existing.prefix?.diagnostic ? { diagnostic: input.prefix.diagnostic ?? existing.prefix?.diagnostic } : {}),
+          } : existing.prefix };
           saveStore(input.boxRoot, loaded.store);
         }
       },
@@ -702,23 +732,15 @@ export function liveControlResourcesLayer(ports: {
     }),
     preflight: (input: FrozenControllerCommand) => Effect.sync(() => ports.inspect(input.boxRoot)),
     recheck: (input: FrozenControllerCommand) => Effect.sync(() => ports.inspect(input.boxRoot)),
-    signal: (input: FrozenControllerCommand) => Effect.tryPromise({
-      try: async () => {
-        liveMutationAttempts.signal += 1;
-        const operationAdopt = await ports.adopt(input);
-        operationAdoptions.set(input.operationId, operationAdopt);
-        return { signaled: operationAdopt.signaled === true, diagnostic: operationAdopt.diagnostic };
-      },
-      catch: (error) => error,
+    signal: (input: FrozenControllerCommand) => Effect.gen(function* () {
+      liveMutationAttempts.signal += 1;
+      const result = yield* execute(input);
+      return { signaled: result.signaled, diagnostic: result.diagnostic };
     }),
-    spawn: (input: FrozenControllerCommand) => Effect.tryPromise({
-      try: async () => {
-        liveMutationAttempts.spawn += 1;
-        const operationAdopt = await ports.adopt(input);
-        operationAdoptions.set(input.operationId, operationAdopt);
-        return { spawned: operationAdopt.spawned === true, signaled: operationAdopt.signaled, guardian: operationAdopt.guardian === true, diagnostic: operationAdopt.diagnostic };
-      },
-      catch: (error) => error,
+    spawn: (input: FrozenControllerCommand) => Effect.gen(function* () {
+      liveMutationAttempts.spawn += 1;
+      const result = yield* execute(input);
+      return { spawned: result.spawned === true, signaled: result.signaled, guardian: result.guardian === true, diagnostic: result.diagnostic };
     }),
     armGuardian: (input: FrozenControllerCommand) => Effect.sync(() => {
       liveMutationAttempts.guardian += 1;
@@ -734,9 +756,10 @@ export function liveControlResourcesLayer(ports: {
   });
 }
 
-export async function startControlOperation(request: ControllerRequest): Promise<ControllerReceipt> {
+export async function startControlOperation(request: ControllerRequest, signal?: AbortSignal): Promise<ControllerReceipt> {
   return Effect.runPromise(
     Effect.scoped(runControllerOperation(request).pipe(Effect.provide(liveControlResourcesLayer()))),
+    { signal },
   );
 }
 

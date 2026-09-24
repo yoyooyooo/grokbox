@@ -294,6 +294,16 @@ export function createLiveH3AdoptPorts(input: {
     hasGrokboxPreload: (host) =>
       procEnvHas(host.pid, "NODE_OPTIONS", input.preloadNeedle) || procEnvHas(host.pid, "GROKBOX_PRELOAD_MODE"),
     tempSpawned: () => spawned,
+    creationEvidence: () => {
+      try {
+        const bytes = readFileSync(`${input.overlayPath}.child.json`);
+        if (bytes.length > 1024) return null;
+        const row = JSON.parse(bytes.toString()), spec = JSON.parse(readFileSync(input.overlayPath, "utf8"));
+        const identity = (value: { pid: number; start: number }) => value && Number.isSafeInteger(value.pid) && value.pid > 0 && Number.isSafeInteger(value.start) && value.start > 0;
+        if (row.operationId !== spec.env?.GROKBOX_OPERATION_ID || !identity(row) || !identity(row.supervisor)) return null;
+        return { operationId: row.operationId, host: { pid: row.pid, start: row.start }, tempSupervisor: { pid: row.supervisor.pid, start: row.supervisor.start } };
+      } catch { return null; }
+    },
     childEvidence: () => {
       try {
         const bytes = readFileSync(`${input.overlayPath}.child.json`);
@@ -313,12 +323,14 @@ export function createLiveH3AdoptPorts(input: {
       child.on("error", () => {}); // Fixed result only; never expose spawn argv/env/errors.
       spawned = child.pid != null;
       if (!child.pid) return null;
+      const created = port.inspect(child.pid);
+      if (!created) return null;
       await waitUntil(() => {
         const current = port.inspect(child.pid!);
-        return !!current && classify(current) === "temp-supervisor";
+        return !!current && current.start === created.start && current.uid === created.uid && classify(current) === "temp-supervisor";
       }, waitMs, signal);
       const current = port.inspect(child.pid);
-      return current && classify(current) === "temp-supervisor" ? current : null;
+      return current && current.start === created.start && current.uid === created.uid && classify(current) === "temp-supervisor" ? current : null;
     },
     waitNewHost: async (oldHostPid, signal) => {
       const ok = await waitUntil(() => {

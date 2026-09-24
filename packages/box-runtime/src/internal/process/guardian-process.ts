@@ -20,6 +20,7 @@ export type IndependentGuardian = {
   signal: AbortSignal;
   dispose: () => void;
   continued: () => boolean | null;
+  owners: () => { guardian: { pid: number; start: number }; holder: { pid: number; start: number } } | null;
   end: () => "active" | "released" | "expired" | "lost";
   killInjector: () => void;
 };
@@ -42,6 +43,16 @@ export async function spawnIndependentGuardian(input: {
     signal: ownership.signal,
     end: () => { if (Date.now() >= expiresAt) expire(); return end; },
     dispose: () => clearTimeout(timer),
+    owners: () => {
+      try {
+        const bytes = readFileSync(`${identityPath}.created.json`);
+        if (bytes.length > 1024) return null;
+        const row = JSON.parse(bytes.toString());
+        if (row.operationId !== (input.operationId ?? null) || row.holder?.pid !== holder.pid
+          || ![row.holder, row.guardian].every(value => value && Number.isSafeInteger(value.pid) && value.pid > 0 && Number.isSafeInteger(value.start) && value.start > 0)) return null;
+        return { guardian: { pid: row.guardian.pid, start: row.guardian.start }, holder: { pid: row.holder.pid, start: row.holder.start } };
+      } catch { return null; }
+    },
     continued: (): boolean | null => {
       try {
         const bytes = readFileSync(`${identityPath}.result.json`);
