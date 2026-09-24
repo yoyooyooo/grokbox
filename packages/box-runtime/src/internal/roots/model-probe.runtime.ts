@@ -14,6 +14,7 @@ import { assertSafeDirectory, publishConfigFile, readConfigFile } from "../io/co
 import { withJournalLock } from "../host/journal-lock.node.ts";
 import { createLiveBackendAuth } from "../io/credentials.node.ts";
 import { dispatchingModelBackendLayer } from "../backends/dispatch.ts";
+import { ownProbeResponseBody, ProbeBodyCleanupGap } from "../io/model-probe-body.node.ts";
 
 type RecordFile = { version: 1; fingerprint: string; receipt: ModelProbeReceipt };
 type ProbeOptions = {
@@ -112,6 +113,17 @@ export function openModelProbe(options: ProbeOptions) {
     let usage: ModelProbeReceipt["usage"] = null;
     let finished = false;
     const sourceCalls = new Set<Promise<Response>>();
+    const bodies = new Set<ReturnType<typeof ownProbeResponseBody>>();
+    let closingSources: Promise<void> | undefined;
+    const closeSources = (): Promise<void> => closingSources ??= (async () => {
+      deadline.abort();
+      await Promise.allSettled([...sourceCalls]);
+      // A returned fetch no longer appears in sourceCalls. Close and join its
+      // reader explicitly, including asynchronous source cancellation.
+      await Promise.allSettled([...bodies].map(body => body.close()));
+      const closed = await Promise.allSettled([...bodies].map(body => body.done));
+      if (closed.some(result => result.status === "rejected")) throw new ProbeBodyCleanupGap();
+    })();
     try {
       signal.throwIfAborted();
       await authorize(signal);
@@ -123,6 +135,7 @@ export function openModelProbe(options: ProbeOptions) {
       let verifyCredential: () => Promise<void> = async () => { throw new BackendFailure("auth_mismatch"); };
       const fetchOnce: typeof fetch = Object.assign((url: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> => {
         const work = (async () => {
+          signal.throwIfAborted();
           if (sent) throw new BackendFailure("provider_error");
           await authorize(signal);
           await assertModel(request);
@@ -132,19 +145,12 @@ export function openModelProbe(options: ProbeOptions) {
           sent = true;
           const response = await sourceFetch(url, { ...init, redirect: "error",
             signal: init?.signal ? AbortSignal.any([init.signal, signal]) : signal });
-          // SDK cancellation can settle its stream before fetch's own Promise.
-          // A late response still belongs to this probe and must release its body.
-          if (signal.aborted) { await response.body?.cancel(); signal.throwIfAborted(); }
-          if (!response.body) return response;
-          let received = 0;
-          const bounded = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
-            transform(chunk, controller) {
-              received += chunk.byteLength;
-              if (received > MODEL_PROBE_LIMITS.maxResponseBytes) throw new BackendFailure("stream_limit");
-              controller.enqueue(chunk);
-            },
-          }));
-          return new Response(bounded, { status: response.status, statusText: response.statusText, headers: response.headers });
+          const body = response.body ? ownProbeResponseBody(response.body, MODEL_PROBE_LIMITS.maxResponseBytes) : undefined;
+          if (body) bodies.add(body);
+          // Header and body lifetimes remain owned after the SDK has cancelled.
+          if (signal.aborted) { await body?.close(); signal.throwIfAborted(); }
+          if (!body) return response;
+          return new Response(body.stream, { status: response.status, statusText: response.statusText, headers: response.headers });
         })();
         sourceCalls.add(work);
         void work.finally(() => sourceCalls.delete(work)).catch(() => undefined);
@@ -179,6 +185,9 @@ export function openModelProbe(options: ProbeOptions) {
         if (!finished) return yield* Effect.fail(new BackendFailure("stream_invalid"));
       }).pipe(Effect.provide(layer))), { signal });
       if (original) return original;
+      // A cleanup gap leaves the original uncertain guard intact; no terminal
+      // success receipt is published while a provider body remains unclosed.
+      await closeSources();
       if (!retained) {
         if (Exit.isFailure(exit)) throw Cause.squash(exit.cause);
         throw unavailable();
@@ -197,9 +206,8 @@ export function openModelProbe(options: ProbeOptions) {
         return completed.receipt;
       } catch { return retained.receipt; }
     } finally {
-      deadline.abort();
-      await Promise.allSettled([...sourceCalls]);
-      clearTimeout(timer);
+      try { await closeSources(); }
+      finally { clearTimeout(timer); }
     }
   }
   const effect = (input: unknown, authorize: (signal: AbortSignal) => Promise<void>) => {
@@ -210,7 +218,7 @@ export function openModelProbe(options: ProbeOptions) {
       // Interrupt inference/source waits, then join the original reservation,
       // provider Scope, receipt publisher and deadline cleanup before Server.close.
       controller.abort();
-      await pending?.catch(() => undefined);
+      await pending?.catch(error => { if (error instanceof ProbeBodyCleanupGap) throw error; });
     }));
   };
   return {

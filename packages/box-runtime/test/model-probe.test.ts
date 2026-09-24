@@ -238,3 +238,64 @@ test("the owning Scope joins a late fetch and its response-body cancellation aft
     expect(await owner.receipt(f.request.requestId)).toMatchObject({ state: "unknown", providerRequestSent: true, retryAllowed: false });
   } finally { headers.resolve(); released.resolve(); await closing; await Effect.runPromise(Fiber.interrupt(fiber)); }
 }, 10000);
+
+for (const mode of ["oversized", "malformed", "cancelled"] as const) test(`probe Scope joins returned ${mode} body cancellation`, async () => {
+  const f = await fixture(), requested = Promise.withResolvers<void>(), cancelling = Promise.withResolvers<void>(), released = Promise.withResolvers<void>();
+  let calls = 0, cancelDone = false, settled = false;
+  const source: typeof fetch = Object.assign(async () => {
+    calls++; requested.resolve();
+    return new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        if (mode === "oversized") controller.enqueue(new Uint8Array(70000).fill(65));
+        if (mode === "malformed") controller.enqueue(new TextEncoder().encode("data: {invalid-json}\n\n"));
+      },
+      async cancel() { cancelling.resolve(); await released.promise; cancelDone = true; },
+    }), { headers: { "content-type": "text/event-stream" } });
+  }, { preconnect: fetch.preconnect });
+  const owner = openModelProbe({ ...f.options, fetch: source });
+  const fiber = Effect.runFork(owner.effect(f.request, allow));
+  let closing: Promise<unknown> | undefined;
+  try {
+    await requested.promise;
+    await new Promise<void>(resolve => setImmediate(resolve));
+    if (mode !== "cancelled") await cancelling.promise;
+    closing = Effect.runPromise(Fiber.interrupt(fiber)).then(() => { settled = true; });
+    await cancelling.promise;
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(settled).toBe(false); expect(cancelDone).toBe(false);
+    released.resolve(); await closing;
+    expect(cancelDone).toBe(true); expect(calls).toBe(1); expect(f.received).toHaveLength(0);
+    expect(await owner.receipt(f.request.requestId)).toMatchObject({ state: "unknown", retryAllowed: false });
+  } finally { released.resolve(); await closing; await Effect.runPromise(Fiber.interrupt(fiber)); }
+}, 10000);
+
+test("body cancellation failure is an explicit cleanup gap and retains the uncertain request guard", async () => {
+  const f = await fixture(); let calls = 0;
+  const source: typeof fetch = Object.assign(async () => {
+    calls++;
+    return new Response(new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new Uint8Array(70000).fill(65)); },
+      cancel() { return Promise.reject(Error("fixture cancellation failed")); },
+    }), { headers: { "content-type": "text/event-stream" } });
+  }, { preconnect: fetch.preconnect });
+  const owner = openModelProbe({ ...f.options, fetch: source });
+  await expect(Effect.runPromise(owner.effect(f.request, allow))).rejects.toThrow("model_probe_body_cleanup_gap");
+  expect(await owner.receipt(f.request.requestId)).toMatchObject({ state: "unknown", retryAllowed: false });
+  await expect(owner.probe({ ...f.request, requestId: randomUUID() }, allow)).rejects.toMatchObject({ code: "operation_unknown" });
+  expect(calls).toBe(1); expect(f.received).toHaveLength(0);
+});
+
+test("an already-errored upstream body settles unknown without inventing a cancellation cleanup gap", async () => {
+  const f = await fixture(); let calls = 0, cancellations = 0;
+  const source: typeof fetch = Object.assign(async () => {
+    calls++;
+    return new Response(new ReadableStream<Uint8Array>({
+      start(controller) { queueMicrotask(() => controller.error(Error("fixture transport failed after headers"))); },
+      cancel() { cancellations++; throw Error("an errored stream cannot reach underlying cancellation"); },
+    }), { headers: { "content-type": "text/event-stream" } });
+  }, { preconnect: fetch.preconnect });
+  const owner = openModelProbe({ ...f.options, fetch: source });
+  const receipt = await Effect.runPromise(owner.effect(f.request, allow));
+  expect(receipt).toMatchObject({ state: "unknown", providerRequestSent: true, retryAllowed: false });
+  expect(calls).toBe(1); expect(cancellations).toBe(0); expect(f.received).toHaveLength(0);
+});

@@ -337,3 +337,56 @@ for (const phase of ["reservation", "post-reservation"] as const) test(`Server.c
     } else assert.equal(paths.length, 0);
   } finally { released.resolve(); await closing; await server.close(); await f.close(); }
 });
+
+for (const mode of ["oversized", "malformed", "cancelled"] as const) test(`Server.close joins the returned ${mode} provider body through actual cancellation`, async () => {
+  const f = await fixture(), store = openRuntimeStore(f.root, {});
+  const requested = Promise.withResolvers<void>(), cancelling = Promise.withResolvers<void>(), released = Promise.withResolvers<void>();
+  let sourceCalls = 0, cancelDone = false, closed = false;
+  const credential = join(f.root, "probe-body-test-secret");
+  await writeFile(credential, "synthetic-probe-body-test-secret", { mode: 0o600 });
+  const models = JSON.parse(await readFile(join(f.root, "models.json"), "utf8"));
+  models.models["test/model"].apiKeyRef = `file:${credential}`;
+  models.models["test/model"].endpoint = "https://probe-body.invalid/v1";
+  await publishConfigFile(join(f.root, "models.json"), models);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(async (url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    if (!String(url).startsWith("https://probe-body.invalid/")) return realFetch(url, init);
+    sourceCalls++; requested.resolve();
+    return new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        if (mode === "oversized") controller.enqueue(new Uint8Array(70000).fill(65));
+        if (mode === "malformed") controller.enqueue(new TextEncoder().encode("data: {invalid-json}\n\n"));
+      },
+      async cancel() { cancelling.resolve(); await released.promise; cancelDone = true; },
+    }), { headers: { "content-type": "text/event-stream" } });
+  }, { preconnect: realFetch.preconnect });
+  const server = await startManagementServer({ store, installationId: f.installationId, env: {},
+    native: { listBots: async () => { throw Error("unexpected-native-read"); }, ownershipRead: async () => { throw Error("unexpected-native-read"); } },
+    readGrants: async () => [{ principalId: "installation-owner", tokenSha256: digest(f.token), capabilities: ["models.probe", "operations.read"] }],
+  }, { hostHealth: { enabled: false } });
+  let closing: Promise<void> | undefined;
+  const barrierTimeout = setTimeout(() => { requested.reject(Error("provider request missing")); cancelling.reject(Error("body cancellation missing")); }, 5000);
+  try {
+    const requestId = randomUUID();
+    const response = realFetch(`${server.url}/v1/model-probes`, { method: "POST", headers: {
+      authorization: `Bearer ${f.token}`, "content-type": "application/json", "x-grokbox-installation-id": f.installationId,
+    }, body: JSON.stringify({ requestId, modelId: "test/model", expectedRevision: modelConfigurationRevision(await store.loadModels()), confirmed: true, timeoutMs: 12345 }) })
+      .then(response => response.arrayBuffer()).catch(() => undefined);
+    await requested.promise; await new Promise<void>(resolve => setImmediate(resolve));
+    if (mode !== "cancelled") await cancelling.promise;
+    closing = server.close().then(() => { closed = true; });
+    await cancelling.promise; clearTimeout(barrierTimeout);
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(closed, false); assert.equal(cancelDone, false);
+    released.resolve(); await closing; await response;
+    assert.equal(cancelDone, true); assert.equal(sourceCalls, 1);
+    const paths = (await readdir(join(f.root, "state/model-probe-operations"))).filter(name => name.endsWith(".json"));
+    assert.equal(paths.length, 1);
+    const receipt = JSON.parse(await readFile(join(f.root, "state/model-probe-operations", paths[0]!), "utf8")).receipt;
+    assert.equal(receipt.state, "unknown"); assert.equal(receipt.retryAllowed, false);
+  } finally {
+    clearTimeout(barrierTimeout); released.resolve();
+    try { await closing; await server.close(); await f.close(); }
+    finally { globalThis.fetch = realFetch; }
+  }
+});
