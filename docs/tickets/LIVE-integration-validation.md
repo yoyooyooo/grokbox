@@ -92,7 +92,7 @@
 
 | 稳定场景 / Gate | 本候选结果与证据范围 | 待完成动作与通过判据 | 阻断、下一步、来源 |
 |---|---|---|---|
-| <a id="live-core-runtime-candidate"></a>**LIVE-CORE-RUNTIME-CANDIDATE**<br>G0 | [ ] `planned`；`not-run` | ①固定已整合运行核心源码/锁/实际制品与原生来源；②适用整体检查及独立审查；③目标宿主、保全/恢复、加载风险/后台有效策略闭包；④窗口目标/费用/动作许可；⑤结论仅允许J2受控采用取证，不代表已loaded或可日用 | [固定候选 core/integration：离线通过，非采用许可](../reports/2026-09-24-core-candidate-101e77be.md)、[拓扑J2](../roadmap/agent-first-cli/parallel-delivery.md#joins)、[T40](T40-persistent-release-and-rollback.md)、[T49](T49-modeld-qualification-and-release.md) |
+| <a id="live-core-runtime-candidate"></a>**LIVE-CORE-RUNTIME-CANDIDATE**<br>G0 | [ ] `planned`；`not-run` | ①固定已整合运行核心源码/锁/实际制品与原生来源；②适用整体检查及独立审查；③目标宿主、保全/恢复、加载风险/后台有效策略闭包；④窗口目标/费用/动作许可；⑤结论仅允许J2受控采用取证，不代表已loaded或可日用 | [当前 Host/worker 隔离资格：三组通过，审查/宿主未放行](../reports/2026-09-24-current-native-evolution.md)、[拓扑J2](../roadmap/agent-first-cli/parallel-delivery.md#joins)、[T40](T40-persistent-release-and-rollback.md)、[T49](T49-modeld-qualification-and-release.md) |
 | <a id="live-core-runtime-acceptance"></a>**LIVE-CORE-RUNTIME-ACCEPTANCE**<br>G0 | [ ] `planned`；`not-run` | ①本节核心子判据逐项在实际候选上有证据，含三模型六格/原版App/原生持久往返/退出；②必要保全、独立寿命与至少24小时实际观察；③安全失败/资源/unknown收束；④用户明确接受该固定核心范围才到J4；⑤全产品未完成项仍保留，不自动发布 | [核心采用Spec](../roadmap/agent-first-cli/spec.md#core-runtime-adoption)、[Q集成与资格](../roadmap/agent-first-cli/routes/q-integration-and-qualification.md)、[执行手册](../maintainers/live-end-to-end.md) |
 
 核心通过后，仅固定安装制品用于日常运行；v2与各worktree继续施工不自动升级现役。以下E0–E6继续维护完整产品判据/结果；核心集合的partial子项不将这些整行改写为通过。
