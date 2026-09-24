@@ -1,6 +1,6 @@
 # 2026-09-24 受控迁移、固定候选与双 Bot 窗口
 
-本报告记录 AH-183/184/185 → AH-162/122 → AH-123/124 → AH-186 的同一授权窗口。当前为**采用前资格已齐、实际接管与双 Bot 验收待执行**；后续结果在本报告续写。它不签 J3/J4、全模型矩阵、完整 App 或长期运行。
+本报告记录 AH-183/184/185 → AH-162/122 → AH-123/124 → AH-186 的同一授权窗口。当前已执行一次固定候选接管，结果为 **recovery-required / commit-failed**；已由原配置 writer 将 desired 恢复为 disabled，进入 owner 修复。双 Bot 验收尚未开始。它不签 J3/J4、全模型矩阵、完整 App 或长期运行。
 
 ## 固定候选与证据边界
 
@@ -40,3 +40,19 @@
 ## 现场结果
 
 采用前 Bot 创建预览因缺少当前 ownership 来源被拒绝，未创建对象或改走其他 writer。当前 Host 仅有进程/入口观察与 stale-attestation 状态，完整 loaded provenance 尚未签定。真实接管、模型请求、DM、工具、compact、follow-up 和官方退出结果待后续实测填写，未计通过。
+
+## 后续 216a 候选与一次采用结果
+
+平台来源推进后，四行版本绑定增量进入 `cff73feb5d3bfbd6da0cdedfdf008fc04124e0f9`。Host 为 `216a8b6b7bdaf9410a0ffa6727bdfe864c1f9a600618a6be2788ce6f520d0e54`，worker 不变。完整变化为六段、668 bytes、1 行；版本/构建与浏览器、桌面指导文本变化分别核对，未称整体语义等价。选定执行声明、owner、196 Gateway 属性与 61 切片不变。独立复查为 OK with notes；组合类型/构建、原生 40/40、61 切片/四语义、受影响公共检查及固定 receiver 均通过。包 SHA256 `31d97af8f820215b1947daeddb8a99a2f15d332889c41d795754c398370623d5`，3,377,117 bytes；72 个安装/包内产物独立核对一致。前述旧候选证据仍保留其原绑定。
+
+cff73 已线性合入 v2 并独立安装。模型文件原为 version2，后续通过原 `RuntimeStore.saveModels` 的 models-write lease、原字节比较和发布前 disabled 检查显式转换为 version3；仅 `/version` 改变，12 个原绑定、模型、main、目录和凭据引用保留，原字节留档。独立复查未建立该已完成转换的缺陷；它不是放宽旧文档读取器。实际 modeld replace、固定 Server/Web 更新与认证读回通过，未声明持久服务。
+
+只读真实 supervisor 能力核对修正了上面的 observe 建议：本机首次采用只支持现有 **route/transient** owner；observe/direct 不支持。原两个孤儿公开浏览器 fixture 经删除根/入口、原测试环境、公开 synthetic health、PID/start 和 parent 归属证明后，精确 pidfd SIGTERM 退出。未过滤完整进程分类器，未强停或删除文件。
+
+61 切片 current-state profile 经正式 baseline/envelope/显式 capability writer 发布，实际变换字节 SHA256 `8517a3faa53d66211ac1796610c8857350ce4e5577fffbfb9c2b6f0ab3eddcc5` 与合格候选一致。随后仅执行一次 `runtime re-adopt --confirm`，原操作 `2e3df157c37defda543f049393f165cc2e098ca46c7aa622cc7808d7775b158a` 返回 recovery-required/commit-failed，并保持 unknown；原五条 unknown 不变，合计六条。
+
+临时 Host 的原 PID/start 编译 marker 证明上述精确源/变换代码已编译返回；没有证明 Gateway 就绪、modeld 结合或采用提交。marker 的 `modeld:false` 是初始化固定值。原日志显示后来官方 Host 从当时仍存活的临时 Host 接管数据目录。完整内层失败码被控制器的 boolean 端口丢弃，临时子进程输出按既有秘密保护合同忽略；根因不能从剩余日志唯一还原。guardian 的 30 秒期限先于多阶段独立等待结束，缺少寿命结束传播和 release 原因记录；不据此伪定唯一超时原因或扩大期限。
+
+独立故障复查要求窄化修复：保留内层原因/阶段/真实副作用事实、受限脱敏的子进程退出与就绪证据、guardian 寿命约束，以及绑定原失败操作的明确物理恢复 owner。现有 operation-recovery 的 clear 只表示租约与 running 条目不待恢复；没有公开入口可把当前 pending adopt journal 安全登记为物理恢复。未调用私有纯 helper 改状态，未清 attestation/circuit/unknown，也未再次采用。
+
+已执行原 `runtime deactivate` 的 desired-only containment，当前 disabled；不信号 Host，不清模型绑定或旧证据。最后一次读回 49 个非目标 Bot 元数据/harness 不变且空闲，modeld accepted/completed 为零。A/B/C 尚未创建，Provider/DM/tool/compact/follow-up 均未跑。AH-183 的实际迁移与消费者读回已完成；AH-124 保持 In Progress。后续修复与隔离资格在独占源码树进行，原操作未知仍保留。上述失败不撤销其原范围的离线事实，也不形成任何 live 通过。

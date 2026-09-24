@@ -4,7 +4,7 @@
 
 ### 2026-09-24 受控迁移与双 Bot 窗口
 
-[固定报告](../reports/2026-09-24-controlled-dual-bot.md)记录 AH-183/184/185 → AH-162/122 → AH-123/124 → AH-186。实现候选 `734206b7` 的固定安装、适用原生 68a/96c3 增量资格和独立复查已齐，schema4 迁移及管理消费者读回已执行；**AH-123 仅具备一次受控采用资格，实际 loaded/双 Bot/compact/回官方仍待现场证据**。不扩成 J3/J4、完整模型矩阵或持久运行通过。五条 unknown、旧回执及未证边界在原范围保留。
+[固定报告](../reports/2026-09-24-controlled-dual-bot.md)记录 AH-183/184/185 → AH-162/122 → AH-123/124 → AH-186。实现候选已推进到固定 `cff73feb` / 原生 216a/96c3，并完成适用资格和独立复查、schema4/models3 迁移及管理消费者读回。**一次实际接管返回 recovery-required/commit-failed，原操作保留为第六条 unknown，当前 desired 已恢复 disabled；正在修复原 owner 的诊断、寿命及物理恢复入口。双 Bot/compact/回官方验收尚未完成**。不扩成 J3/J4、完整模型矩阵或持久运行通过；原五条 unknown 与旧回执均保留。
 
 ### F1 持久宿主当前探针回执（2026-09-22）
 
