@@ -1,8 +1,8 @@
 import { isAbsolute, join, resolve } from "node:path";
 import { CAPABILITIES } from "@grokbox/client/contract";
 import { validateConfig } from "@grokbox/runtime-kernel/config";
-import { createManagementGateway, openMonitorStore, openRuntimeStore, readConfigFile, readInstallation, readStorageConfiguration } from "@grokbox/box-runtime/runtime";
-import { HttpFailure } from "./access.ts";
+import { createManagementGateway, openManagementAccess, openMonitorStore, openRuntimeStore, readConfigFile, readInstallation, readStorageConfiguration } from "@grokbox/box-runtime/runtime";
+import { HttpFailure, validateGrants } from "./access.ts";
 import { startManagementServer } from "./server.ts";
 
 export type InstalledServerOptions = {
@@ -36,7 +36,13 @@ export async function startInstalledManagementServer(options: InstalledServerOpt
     readGrants: async () => {
       const current = await readInstallation(root);
       if (current?.installationId !== installation.installationId || !current.daemon?.tokenSha256) throw new HttpFailure(503, "unavailable", "The installed management authority changed or became unavailable.");
-      return [{ tokenSha256: current.daemon.tokenSha256, principalId: "installation-owner", capabilities: [...CAPABILITIES] }];
+      const delegated = await openManagementAccess(root, installation.installationId).grants();
+      const grants = [{ tokenSha256: current.daemon.tokenSha256, principalId: "installation-owner", capabilities: [...CAPABILITIES] },
+        ...delegated.map(item => ({ tokenSha256: item.tokenSha256, principalId: item.principalId,
+          capabilities: CAPABILITIES.filter(capability => item.capabilities.includes(capability)) }))];
+      if (delegated.some(item => item.capabilities.some(capability => !CAPABILITIES.some(known => known === capability)))) throw new HttpFailure(503, "unavailable", "Management access policy contains an unsupported capability.");
+      validateGrants(grants);
+      return grants;
     },
   });
 }

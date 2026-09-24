@@ -48,6 +48,11 @@ import type { NotificationWorkerView } from "./notification-contract.ts";
 import { notificationWorker } from "./notification-validation.ts";
 
 import { record, exact, revision, operation, model, modelId, botRow, botModel, botSource, selectedModel, cursor } from "./response-validation.ts";
+import { normalizeSystemConfigChange, systemConfigReceipt, type SystemConfigChange, type SystemConfigReceipt, type SystemConfigView } from "./system-config-contract.ts";
+import { normalizeAccessChange, accessView, accessReceipt, type AccessChange, type AccessView, type AccessReceipt } from "./access-contract.ts";
+import { normalizeModelCredential, modelCredentialReceipt, type ModelCredentialRequest, type ModelCredentialReceipt } from "./model-credential-contract.ts";
+import { systemHostView, systemIntegrationView, integrationOperationView, integrationReconciliationView, type SystemHostView, type SystemIntegrationView, type IntegrationOperationView, type IntegrationReconciliationView } from "./system-integration-contract.ts";
+import { normalizeModelProbe, modelProbeReceipt, type ModelProbeRequest, type ModelProbeReceipt } from "./model-probe-contract.ts";
 import { observationSnapshot, incidentList, observationEvents, managementService } from "./observation-validation.ts";
 export { observationSnapshot, incidentList, observationEvents } from "./observation-validation.ts";
 import { incidentDetail, incidentOperation } from "./incident-validation.ts";
@@ -122,6 +127,81 @@ export type ManagementClientOptions = {
 /** Browser/Node shared transport. One submission, no automatic retry or fallback.
  * Clients persist their request ID before sending and query it after uncertainty. */
 export class ManagementClient {
+  async systemHost(signal?: AbortSignal) { return this.request<SystemHostView>("/v1/system/host", systemHostView, undefined, signal); }
+  async systemIntegration(signal?: AbortSignal) { return this.request<SystemIntegrationView>("/v1/system/integration", systemIntegrationView, undefined, signal); }
+  async integrationOperation(id: string, signal?: AbortSignal) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(id)) throw new ManagementClientError("invalid_input", "Invalid controller operation identity.");
+    return this.request<IntegrationOperationView>(`/v1/system/integration/operations/${id}`, value => integrationOperationView(value) && value.operationId === id, undefined, signal);
+  }
+  async reconcileIntegration(id: string, signal?: AbortSignal) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(id)) throw new ManagementClientError("invalid_input", "Invalid controller operation identity.");
+    return this.request<IntegrationReconciliationView>(`/v1/system/integration/operations/${id}/reconciliation`, value => integrationReconciliationView(value) && value.operation.operationId === id, undefined, signal);
+  }
+  async probeModel(input: ModelProbeRequest, signal?: AbortSignal) {
+    const request = normalizeModelProbe(input);
+    return this.request<ModelProbeReceipt>("/v1/model-probes", value => modelProbeReceipt(value) && value.operationRef.startsWith(`model-probe:${this.options.installationId}:`) && value.requestId === request.requestId && value.modelId === request.modelId,
+      request, signal, false, `/v1/model-probe-operations/${request.requestId}`);
+  }
+  async modelProbeOperation(requestId: string, signal?: AbortSignal) {
+    if (!UUID.test(requestId)) throw new ManagementClientError("invalid_input", "Invalid probe request UUID.");
+    return this.request<ModelProbeReceipt>(`/v1/model-probe-operations/${requestId.toLowerCase()}`, value => modelProbeReceipt(value) && value.operationRef.startsWith(`model-probe:${this.options.installationId}:`) && value.requestId === requestId.toLowerCase(), undefined, signal);
+  }
+  async modelCheck(id: string, signal?: AbortSignal) {
+    if (!modelId(id)) throw new ManagementClientError("invalid_input", "Invalid model identity.");
+    return this.request<{ modelId: string; revision: string; checked: string[]; references: unknown; providerRequestSent: false; cost: "none"; serviceReadiness: "not-checked" }>(
+      `/v1/models/${encodeURIComponent(id)}/check`, value => record(value)
+        && exact(value, ["modelId", "revision", "checked", "references", "providerRequestSent", "cost", "serviceReadiness"])
+        && value.modelId === id && revision(value.revision) && Array.isArray(value.checked) && value.checked.join(",") === "schema,references"
+        && record(value.references) && value.providerRequestSent === false && value.cost === "none" && value.serviceReadiness === "not-checked", undefined, signal);
+  }
+  async modelCredential(id: string, signal?: AbortSignal) {
+    if (!modelId(id)) throw new ManagementClientError("invalid_input", "Invalid model identity.");
+    return this.request<{ modelId: string; revision: string; credential: ModelView["credential"]; secretReturned: false }>(
+      `/v1/models/${encodeURIComponent(id)}/credential`, value => record(value) && exact(value, ["modelId", "revision", "credential", "secretReturned"])
+        && value.modelId === id && revision(value.revision) && record(value.credential) && exact(value.credential, ["configured", "source"])
+        && typeof value.credential.configured === "boolean" && ["env", "file", "pi-provider", "none"].includes(String(value.credential.source))
+        && value.secretReturned === false, undefined, signal);
+  }
+  async importModelCredential(input: ModelCredentialRequest, signal?: AbortSignal) {
+    const request = normalizeModelCredential(input);
+    return this.request<ModelCredentialReceipt>("/v1/model-credential-imports",
+      value => modelCredentialReceipt(value) && value.requestId === request.requestId && value.modelId === request.modelId,
+      request, signal, false, `/v1/model-credential-operations/${request.requestId}`);
+  }
+  async modelCredentialOperation(requestId: string, signal?: AbortSignal) {
+    if (!UUID.test(requestId)) throw new ManagementClientError("invalid_input", "Invalid credential request UUID.");
+    return this.request<ModelCredentialReceipt>(`/v1/model-credential-operations/${requestId.toLowerCase()}`,
+      value => modelCredentialReceipt(value) && value.requestId === requestId.toLowerCase(), undefined, signal);
+  }
+  async access(signal?: AbortSignal) {
+    return this.request<AccessView>("/v1/access", accessView, undefined, signal);
+  }
+  async changeAccess(input: AccessChange, signal?: AbortSignal) {
+    const request = normalizeAccessChange(input);
+    return this.request<AccessReceipt>("/v1/access-changes", value => accessReceipt(value) && value.requestId === request.requestId,
+      request, signal, false, `/v1/access-operations/${request.requestId}`);
+  }
+  async accessOperation(requestId: string, signal?: AbortSignal) {
+    if (!UUID.test(requestId)) throw new ManagementClientError("invalid_input", "Invalid access request UUID.");
+    return this.request<AccessReceipt>(`/v1/access-operations/${requestId.toLowerCase()}`,
+      value => accessReceipt(value) && value.requestId === requestId.toLowerCase(), undefined, signal);
+  }
+  async systemConfig(portable = false, signal?: AbortSignal) {
+    return this.request<SystemConfigView>(portable ? "/v1/system-config/export" : "/v1/system-config",
+      value => record(value) && exact(value, ["revision", "document", "application", "grantsIncluded"])
+        && revision(value.revision) && record(value.document) && value.application === "not-observed" && value.grantsIncluded === false, undefined, signal);
+  }
+  async changeSystemConfig(input: SystemConfigChange, signal?: AbortSignal) {
+    const request = normalizeSystemConfigChange(input);
+    return this.request<SystemConfigReceipt>("/v1/system-config-changes",
+      value => systemConfigReceipt(value) && value.requestId === request.requestId,
+      request, signal, false, `/v1/system-config-operations/${request.requestId}`);
+  }
+  async systemConfigOperation(requestId: string, signal?: AbortSignal) {
+    if (!UUID.test(requestId)) throw new ManagementClientError("invalid_input", "Invalid config request UUID.");
+    return this.request<SystemConfigReceipt>(`/v1/system-config-operations/${requestId.toLowerCase()}`,
+      value => systemConfigReceipt(value) && value.requestId === requestId.toLowerCase(), undefined, signal);
+  }
   private readonly baseUrl: string;
   private readonly options: ManagementClientOptions;
   constructor(options: ManagementClientOptions) {
@@ -141,7 +221,7 @@ export class ManagementClient {
       console: options.console ? Object.freeze({ ...options.console }) : undefined });
   }
 
-  private async request<T>(path: string, validate: (value: unknown) => boolean, input?: DesktopPolicyRequest | DesktopPruneRequest | FileChange | FileUploadControl | FileUploadChunk | { requestId: string; ref: string } | { requestId: string; generation: string } | JobStart | JobCancel | ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | NotificationSendRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | LifecycleIntent | LifecycleSubmission | LifecycleResume | ContextChange | ContextContinuation | CompactionChange | CompactionContinuation | HandoverChange | HandoverContinuation | { origin: string } | { code: string } | MessageSendRequest | ProductIntent | ProductSubmission | { requestId: string; scopeId: string } | Record<string, never>, signal?: AbortSignal, authentication = false, lookupPath?: string, readOnlyPost = false): Promise<ApiReply<T> & { ok: true }> {
+  private async request<T>(path: string, validate: (value: unknown) => boolean, input?: ModelProbeRequest | ModelCredentialRequest | AccessChange | SystemConfigChange | DesktopPolicyRequest | DesktopPruneRequest | FileChange | FileUploadControl | FileUploadChunk | { requestId: string; ref: string } | { requestId: string; generation: string } | JobStart | JobCancel | ModelChangeRequest | IncidentChangeRequest | ReceiverChangeRequest | NotificationSendRequest | SetupRequest | MaterialWrite | ProtectionChangeRequest | LifecycleIntent | LifecycleSubmission | LifecycleResume | ContextChange | ContextContinuation | CompactionChange | CompactionContinuation | HandoverChange | HandoverContinuation | { origin: string } | { code: string } | MessageSendRequest | ProductIntent | ProductSubmission | { requestId: string; scopeId: string } | Record<string, never>, signal?: AbortSignal, authentication = false, lookupPath?: string, readOnlyPost = false): Promise<ApiReply<T> & { ok: true }> {
     if (path !== "/v1/identity" && !this.options.installationId) {
       throw new ManagementClientError("wrong_installation", "Pin the connection to an installation before reading or changing its resources.");
     }
@@ -149,7 +229,7 @@ export class ManagementClient {
     if (mutation !== undefined && (!record(mutation) || !UUID.test(mutation.requestId)
       || !(path === "/v1/file-changes" ? mutation.expectedRevision === null || revision(mutation.expectedRevision) : path === "/v1/file-upload-chunks" || path === "/v1/file-upload-controls" ? true : path === "/v1/messages" ? true
         : path === "/v1/job-starts" ? revision(mutation.expectedRevision) : path === "/v1/job-cancellations" ? true : ["/v1/lifecycle-changes", "/v1/lifecycle-resumptions"].includes(path) ? revision(mutation.planRevision) && revision(mutation.scopeId)
-        : path === "/v1/desktop-prunes" || path === "/v1/desktop-policy-changes" ? revision(mutation.expectedRevision)
+        : path === "/v1/model-probes" || path === "/v1/model-credential-imports" || path === "/v1/access-changes" || path === "/v1/system-config-changes" || path === "/v1/desktop-prunes" || path === "/v1/desktop-policy-changes" ? revision(mutation.expectedRevision)
         : path === "/v1/product-changes" ? revision(mutation.expectedRevision) && revision(mutation.scopeId)
         : path === "/v1/product-reconciliations" ? revision(mutation.scopeId)
         : path === "/v1/handover-changes" ? revision(mutation.expectedRevision)

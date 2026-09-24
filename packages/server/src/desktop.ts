@@ -11,6 +11,7 @@ type Authorize=(signal:AbortSignal,capability:Capability)=>Promise<void>;
 const failure=(e:unknown):HttpFailure=>{
   if(e instanceof HttpFailure)return e;
   if(e instanceof DesktopError)return new HttpFailure(e.code==="invalid_input"?400:e.code==="permission_denied"?403:e.code==="not_found"?404:e.code==="store_full"?507:e.code==="source_unavailable"?503:409,e.code,e.message);
+  if(e instanceof ConfigError && e.code==="config_idempotency_conflict")return new HttpFailure(409,"idempotency_conflict","The desktop request UUID already names different input.");
   if(e instanceof ConfigError)return new HttpFailure(409,e.code==="config_conflict"?"revision_conflict":e.code==="config_commit_unknown"?"operation_unknown":"source_unavailable","The original desktop configuration could not be verified. No replacement writer was selected.");
   return new HttpFailure(503,"source_unavailable","The desktop source or original action is unavailable; no empty-success result was fabricated.");
 };

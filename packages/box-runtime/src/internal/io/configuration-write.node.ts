@@ -9,12 +9,12 @@ import type { RuntimeStore } from "./configuration.node.ts";
 
 /** The Effect-owned commit waits for the bounded atomic store operation (including
  * lock release/readback), even on cancellation. Network/admission stays outside. */
-export function configurationWriteLayer(store: RuntimeStore, expectedModelsRevision?: string): Layer.Layer<ConfigurationWrite> {
+export function configurationWriteLayer(store: RuntimeStore, expectedModelsRevision?: string, beforePublication?: () => void | Promise<void>): Layer.Layer<ConfigurationWrite> {
   const revision = (file: unknown) => ({ configRevision: sha256Text(canonicalJson(file)) });
   return Layer.succeed(ConfigurationWrite, {
     saveModels: (file) => Effect.tryPromise({
       try: async () => {
-        await store.saveModels(file, expectedModelsRevision);
+        await store.saveModels(file, expectedModelsRevision, beforePublication ? async () => { await beforePublication(); } : undefined);
         return revision(file);
       },
       catch: (error) => error,
@@ -35,12 +35,13 @@ async function saveViaCommand(
   file: ModelsFile | DesiredFile,
   boxRoot = store.root,
   expectedModelsRevision?: string,
+  beforePublication?: () => void | Promise<void>,
 ): Promise<{ configRevision: string }> {
   if (resolve(boxRoot) !== resolve(store.root)) {
     throw new BoxRuntimeError("runtime_local_only", "Configuration save is bound to this box runtime root.");
   }
   const receipt = await Effect.runPromise(
-    runConfigurationSave({ boxRoot, kind, file }).pipe(Effect.provide(configurationWriteLayer(store, expectedModelsRevision))),
+    runConfigurationSave({ boxRoot, kind, file }).pipe(Effect.provide(configurationWriteLayer(store, expectedModelsRevision, beforePublication))),
   );
   if (!receipt.ok) {
     throw new BoxRuntimeError(
@@ -51,8 +52,8 @@ async function saveViaCommand(
   return { configRevision: receipt.configRevision };
 }
 
-export async function saveRuntimeModels(store: RuntimeStore, file: ModelsFile, boxRoot = store.root, expectedRevision?: string): Promise<{ configRevision: string }> {
-  return await saveViaCommand(store, "models", file, boxRoot, expectedRevision);
+export async function saveRuntimeModels(store: RuntimeStore, file: ModelsFile, boxRoot = store.root, expectedRevision?: string, beforePublication?: () => void | Promise<void>): Promise<{ configRevision: string }> {
+  return await saveViaCommand(store, "models", file, boxRoot, expectedRevision, beforePublication);
 }
 
 export async function saveRuntimeDesired(store: RuntimeStore, file: DesiredFile, boxRoot = store.root): Promise<{ configRevision: string }> {

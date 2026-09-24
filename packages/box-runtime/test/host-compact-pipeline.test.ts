@@ -24,7 +24,7 @@ import { decodeModeldFrame } from "../src/internal/wire/modeld-wire.ts";
 // LIVE_SLICE_PATCHES. It does not execute a real Host or copy native summary policy.
 const SOURCE = `
 var requestIdKey = "turn";
-function __addDisposableResource23(env, value) { env.stack.push(value); }
+function __addDisposableResource22(env, value) { env.stack.push(value); }
 module.exports = async function run(input) {
   const env_2 = { stack: [] };
   const ctx = input.ctx;

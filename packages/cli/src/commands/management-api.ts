@@ -14,6 +14,8 @@ import { managementClient } from "../management-client.ts";
 import { combineManagementInput, readManagementInput } from "../management-input.ts";
 import { createConsoleCredentialFile } from "../console-credential.ts";
 import { runInstalledWebService } from "../web-service.ts";
+import { connectionCommand } from "./connection.ts";
+import { normalizeSystemConfigChange, normalizeAccessChange, normalizeModelCredential, normalizeModelProbe, UUID } from "@grokbox/client/contract";
 
 export type ManagementCommandOptions = {
   connection?: string; timeoutMs?: string; limit?: string; cursor?: string; source?: string; scope?: string;
@@ -25,7 +27,7 @@ export type ManagementCommandOptions = {
   untilMs?: string; durationMs?: string; domain?: string; databaseId?: string; confirm?: boolean; expectModelRevision?: string;
   bot?: string; snapshotRef?: string; routineRef?: string; expectBindingRevision?: string; enabled?: string; target?: string;
   origin?: string; credentialFile?: string; consoleOrigin?: string; managementUrl?: string; installationId?: string;
-  nonce?: string; beforeSeq?: string;
+  nonce?: string; beforeSeq?: string; fromPi?: string; probeTimeoutMs?: string;
 };
 const invalid = (message: string) => new ManagementClientError("invalid_input", message);
 
@@ -55,6 +57,72 @@ async function runServer(deps: CliDeps, component: string | undefined, options: 
 
 export async function runManagementCommand(deps: CliDeps, command: string, args: Array<string | undefined>, options: ManagementCommandOptions) {
   if (command === "system service run") return runServer(deps, args[0], options);
+  if (command === "system host get" || command.startsWith("system integration ")) {
+    const { client } = await managementClient(deps, options);
+    const reply = command === "system host get" ? await client.systemHost(deps.signal)
+      : command === "system integration get" ? await client.systemIntegration(deps.signal)
+      : command === "system integration operation get" ? await client.integrationOperation(args[0] ?? "", deps.signal)
+      : await client.reconcileIntegration(args[0] ?? "", deps.signal);
+    deps.stdout.write(`${JSON.stringify({ ...reply, command: command.replaceAll(" ", ".") })}\n`); return;
+  }
+  if (command.startsWith("connection ")) {
+    const data = await connectionCommand(deps, command, args, options);
+    deps.stdout.write(`${JSON.stringify({ schemaVersion: 1, command: command.replaceAll(" ", "."), invocationId: deps.randomUUID(), ok: true, data })}\n`);
+    return;
+  }
+  if (command === "model probe" || command === "model probe-operation get") {
+    if (options.probeTimeoutMs !== undefined && !/^[1-9][0-9]{2,4}$/.test(options.probeTimeoutMs)) throw invalid("Probe timeout must be 100–30000 milliseconds.");
+    const { client } = await managementClient(deps, { ...options, timeoutMs: options.timeoutMs ?? "35000" });
+    const reply = command === "model probe-operation get" ? await client.modelProbeOperation(args[0] ?? "", deps.signal)
+      : await client.probeModel(normalizeModelProbe({ requestId: options.requestId, modelId: args[0], expectedRevision: options.expectRevision,
+          confirmed: options.confirm, ...(options.probeTimeoutMs === undefined ? {} : { timeoutMs: Number(options.probeTimeoutMs) }) }), deps.signal);
+    if (command === "model probe" && reply.data.state === "unknown") throw new ManagementClientError("operation_unknown", "The original probe outcome is uncertain; read its retained receipt without resubmitting.", { operation: reply.data });
+    if (command === "model probe" && reply.data.state === "failed") throw new ManagementClientError("unavailable", "The probe was not dispatched; inspect its receipt and model configuration.", { operation: reply.data });
+    deps.stdout.write(`${JSON.stringify({ ...reply, command: command.replaceAll(" ", ".") })}\n`);
+    return;
+  }
+  if (command === "model check" || command.startsWith("model credential ")) {
+    const { client } = await managementClient(deps, options);
+    const reply = command === "model check" ? await client.modelCheck(args[0] ?? "", deps.signal)
+      : command === "model credential get" ? await client.modelCredential(args[0] ?? "", deps.signal)
+      : command === "model credential operation get" ? await client.modelCredentialOperation(args[0] ?? "", deps.signal)
+      : await client.importModelCredential(normalizeModelCredential({ modelId: args[0], piProvider: options.fromPi,
+          requestId: options.requestId, expectedRevision: options.expectRevision, confirmed: options.confirm }), deps.signal);
+    if (command === "model credential import" && "state" in reply.data && reply.data.state === "failed") throw new ManagementClientError("unavailable", "Credential import failed before configuration publication; inspect its original receipt.", { operation: reply.data });
+    if (command === "model credential import" && "state" in reply.data && reply.data.state === "unknown") throw new ManagementClientError("operation_unknown", "The original credential import remains uncertain; inspect its retained receipt before further changes.", { operation: reply.data });
+    deps.stdout.write(`${JSON.stringify({ ...reply, command: command.replaceAll(" ", ".") })}\n`);
+    return;
+  }
+  if (command.startsWith("system access ")) {
+    const { client } = await managementClient(deps, options);
+    let reply;
+    if (command === "system access list" || command === "system access get") {
+      reply = await client.access(deps.signal);
+      if (command === "system access get") {
+        if (!UUID.test(args[0] ?? "")) throw invalid("Use an exact grant UUID.");
+        const grants = reply.data.grants.filter(grant => grant.grantId === args[0]!.toLowerCase());
+        if (!grants.length) throw new ManagementClientError("not_found", "The grant does not exist.");
+        reply = { ...reply, data: { ...reply.data, grants } };
+      }
+    } else if (command === "system access operation get") reply = await client.accessOperation(args[0] ?? "", deps.signal);
+    else reply = await client.changeAccess(normalizeAccessChange({ requestId: options.requestId,
+      expectedRevision: options.expectRevision, confirmed: options.confirm,
+      ...(command === "system access grant" ? { action: "grant", grant: await readManagementInput(deps, options.input) } : { action: "revoke", grantId: args[0] }) }), deps.signal);
+    deps.stdout.write(`${JSON.stringify({ ...reply, command: command.replaceAll(" ", ".") })}\n`);
+    return;
+  }
+  if (command.startsWith("system config ") && options.domain !== "desktop") {
+    const { client } = await managementClient(deps, options);
+    const reply = command === "system config get" || command === "system config export"
+      ? await client.systemConfig(command === "system config export", deps.signal)
+      : command === "system config operation get" ? await client.systemConfigOperation(args[0] ?? "", deps.signal)
+      : await client.changeSystemConfig(normalizeSystemConfigChange({ requestId: options.requestId,
+          expectedRevision: options.expectRevision, confirmed: options.confirm, domain: options.domain,
+          mode: command === "system config reset" ? "reset" : options.mode,
+          ...(command === "system config reset" ? {} : { value: await readManagementInput(deps, options.input) }) }), deps.signal);
+    deps.stdout.write(`${JSON.stringify({ ...reply, command: command.replaceAll(" ", ".") })}\n`);
+    return;
+  }
   if (command === "bot context compact") {
     if (Boolean(options.preview) === Boolean(options.confirm)) throw invalid("Choose a read-only --preview or an explicitly confirmed compaction, not both.");
     if (options.preview && [options.requestId, options.scopeId, options.expectRevision].some(v => v !== undefined)) throw invalid("Preview accepts no write intent.");

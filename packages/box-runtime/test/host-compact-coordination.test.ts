@@ -8,7 +8,7 @@ import { HOST_COMPACT_SYMBOL, HOST_MANAGED_STEP_SYMBOL, transformUnchecked } fro
 // Literal call-site anchors are the compatibility seam, not a copied native implementation.
 const SOURCE = `
 var requestIdKey = "turn";
-function __addDisposableResource23(env, value) { env.stack.push(value); }
+function __addDisposableResource22(env, value) { env.stack.push(value); }
 module.exports = async function execute(input) {
   const env_2 = { stack: [] };
   const ctx = input.ctx;

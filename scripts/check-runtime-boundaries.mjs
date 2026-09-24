@@ -114,6 +114,9 @@ const requiredKernelExports = {
   // Accepted management domain values are pure exports. Effect programs stay
   // in commands and service tags in ports; the same graph checks apply here.
   "./model-management": "./src/model-management.ts",
+  "./management-access": "./src/management-access.ts",
+  "./model-credential": "./src/model-credential.ts",
+  "./model-probe": "./src/model-probe.ts",
   "./materials": "./src/materials.ts",
   "./files": "./src/files.ts",
   "./desktop": "./src/desktop.ts",

@@ -18,6 +18,8 @@ export type ConfigChange = {
   confirm?: boolean;
   replaceArrays?: boolean;
 } & (
+  | { kind: "domain"; domain: "daemon" | "runtime" | "ops" | "storage" | "materials"; mode: "patch" | "replace" | "reset"; value?: unknown }
+  | { kind: "connection"; name: string; connection: { endpoint: string; installationId: string; credentialRef: string } | null }
   | { kind: "set"; path: string; value: unknown }
   | { kind: "unset"; path: string }
   | { kind: "replace"; value: unknown }
@@ -70,7 +72,35 @@ function requiresConfirmation(before: UnifiedConfig, next: UnifiedConfig, paths:
 export function applyConfigChange(current: UnifiedConfig, command: ConfigChange): { document: UnifiedConfig; changedPaths: string[] } {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(command.operationId)) throw new ConfigError("config_invalid", "Invalid configuration operation identity.");
   let candidate: unknown;
-  if (command.kind === "protection-settings") {
+  if (command.kind === "domain") {
+    if (command.scope !== "target" || !command.confirm || !command.expectedRevision
+      || !["daemon", "runtime", "ops", "storage", "materials"].includes(command.domain)) throw new ConfigError("config_invalid", "Invalid target config domain.");
+    const merge = (before: unknown, patch: unknown): unknown => {
+      if (!isObject(patch)) return patch;
+      const merged: Record<string, unknown> = isObject(before) ? { ...before } : {};
+      for (const [key, value] of Object.entries(patch)) {
+        if (["__proto__", "constructor", "prototype"].includes(key)) throw new ConfigError("config_invalid", "Invalid configuration member.");
+        merged[key] = merge(merged[key], value);
+      }
+      return merged;
+    };
+    if (command.mode !== "reset" && !isObject(command.value)) throw new ConfigError("config_invalid", "Config domain declarations must be objects.");
+    candidate = replaceConfigValue(current, [command.domain], command.mode === "patch"
+      ? merge(current[command.domain], command.value) : command.value, command.mode === "reset");
+  } else if (command.kind === "connection") {
+    if (command.scope !== "client" || !command.confirm || !command.expectedRevision
+      || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(command.name)
+      || ["__proto__", "constructor", "prototype"].includes(command.name)) throw new ConfigError("config_invalid", "Invalid explicit connection change.");
+    const profiles = { ...current.client.profiles };
+    if (command.connection === null) {
+      if (command.name === "default" || current.client.currentProfile === command.name) throw new ConfigError("config_conflict", "The fixed local or legacy-selected connection cannot be deleted.");
+      delete profiles[command.name];
+    } else {
+      profiles[command.name] = { ...profiles[command.name], serverUrl: command.connection.endpoint,
+        installationId: command.connection.installationId, daemonTokenRef: command.connection.credentialRef };
+    }
+    candidate = { ...current, client: { ...current.client, profiles } };
+  } else if (command.kind === "protection-settings") {
     const c = command.change;
     if (!command.confirm || !command.expectedRevision || command.scope !== "box" || !isObject(c)) throw new ConfigError("config_invalid","Protection changes require explicit confirmed scope and revision.");
     const previous = current.runtime?.continuity ?? {}, bots: Record<string,unknown> = { ...(isObject(previous.bots) ? previous.bots : {}) };
@@ -141,6 +171,18 @@ export function applyConfigChange(current: UnifiedConfig, command: ConfigChange)
     }
   }
   const document = validateConfig(candidate);
+  if (command.kind === "domain") {
+    const beforeOps = effectiveOps(current.ops), afterOps = effectiveOps(document.ops);
+    const protectedValues = [
+      [current.runtime?.continuity, document.runtime?.continuity],
+      // Defaults and presets participate in notification eligibility and its
+      // retained authorization revision, even when raw subtrees are unchanged.
+      ...["enabled", "preset", "presetRevision", "notifications", "targets", "routing"].map(key => [beforeOps[key], afterOps[key]]),
+    ];
+    if (protectedValues.some(([before, after]) => canonicalJson(before ?? null) !== canonicalJson(after ?? null))) {
+      throw new ConfigError("config_scope_unavailable", "Use the protection or notification settings domain for its managed policy.");
+    }
+  }
   const paths = changedConfigPaths(current, document);
   if (command.scope === "client" && paths.some((path) => !path.startsWith("/client/"))) throw new ConfigError("config_scope_unavailable", "This operation requires a qualified Box configuration scope.");
   if (command.scope === "target" && paths.some((path) => path.startsWith("/client/"))) throw new ConfigError("config_scope_unavailable", "Client profiles belong to the initiating machine.");

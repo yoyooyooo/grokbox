@@ -183,6 +183,43 @@ for (const interruption of [undefined, "prepared", "published"] as const) test(`
   expect(await applyConfigurationMigration(f.options, plan.planDigest, quiet)).toEqual(result);
 });
 
+test("v3 Serve retirement preserves the completed receipt, source bytes, model bytes and remaining intent", async () => {
+  const f = await completedV2Fixture();
+  const predecessorBackup = await readFile(join(f.directory, "backup-home.json"), "utf8");
+  const network = { host: "127.0.0.1", port: 4317 };
+  const legacy = { ...f.v2, schemaVersion: 3, daemon: { ...f.v2.daemon, network,
+    serve: { httpsPort: 443, dnsName: "box.example.invalid", proxyUrl: "http://127.0.0.1:4317" } } };
+  const legacyBytes = ` ${JSON.stringify(legacy)}\n`;
+  await writeFile(join(f.root, "config.json"), legacyBytes, { mode: 0o600 });
+  const plan = await planConfigurationMigration(f.options, quiet);
+  expect(plan.canApply).toBe(true);
+  expect(migrationPreview(plan).retiredFields).toEqual(["daemon.serve"]);
+  expect(await readFile(join(f.root, "config.json"), "utf8")).toBe(legacyBytes);
+  const result = await applyConfigurationMigration(f.options, plan.planDigest, quiet);
+  expect(result).toMatchObject({ phase: "retired", servicesStarted: false });
+  expect(JSON.parse(await readFile(join(f.root, "config.json"), "utf8"))).toEqual({
+    ...legacy, schemaVersion: 4, daemon: { ...f.v2.daemon, network },
+  });
+  expect(await readFile(join(f.root, "state", "config-migrations", result.operationId, "backup-canonical.json"), "utf8")).toBe(legacyBytes);
+  expect(await readFile(join(f.directory, "manifest.json"), "utf8")).toBe(f.predecessorText);
+  expect(await readFile(join(f.directory, "backup-home.json"), "utf8")).toBe(predecessorBackup);
+  expect(await readFile(join(f.root, "models.json"), "utf8")).toBe(f.modelBytes);
+});
+
+test("legacy daemon file retires Serve through the same validated migration", async () => {
+  const f = await fixture();
+  const bytes = JSON.stringify({ version: 1,
+    network: { host: "127.0.0.1", port: 4317, tokenSha256: "a".repeat(64) },
+    serve: { httpsPort: 443, dnsName: "box.example.invalid", proxyUrl: "http://127.0.0.1:4317" } });
+  await writeFile(join(f.home, "daemon", "config.json"), bytes, { mode: 0o600 });
+  const plan = await planConfigurationMigration(f.options, quiet);
+  expect(plan.canApply).toBe(true);
+  expect(plan.candidate.daemon).toEqual({ network: { host: "127.0.0.1", port: 4317 } });
+  expect(migrationPreview(plan).retiredFields).toEqual(["daemon.serve"]);
+  const result = await applyConfigurationMigration(f.options, plan.planDigest, quiet);
+  expect(await readFile(join(f.root, "state", "config-migrations", result.operationId, "backup-daemon.json"), "utf8")).toBe(bytes);
+});
+
 test("successor migration refuses changed predecessor or conflicting archive without replacing configuration", async () => {
   const f = await completedV2Fixture();
   const plan = await planConfigurationMigration(f.options, quiet);

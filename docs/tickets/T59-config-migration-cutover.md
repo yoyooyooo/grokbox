@@ -14,7 +14,9 @@
 
 `box-runtime/internal/io/config-migrate.node.ts` 拥有 preview/apply/status/recover；`config-bootstrap.node.ts` 管安装资源 saga；`config-aliases.node.ts` 管 home 别名冲突的显式保全修复。CLI/bootstrap 调这些程序，不再内联脚本合并和覆盖长期配置。
 
-迁移固定来源原字节与 digest，验证新字段、role/root、冲突选择和旧 writer；锁内重查后发布 prepared/publishing/published/activated/retired 阶段。Box 的 config/models 入口是受管别名，canonical 在 durable；client-only 不制造模型文件。模型文件验证而不重写，chatDialect、secret refs 与格式均保留。
+迁移固定来源原字节与 digest，验证新字段、role/root、冲突选择和旧 writer；锁内重查后发布 prepared/publishing/published/activated/retired 阶段。Box 的 config/models 入口是受管别名，canonical 在 durable；client-only 不制造模型文件。模型文件只作有界严格 JSON 校验，不评估模型 schema 或重写；chatDialect、secret refs 与格式均保留。
+
+v2/v3 与旧 daemon 文件中的 `daemon.serve` 只由显式迁移导入：先核验退役字段与 loopback 关系，再从新意图移除；preview 列出 `retiredFields`，原字节保存在对应 `backup-*.json`。未知字段和不合法旧值仍拒绝，不重新注册 Serve 字段、操作网络映射或启动服务。
 
 普通读者没有历史路径 fallback。切换过程的原文件进入本操作受保护备份/退役目录，部分发布可对账恢复；后续用户编辑使恢复受阻，不能以旧备份覆盖。实际存在的 ops 原型偏好可迁入，原绑定/授权保全且要求重新验证，不复活执行许可。
 
@@ -25,7 +27,7 @@ bootstrap 用稳定 operationId 记录本次 before/after 配置和安全状态�
 ## Executable acceptance
 
 ```bash
-bun test packages/box-runtime/test/config-migration.test.ts packages/box-runtime/test/config-bootstrap.test.ts packages/box-runtime/test/config-aliases.test.ts
+bun test packages/runtime-kernel/test/config-serve-migration.test.ts packages/box-runtime/test/config-migration.test.ts packages/box-runtime/test/config-bootstrap.test.ts packages/box-runtime/test/config-aliases.test.ts
 bun test test/config-packed.test.ts test/profile.test.ts
 ```
 

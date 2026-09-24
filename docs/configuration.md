@@ -114,13 +114,34 @@ Use dotted paths for ordinary fields. For a map key containing dots, use RFC6901
 
 Full-document `config apply --file <file>` requires the expected revision and confirmation. `config preset ops maintainer --preview` previews preset selection; applying requires confirmation. Explicit leaves are preserved unless a confirmed revision-bound reset is requested. Presets do not grant maintenance, publish issues or change models. Changes that expand network policy, data access, recipient identity or automation cost require confirmation.
 
-`config get` redacts credential references and sensitive identities. `config export --portable` removes installation identities, secrets and grants, and resets nonportable runtime selection. An export is a preference transfer, not a deployable authenticated installation. No generic configuration key can manufacture a binding receipt, daemon verifier, floor entry, Host attestation or issue consent.
+`config get` redacts credential references and sensitive identities. `config export --portable` removes installation identities, secrets and grants, and resets nonportable runtime selection. An export is a preference transfer, not a deployable authenticated installation. No generic configuration key can manufacture a binding receipt, daemon verifier, floor entry, Host attestation or issue consent. The management config writer also rejects changes to effective notification enablement, preset/default expansion, routing, targets and notification policy, or continuity policy; use their existing domain owners. Other ops edits can still require receiver revalidation when their policy revision changes.
+
+## Management connections and target config
+
+The installed management Server reads the existing installation and current schema. It does not bootstrap credentials or migrate config. Its foreground entry is `system service run server --root <durable-root> --native-discovery <absolute-file> --port <port>`. The native discovery file is required for Bot, account, message and context operations. A model/config metadata read can succeed while native discovery is unavailable.
+
+Management commands select the fixed local connection or an explicit `--connection <name>`. Each connection pins the endpoint and installation UUID and holds only a credential reference. `connection list/get/check` inspect the initiating machine's preferences or authenticate against the selected Server. `connection set/delete` require a request UUID, current config revision and confirmation; they never change global Profile selection. The input for set is an object with `endpoint`, `installationId` and `credentialRef`. Read the original local result with `connection operation get <request-id>`.
+
+| Entry | Required authority and result |
+| --- | --- |
+| `system identity get` | Authenticated principal, installation UUID and granted capabilities |
+| `system config get/export` | `system.config.read`; redacted target intent without initiating-machine connections or access verifiers |
+| `system config apply/reset` | Installation owner and `system.config.write`; confirmed revision-bound daemon/runtime/ops/storage/materials intent |
+| `system access list/get` | `system.access.read`; delegated principal and capability metadata |
+| `system access grant/revoke` | Installation owner and `system.access.write`; caller-supplied verifier, no minted or returned secret |
+| `model credential import` | Installation owner and `models.credentials.import`; existing private Pi credential adapter and model writer |
+| `model probe` | `models.probe` and confirmation; one bounded provider request, no tools, response storage or retry |
+| `system host get`, `system integration get` | `system.read`; observations, with native gaps preserved |
+
+Config domain writes preserve protected notification and continuity policy. Use their existing domain APIs to change those policies. Server writes recheck the authenticated principal and capability at the original publisher. These entries do not start a Host, adopt integration or acknowledge consumer application. The existing local integration controller still owns re-adopt and coverage removal; persistent official Host start/stop/hold remains separate work.
+
+Config, credential and probe operations retain their original request identity. Their lookup entries require `operations.read` and the original principal. Access administration and historical controller operation lookup remain installation-owner only. An uncertain result requires the original receipt; a different UUID is not a recovery instruction.
 
 ## Scope and result
 
 Client preferences belong to the initiating machine. Box changes require a qualified local installation. With a remote Profile selected, choose the intended destination explicitly: `--scope local` or `--scope target`. The latter requires a supported target configuration capability; until that capability is available the command refuses without writing the initiating machine. Environment-selected Profiles receive the same guard.
 
-The writer serializes cooperative mutations, rereads under lock, checks expected revision, validates the complete candidate, writes a protected temporary file, fsyncs and renames the canonical file, then reads it back. A stable operation ID supports reconciliation after a lost output. Different input with the same operation ID is a conflict. A prepared operation may be confirmed only when its exact after-state is present; otherwise it stays unknown and is never replayed over another edit, even when the content hash has returned to the original value. External same-UID writers do not acquire this lock; the model is cooperative concurrency, not a malicious-process sandbox.
+The writer serializes cooperative mutations, rereads under lock, checks expected revision, validates the complete candidate, writes a protected temporary file, fsyncs and renames the canonical file, then reads it back. A stable operation ID supports reconciliation after a lost output. Different input with the same operation ID is a conflict. A prepared operation stays unknown until the original committed receipt exists. Matching current content cannot establish historical publication or authorize replay. External same-UID writers do not acquire this lock; the model is cooperative concurrency, not a malicious-process sandbox.
 
 Receipts distinguish two independent outcomes:
 
@@ -146,7 +167,9 @@ grokbox config migrate --role box --durable-root /absolute/durable/root --previe
 
 Review the returned digest, source fingerprints, planned destination, conflicts and active writers. Applying the same plan requires `--apply --plan-digest <sha> --confirm` and the same explicit options. A changed source, unresolved conflict, unsafe alias or active old writer blocks publication. A conflict choice such as `--prefer canonical` is part of the reviewed plan, never inferred from timestamps.
 
-Models already at the physical root retain their exact bytes and secret references. The migrator validates the current schema without normalizing away provider-specific fields. Bootstrap-stage configuration is not automatically preferred over actual installed state. Backups are protected and old intent files are retired only after the new publication reaches its recorded activation phase.
+Explicit v2/v3 import and legacy daemon-file import validate retired `daemon.serve` metadata before removing it from the new intent. Preview reports `retiredFields: ["daemon.serve"]` when present. Unknown or malformed members still refuse; the original bytes remain in the migration backup. The retained loopback listener and connection references do not authorize network changes, and migration never changes existing network mappings.
+
+Models already at the physical root retain their exact bytes and secret references. General migration only checks that this independent document is bounded, strict JSON; model-schema admission remains separate. Bootstrap-stage configuration is not automatically preferred over actual installed state. Backups are protected and old intent files are retired only after the new publication reaches its recorded activation phase.
 
 The migration phase is durable: prepared, publishing, published, activated, retired. Use `config migrate --status` to inspect and `--recover --confirm` to resume a recorded plan. A user edit after partial publication is a conflict rather than something recovery may overwrite. A later schema migration can follow a retired migration: preview binds the predecessor's fingerprint, and apply preserves its immutable manifest and backups under its original operation directory before publishing the next manifest. An unfinished, changed or conflicting predecessor blocks the new migration. Do not delete the previous receipt to force an upgrade. Restoring an old backup must not revive authorization or signal a Host.
 

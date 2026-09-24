@@ -99,6 +99,8 @@ const runtimeShards=[
 ];
 
 const riskFiles = expandTests(root, suites["core-risk"]);
+// Native declaration suites must release their ASTs and caches between files.
+// Preserve the complete inventory and the same per-scenario deadlines.
 const riskShards = partitionTests(riskFiles, path => {
  const name = path.split("/").at(-1);
  if (name === "core-risk-closure.test.ts" || name === "source-recipes.test.ts" || name === "capability-witness.test.ts") return "contract";
@@ -108,7 +110,9 @@ const riskShards = partitionTests(riskFiles, path => {
  if (/^(host-ownership|host-resume|ownership-)/.test(name)) return "ownership";
  if (/^(context-|compaction-)/.test(name)) return "context";
  return "host";
-});
+}).flatMap(shard => shard.id.startsWith("native-")
+ ? shard.files.map((file, index) => ({ id: `${shard.id}-${index + 1}`, files: [file] }))
+ : [shard]);
 
 // Compile-heavy artifact and CLI tests get fresh VMs. Other tests remain in
 // bounded owner groups. This changes process lifetime, never case deadlines.

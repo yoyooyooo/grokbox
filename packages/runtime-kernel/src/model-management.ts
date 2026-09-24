@@ -1,3 +1,4 @@
+export { MODEL_PROBE_LIMITS, normalizeModelProbe, modelProbeRequestId, parseModelProbeReceipt, type ModelProbeRequest, type ModelProbeReceipt } from "./model-probe.ts";
 import { BoxRuntimeError } from "./contract.ts";
 import { canonicalJson, sha256Text } from "./hash.ts";
 import {
@@ -42,15 +43,8 @@ export type ModelOperation = {
 };
 export type ModelOperationLocator = { operationRef: string; requestId: string };
 export type ModelOperationKey = ModelOperationLocator & { fingerprint: string };
-export type ModelManagementCode = "invalid_input" | "not_found" | "revision_conflict" | "idempotency_conflict" | "operation_unknown"
-  | "model_in_use" | "model_default_in_use" | "model_default_missing" | "model_source_read_only" | "store_full" | "unavailable";
-export class ModelManagementError extends Error {
-  readonly _tag = "ModelManagementError";
-  constructor(readonly code: ModelManagementCode, message: string, readonly details?: Record<string, unknown>) {
-    super(message);
-    this.name = "ModelManagementError";
-  }
-}
+import { ModelManagementError } from "./model-management-error.ts";
+export { ModelManagementError, type ModelManagementCode } from "./model-management-error.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const invalid = () => new ModelManagementError("invalid_input", "Invalid model management request.");

@@ -13,6 +13,7 @@ export type ProtectionDomain = { root: string; installationId: string; status: (
 const failure = (error: unknown): HttpFailure => {
   if(error instanceof HttpFailure)return error;
   if(error instanceof ManagementClientError)return new HttpFailure(error.code==="wrong_installation"?409:400,error.code,error.message);
+  if(error instanceof ConfigError && error.code==="config_idempotency_conflict")return new HttpFailure(409,"idempotency_conflict","The protection request UUID already names different input.");
   if(error instanceof ConfigError)return new HttpFailure(error.code==="config_commit_unknown"?409:error.code==="config_conflict"?409:503,
     error.code==="config_commit_unknown"?"operation_unknown":error.code==="config_conflict"?"revision_conflict":"source_unavailable","The protection policy or its original receipt could not be verified.");
   if(error instanceof ContinuityFailure)return new HttpFailure(error.code==="not_found"?404:error.code==="scope_mismatch"?409:503,

@@ -457,6 +457,15 @@ export const RUNTIME_COMMANDS: readonly LeafCommand[] = [
     ]), stdin: "none", table: false, timeout: false, destructive: true, gateway: true, streaming: false, profile: false, localOnly: true,
   },
   {
+    path: ["runtime", "modeld", "stop"],
+    usage: "grokbox runtime modeld stop --expect-epoch <uuid> --confirm",
+    summary: "Gracefully stop one verified idle modeld; preserve unknown requests and durable history.",
+    arguments: [], options: options([
+      { flags: "--expect-epoch <uuid>", description: "Exact running service epoch from status" },
+      { flags: "--confirm", description: "Confirm exact-owner stop; no Host signal, socket repair or request replay" },
+    ]), stdin: "none", table: false, timeout: false, destructive: true, gateway: true, streaming: false, profile: false, localOnly: true,
+  },
+  {
     path: ["runtime", "modeld", "status"],
     usage: "grokbox runtime modeld status",
     summary: "Read modeld liveness and execution admission/storage separately.",

@@ -24,11 +24,17 @@ export * from "./job-contract.ts";
 export * from "./message-contract.ts";
 export * from "./product-contract.ts";
 export { hostHealthView, type HostHealthView } from "./host-health-contract.ts";
+export { systemHostView, systemIntegrationView, integrationOperationView, integrationReconciliationView,
+  type SystemHostView, type SystemIntegrationView, type IntegrationOperationView, type IntegrationReconciliationView } from "./system-integration-contract.ts";
 export { hostLeaseOpportunityWindow } from "@grokbox/runtime-kernel/host-health";
+export * from "./system-config-contract.ts";
+export * from "./access-contract.ts";
+export * from "./model-credential-contract.ts";
+export * from "./model-probe-contract.ts";
 export const API_VERSION = 1;
 export const REQUEST_MAX_BYTES = 64 * 1024;
 export const RESPONSE_MAX_BYTES = 256 * 1024;
-export const CAPABILITIES = ["bots.read", "products.read", "products.write", "products.create", "products.delete", "products.duplicate", "context.read", "context.write", "context.activate", "context.compact", "handover.write", "handover.messages", "handover.attest", "handover.retire", "lifecycle.write", "lifecycle.start", "lifecycle.messages", "models.read", "models.write", "operations.read", "observations.read", "incidents.write", "notifications.read", "notifications.write", "notifications.test", "notifications.send", "jobs.read", "jobs.logs.read", "jobs.start", "jobs.shell", "jobs.cancel", "protection.read", "protection.write", "notifications.bind", "routines.read", "routines.write", "materials.read", "materials.search", "materials.content.read", "materials.write", "files.read", "files.content.read", "files.write", "files.delete", "files.restore", "desktop.read", "desktop.write", "desktop.prune", "messages.read", "messages.write", "system.read", "console.grants.create"] as const;
+export const CAPABILITIES = ["bots.read", "products.read", "products.write", "products.create", "products.delete", "products.duplicate", "context.read", "context.write", "context.activate", "context.compact", "handover.write", "handover.messages", "handover.attest", "handover.retire", "lifecycle.write", "lifecycle.start", "lifecycle.messages", "models.read", "models.write", "models.credentials.import", "models.probe", "operations.read", "observations.read", "incidents.write", "notifications.read", "notifications.write", "notifications.test", "notifications.send", "jobs.read", "jobs.logs.read", "jobs.start", "jobs.shell", "jobs.cancel", "protection.read", "protection.write", "notifications.bind", "routines.read", "routines.write", "materials.read", "materials.search", "materials.content.read", "materials.write", "files.read", "files.content.read", "files.write", "files.delete", "files.restore", "desktop.read", "desktop.write", "desktop.prune", "messages.read", "messages.write", "system.read", "system.config.read", "system.config.write", "system.access.read", "system.access.write", "console.grants.create"] as const;
 export type Capability = typeof CAPABILITIES[number];
 export type ConsoleGrant = { grantId: string; code: string; origin: string; expiresAt: number; persistence: "server-lifetime" };
 export type ConsoleSession = {

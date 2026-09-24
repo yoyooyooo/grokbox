@@ -44,7 +44,7 @@ test("policy updates use the original config writer, preserve independent fields
     const done=(await f.client().changeDesktopPolicy(r)).data;assert.equal(done.state,"succeeded");assert.equal(done.application,"not-observed");
     assert.deepEqual((await openConfigStore(rootConfigLayout(f.root)).read()).document.desktop!.keepAgentIds,[A]);
     const protectedView=(await f.client().desktop()).data;assert.equal(protectedView.displays.find(v=>v.agentId===A)!.protected,true);assert.equal(protectedView.canPrune,true);
-    await denied(f.client().changeDesktopPolicy({...r,agentIds:[]}),"revision_conflict");
+    await denied(f.client().changeDesktopPolicy({...r,agentIds:[]}),"idempotency_conflict");
     await f.client().changeDesktopPolicy({action:"idle-reclaim",enabled:false,minIdleMs:900000,requestId:randomUUID(),expectedRevision:done.revision,confirmed:true});
     assert.deepEqual((await f.client().changeDesktopPolicy(r)).data,done);assert.deepEqual((await f.client().desktopPolicyOperation(r.requestId)).data,done);
     assert.equal((await openConfigStore(rootConfigLayout(f.root)).read()).document.desktop!.idleReclaim!.minIdleMs,900000);assert.deepEqual(f.state.stops,[]);

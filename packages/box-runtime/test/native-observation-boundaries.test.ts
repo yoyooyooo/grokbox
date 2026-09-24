@@ -24,14 +24,22 @@ function qualified() {
   transformed = result.source; return transformed;
 }
 function toolHandlerSource() {
-  const text = qualified(), parsed = ts.createSourceFile("owned-native.cjs", text, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-  const matches: string[] = [];
-  function walk(node: ts.Node) {
-    if (ts.isMethodDeclaration(node) && node.name.getText(parsed) === "executeToolCall"
-      && node.parameters.map(p => p.name.getText(parsed)).join(",") === "parentCtx,toolCall,callId,promiseFn,resultMergeFn,hookContextCollector") matches.push(node.getText(parsed));
-    ts.forEachChild(node, walk);
-  }
-  walk(parsed); expect(matches).toHaveLength(1); return matches[0]!;
+  const text = qualified(), marker = "\n  async executeToolCall(parentCtx, toolCall, callId, promiseFn, resultMergeFn, hookContextCollector)";
+  const start = text.indexOf(marker), end = text.indexOf("\n  }", start + marker.length);
+  if (start < 0 || text.indexOf(marker, start + marker.length) !== -1 || end < 0 || end - start > 64 * 1024)
+    throw Error("native_tool_declaration_layout");
+  // The exact source pin and a unique bounded method preserve the original
+  // selection without retaining a multi-million-node Host AST in this shard.
+  const parsed = ts.createSourceFile("owned-native.cjs", `class Selected {${text.slice(start + 1, end + 4)}}`, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const owner = parsed.statements[0];
+  if ((parsed as unknown as { parseDiagnostics: readonly unknown[] }).parseDiagnostics.length
+    || parsed.statements.length !== 1 || !owner || !ts.isClassDeclaration(owner) || owner.members.length !== 1)
+    throw Error("native_tool_declaration_shape");
+  const method = owner.members[0]!;
+  if (!ts.isMethodDeclaration(method) || method.name.getText(parsed) !== "executeToolCall"
+    || method.parameters.map(p => p.name.getText(parsed)).join(",") !== "parentCtx,toolCall,callId,promiseFn,resultMergeFn,hookContextCollector")
+    throw Error("native_tool_method_shape");
+  return method.getText(parsed);
 }
 
 nativeTest("the complete reviewed-source profile compiles with both new producer observations", () => {
@@ -47,8 +55,8 @@ for (const fails of [false, true]) nativeTest(`actual native tool promise ${fail
   const controller = new AbortController(), ctx = { withName() { return this; }, get() { return "turn-one"; } };
   const globals: Record<string | symbol, unknown> = {
     Promise, Symbol, Date,
-    __addDisposableResource5: (_env: unknown, resource: unknown) => resource,
-    __disposeResources5: (env: { hasError: boolean; error: unknown }) => { if (env.hasError) throw env.error; },
+    __addDisposableResource4: (_env: unknown, resource: unknown) => resource,
+    __disposeResources4: (env: { hasError: boolean; error: unknown }) => { if (env.hasError) throw env.error; },
     createSpan: (value: unknown) => ({ ctx: value }), requestIdKey: Symbol("request"),
     Updates: { toolCallStarted: () => ({ phase: "started" }), toolCallCompleted: () => ({ phase: "completed" }) },
     toolCallLatency: { histogram() {} }, toolCallCount: { increment() {} },

@@ -66,6 +66,28 @@ describe("packaged Node unified configuration", () => {
     expect(data(cli(home, root, ["config", "get"])).value.schemaVersion).toBe(4);
   });
 
+  test("v3 import retires Serve metadata and preserves the original configuration bytes", async () => {
+    const home = await mkdtemp(join(tmpdir(), "grokbox-config-packed-serve-"));
+    const root = join(home, "durable");
+    await mkdir(root, { recursive: true, mode: 0o700 });
+    const network = { host: "127.0.0.1", port: 4317 };
+    const legacy = { schemaVersion: 3, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } },
+      daemon: { network, serve: { httpsPort: 443, dnsName: "box.example.invalid", proxyUrl: "http://127.0.0.1:4317" } } };
+    const bytes = ` ${JSON.stringify(legacy)}\n`;
+    await writeFile(join(root, "config.json"), bytes, { mode: 0o600 });
+    const args = ["config", "migrate", "--role", "box", "--durable-root", root];
+    const preview = data(cli(home, root, [...args, "--preview"]));
+    expect(preview).toMatchObject({ canApply: true, retiredFields: ["daemon.serve"], targetSchemaVersion: 4 });
+    expect(await readFile(join(root, "config.json"), "utf8")).toBe(bytes);
+    const applied = data(cli(home, root, [...args, "--apply", "--plan-digest", preview.planDigest, "--confirm"]));
+    expect(applied.servicesStarted).toBe(false);
+    expect(data(cli(home, root, ["config", "validate"])).valid).toBe(true);
+    expect(JSON.parse(await readFile(join(root, "config.json"), "utf8"))).toEqual({
+      ...legacy, schemaVersion: 4, daemon: { network },
+    });
+    expect(await readFile(join(root, "state", "config-migrations", applied.operationId, "backup-canonical.json"), "utf8")).toBe(bytes);
+  });
+
   test("explicit migration retires legacy files, preserves exact models and remains cold-readable", async () => {
     const home = await mkdtemp(join(tmpdir(), "grokbox-config-packed-migrate-"));
     const root = join(home, "durable"), dir = join(home, ".grokbox");

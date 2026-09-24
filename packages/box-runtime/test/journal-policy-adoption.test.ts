@@ -188,7 +188,7 @@ test("the control-plane writer also resolves the canonical storage policy", asyn
 test("actual packed Host hook writes through the configured root without a model or native service", async () => {
   const f = await fixture(); try {
     await writeFile(f.active, padded(0).repeat(10), { mode: 0o600 });
-    await writeFile(join(f.root, "models.json"), '{"version":2,"models":{},"assignments":{"main":null,"agents":{}}}', { mode: 0o600 });
+    await writeFile(join(f.root, "models.json"), '{"version":3,"models":{},"assignments":{"main":null,"agents":{}}}', { mode: 0o600 });
     const entry = ensurePackedCli(), preload = join(entry, "..", "preload.cjs");
     const worker = `const fs=require('node:fs/promises');
 const [root,run,symbol,agent]=process.argv.slice(1),api=globalThis[Symbol.for(symbol)];

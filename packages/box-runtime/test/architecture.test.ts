@@ -66,6 +66,9 @@ async function fixture(changes: Record<string, string> = {}, omitSource = false)
       "./routines": "./src/routines.ts",
       "./continuity": "./src/continuity.ts",
       "./model-management": "./src/model-management.ts",
+      "./management-access": "./src/management-access.ts",
+      "./model-credential": "./src/model-credential.ts",
+      "./model-probe": "./src/model-probe.ts",
       "./materials": "./src/materials.ts",
       "./files": "./src/files.ts",
       "./desktop": "./src/desktop.ts",
@@ -93,6 +96,9 @@ async function fixture(changes: Record<string, string> = {}, omitSource = false)
       "packages/runtime-kernel/src/routines.ts",
       "packages/runtime-kernel/src/continuity.ts",
       "packages/runtime-kernel/src/model-management.ts",
+      "packages/runtime-kernel/src/management-access.ts",
+      "packages/runtime-kernel/src/model-credential.ts",
+      "packages/runtime-kernel/src/model-probe.ts",
       "packages/runtime-kernel/src/materials.ts",
       "packages/runtime-kernel/src/files.ts",
       "packages/runtime-kernel/src/desktop.ts",
@@ -170,7 +176,7 @@ describe("runtime layout boundaries", () => {
     ["kernel-effect-regression", {
       "packages/runtime-kernel/src/contract.ts": 'import { Effect } from "effect"; export const program = Effect.succeed(1);',
     }],
-    ...["model-management", "materials", "files", "desktop", "host-health", "compaction", "products", "canonical-json"].map(name => [
+    ...["model-management", "management-access", "model-credential", "model-probe", "materials", "files", "desktop", "host-health", "compaction", "products", "canonical-json"].map(name => [
       `pure-domain-effect-${name}`, { [`packages/runtime-kernel/src/${name}.ts`]: 'import { Effect } from "effect"; export const program = Effect.succeed(1);' },
     ] as [string, Record<string, string>]),
     ["bun-global-version", {

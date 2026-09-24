@@ -179,7 +179,7 @@ linuxTest("the actual packed Node Host hook recovers the dead lock and records i
     await bounded(child.ready); await stop(child);
     const durable = join(directory, "durable"); await mkdir(durable);
     await writeFile(join(durable, "config.json"), JSON.stringify(defaultConfig()), { mode: 0o600 });
-    await writeFile(join(durable, "models.json"), '{"version":2,"models":{},"assignments":{"main":null,"agents":{}}}', { mode: 0o600 });
+    await writeFile(join(durable, "models.json"), '{"version":3,"models":{},"assignments":{"main":null,"agents":{}}}', { mode: 0o600 });
     const script = `const [root,run,symbol]=process.argv.slice(1),fs=require('node:fs/promises');
 const hook=globalThis[Symbol.for(symbol)].bindHostSessionHook({mode:'route',durableRoot:root,runRoot:run});
 hook({agentId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',sessionOptions:{invocationId:'post-crash-new-turn'},originalSession:{}});

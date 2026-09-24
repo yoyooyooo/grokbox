@@ -4,6 +4,7 @@ import { projectAuthorityPolicyId, type AuthorityPolicyId } from "./ownership-ob
 export type ExecutionCapacity = {
   version: 1;
   accepting: boolean;
+  admission?: "open" | "operator-fenced";
   lifetimeStepLimit: null;
   activeSteps: number;
   hotStepRecords: number;
@@ -35,10 +36,11 @@ export function projectExecutionCapacity(value: unknown): ExecutionCapacity | un
     if (!number(value.pendingScopeReleases)) return undefined;
     scalar.pendingScopeReleases = value.pendingScopeReleases;
   }
+  if (value.admission !== undefined && value.admission !== "open" && value.admission !== "operator-fenced") return undefined;
   const h = value.history;
   if ((h.kind !== "leveldb" && h.kind !== "memory-test") || typeof h.available !== "boolean"
     || !number(h.reads) || !number(h.writes) || !number(h.failures)
-    || (h.lastError !== null && h.lastError !== "storage_unavailable") || value.accepting !== h.available) return undefined;
+    || (h.lastError !== null && h.lastError !== "storage_unavailable") || value.accepting !== (h.available && value.admission !== "operator-fenced")) return undefined;
   const rawRecovery = object(value.providerRecovery) ? value.providerRecovery : undefined;
   const policy = projectProviderRecoveryPolicy(rawRecovery?.policy);
   const recovery = policy && number(rawRecovery?.active) && number(rawRecovery?.waiting) && rawRecovery!.waiting <= rawRecovery!.active
@@ -55,7 +57,7 @@ export function projectExecutionCapacity(value: unknown): ExecutionCapacity | un
     ? { identityLockWaitMs: rawTiming.identityLockWaitMs, identityWorkMs: rawTiming.identityWorkMs,
       ...(millis(rawTiming.storageReadMs) ? { storageReadMs: rawTiming.storageReadMs } : {}),
       ...(millis(rawTiming.storageWriteMs) ? { storageWriteMs: rawTiming.storageWriteMs } : {}) } : undefined;
-  return { version: 1, accepting: value.accepting, lifetimeStepLimit: null, ...scalar,
+  return { version: 1, accepting: value.accepting, ...(value.admission === undefined ? {} : { admission: value.admission }), lifetimeStepLimit: null, ...scalar,
     ...(timing ? { timing } : {}), ...(authority ? { authority } : {}),
     ...(recovery ? { providerRecovery: recovery } : {}),
     history: { kind: h.kind, available: h.available, reads: h.reads, writes: h.writes, failures: h.failures, lastError: h.lastError }, counters } as ExecutionCapacity;

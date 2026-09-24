@@ -109,7 +109,6 @@ export function nativeCurrentStateSlices(pair: NativeCheckpointPair): readonly S
     }
     await repairHiddenTranscriptEntriesOnce(maintenance, dbPath, db, agentStore);
     await clearStaleCheckpointRootsOnce(maintenance, dbPath, db, agentStore);
-    await retireLegacyStoreBlobsOnce(maintenance, dbPath, db, agentStore);
     scheduleConversationSizeMaintenance(maintenance, dbPath, db);
 `,
     replacement: `    const maintenance = this.host.maintenanceHost();
@@ -120,7 +119,6 @@ export function nativeCurrentStateSlices(pair: NativeCheckpointPair): readonly S
       }
       await repairHiddenTranscriptEntriesOnce(maintenance, dbPath, db, agentStore);
       await clearStaleCheckpointRootsOnce(maintenance, dbPath, db, agentStore);
-      await retireLegacyStoreBlobsOnce(maintenance, dbPath, db, agentStore);
       scheduleConversationSizeMaintenance(maintenance, dbPath, db);
     }
     __grokbox_current?.register(agentId, { store: agentStore, metadata: db, ctx: this.host.ctx,

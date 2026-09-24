@@ -57,6 +57,8 @@ for (const mode of ["box", "temporal", "confirmed-temporal", "old", "failure", "
       const mint = f.state.calls.filter(call => call.method === "createAgent"); assert.equal(mint.length, 1);
       assert.equal(mint[0]!.input.clientNonce, receipt.operationId); assert.equal(mint[0]!.input.harness, "box");
       assert.equal(mint[0]!.input.isIntroductionSuppressed, true); assert.equal(mint[0]!.input.isKickstartRequested, false);
+      assert.equal(f.state.calls.some(call => /sendPrompt|kickstartAgent/.test(call.method)), false);
+      assert.equal(receipt.intent.deferStart, true);
       if (mode === "old" || mode === "failure") {
         await assert.rejects(f.client().productOwnership(createdId), (error: any) => error?.code === "source_unavailable");
       } else {

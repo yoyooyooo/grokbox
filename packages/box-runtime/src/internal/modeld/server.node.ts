@@ -167,8 +167,10 @@ function emit(socket: Socket, value: unknown) {
   return writeFrame(socket, value).pipe(Effect.ignore);
 }
 
+type StopAdmission = { fenced: boolean; active: number };
+
 function handleRequest(incoming: Incoming, generation: string, value: unknown, extra: Buffer, options: ServeOptions,
-  enqueueAuthority: (request: RunStepRequest, state: AuthorityProgress, gap: () => void) => void, contextRunner: MaintenanceRunner) {
+  enqueueAuthority: (request: RunStepRequest, state: AuthorityProgress, gap: () => void) => void, contextRunner: MaintenanceRunner, admission: StopAdmission) {
   const socket = incoming.socket;
   return Effect.gen(function* () {
     incoming.consumed = true;
@@ -176,6 +178,42 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
     if (extra.length > 0) {
       yield* emit(socket, errorFrame("extra_keys"));
       return;
+    }
+    if (value && typeof value === "object" && "method" in value && value.method === "fence-stop") {
+      const raw = value as Record<string, unknown>;
+      if (raw.version !== WIRE_VERSION || Object.keys(raw).sort().join(",") !== "expectedEpoch,method,rootId,version"
+        || raw.expectedEpoch !== generation || raw.rootId !== options.rootId) {
+        yield* emit(socket, errorFrame("invalid_usage")); return;
+      }
+      // The listener owner closes admission before observing idleness. Keep this
+      // fence for the lifetime of the exact operator connection, including while
+      // the operator verifies the OS owner. Disconnect/cancellation releases it.
+      const held = yield* Effect.acquireRelease(Effect.sync(() => {
+        if (admission.fenced || admission.active > 0) return false;
+        admission.fenced = true;
+        return true;
+      }), held => Effect.sync(() => { if (held) admission.fenced = false; }));
+      if (!held) { yield* emit(socket, errorFrame("busy")); return; }
+      const execution = yield* inferenceCapacity;
+      if (execution.activeSteps > 0 || (execution.pendingScopeReleases ?? 0) > 0
+        || (execution.providerRecovery?.active ?? 0) > 0 || (execution.authority?.active ?? 0) > 0) {
+        yield* emit(socket, errorFrame("busy")); return;
+      }
+      yield* writeFrame(socket, { ok: true, method: "fence-stop", version: WIRE_VERSION,
+        serverGeneration: generation, rootId: options.rootId, fenced: true });
+      yield* Effect.callback<void>(resume => {
+        const dispose = watchDisconnect(socket, () => resume(Effect.void));
+        return Effect.sync(dispose);
+      });
+      return;
+    }
+    if (value && typeof value === "object" && "method" in value && ["run-step", "maintain-context"].includes(String(value.method))) {
+      const admitted = yield* Effect.acquireRelease(Effect.sync(() => {
+        if (admission.fenced) return false;
+        admission.active++;
+        return true;
+      }), held => Effect.sync(() => { if (held) admission.active--; }));
+      if (!admitted) { yield* emit(socket, errorFrame("busy")); return; }
     }
     if (value && typeof value === "object" && "method" in value && value.method === "context-status") {
       const raw = value as Record<string, unknown>;
@@ -213,7 +251,9 @@ function handleRequest(incoming: Incoming, generation: string, value: unknown, e
     }
     if (parsed.method === "execution-status") {
       const execution = yield* inferenceCapacity;
-      yield* emit(socket, { ok: true, method: "execution-status", version: WIRE_VERSION, serverGeneration: generation, execution });
+      yield* emit(socket, { ok: true, method: "execution-status", version: WIRE_VERSION, serverGeneration: generation,
+        execution: { ...execution, accepting: execution.accepting && !admission.fenced,
+          admission: admission.fenced ? "operator-fenced" : "open" } });
       return;
     }
     if (parsed.method === "cancel-step") {
@@ -468,6 +508,7 @@ export function serveModeld(options: ServeOptions) {
     const contextRunner = yield* makeContextMaintenanceRunner(contextMemory.history);
     const maxClients = options.maxClients ?? SERVER_ACTIVE_CLIENTS_MAX;
     const capacity = { clients: 0 };
+    const admission: StopAdmission = { fenced: false, active: 0 };
     const live = new Set<Socket>();
     const incoming = yield* Queue.bounded<Incoming>(maxClients);
     const hooks = options.hooks ?? {};
@@ -555,7 +596,7 @@ export function serveModeld(options: ServeOptions) {
       yield* Effect.forkChild(Effect.scoped(Effect.gen(function* () {
         const socket = yield* trackSocket(raw.socket, options.counts, capacity);
         const frame = yield* readOneFrame(raw);
-        const handled = handleRequest(raw, options.generation, frame.value, frame.rest, options, enqueueAuthority, contextRunner);
+        const handled = handleRequest(raw, options.generation, frame.value, frame.rest, options, enqueueAuthority, contextRunner, admission);
         yield* handled;
         void socket;
       })).pipe(Effect.ignore, Effect.onExit(() => Effect.sync(() => {

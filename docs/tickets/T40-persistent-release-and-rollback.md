@@ -30,6 +30,16 @@ manager不可用是明确ENV阻断，安装器在任何单元写入前拒绝，�
 
 modeld复用daemon的准确socket owner/advisory gate：仅对登记inode+确证死进程+拒绝连接恢复，保持owner-only writable的既有run目录兼容，不擅自chmod用户目录。实际Node SIGKILL再启动已验证新服务epoch，unknown/legacy socket与其他进程不清理。
 
+## 首次受控窗口
+
+首次真实模型闭环可在持久服务资格之前进行，但必须使用固定安装制品、可观察的原 owner 和已验证的精确停止/恢复路径。此范围不证明 shell 退出、系统重启或开机自启；user manager/linger 与持续运行仍各自保留验收。
+
+- Server 使用正式 `system service run server` 前台入口；其调用 Scope 负责退出。不能以临时 nohup 或新 supervisor 代替。
+- `runtime modeld replace --expect-epoch <uuid> --confirm` 复用原 modeld owner 识别和正常 SIGTERM，替换为命令所属的固定安装制品。新进程明确脱离调用者，不将其描述成调用 Scope 管理的前台服务。
+- 替换前保存原运行制品、根范围、epoch 与恢复目标。退出自定义执行后，以 `runtime modeld stop --expect-epoch <uuid> --confirm` 清理准确的空闲进程；modeld owner 先以操作者连接关闭新 STEP/compact 准入，再核空闲、待释放工作和 root/epoch、唯一 socket owner、PID-start、Node 身份。连接取消或拒绝会释放准入栅栏；发信号后的取消仍等待原 owner 清理并说明已发送 SIGTERM。正常 owner 清除 socket 才报成功。旧消费者只有只读探针而无此栅栏时，该入口拒绝；配置迁移前退役旧消费者须另由原 owner 证明准入已关闭，不能用额外空闲快照代替。重复旧 epoch 不信号、不清 socket、不清账本、不重放 unknown。
+- 恢复到已批准制品时，运行中的服务由该固定制品执行 replace；已停止服务使用其正式 `runtime modeld run` 前台入口，或已另行合格的持久服务 owner。不能因为旧进程已停就任意启动另一套守护程序。
+- Host profile 写入/re-adopt 仍由原 controller 执行，实际 loaded 与原生配对逐项观察；modeld 就绪不能代签 Host 或 Provider。
+
 ## 1. 正常持久运行
 
 复用现有`runtime start/status`、controller/re-adopt、modeld与凭据存储接口，打通当前占位或不完整闭环。服务管理器采用当前部署环境可证明支持的一个明确方案，不并存多套启动所有者，不另造supervisor体系。

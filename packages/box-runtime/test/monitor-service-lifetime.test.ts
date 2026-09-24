@@ -67,7 +67,7 @@ test("a replayed install never recreates a lost evidence database, and mismatche
     await configureMonitorService(command);
     await rm(join(f.root, "observability"), { recursive: true, force: true });
     const before = await readdir(f.root);
-    await expect(configureMonitorService({ ...command, agentIds: [AGENT2] })).rejects.toMatchObject({ code: "config_conflict" });
+    await expect(configureMonitorService({ ...command, agentIds: [AGENT2] })).rejects.toMatchObject({ code: "config_idempotency_conflict" });
     expect(await readdir(f.root)).toEqual(before);
     expect(await configureMonitorService(command)).toMatchObject({ database: { state: "not_reinitialized" } });
     expect(await readdir(f.root)).toEqual(before);

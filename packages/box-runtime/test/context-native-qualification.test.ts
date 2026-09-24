@@ -83,8 +83,8 @@ test.skipIf(!nativeHostQualificationEnabled())("pinned native summarizer and arc
   const globals: Record<string, unknown> = {
     performance, Promise, Object, Map, Set, Symbol,
     __awaiter28: awaiter, __awaiter29: awaiter,
-    __addDisposableResource21: (_env: unknown, value: unknown) => value,
-    __disposeResources21(env: { hasError: boolean; error: unknown }) { if (env.hasError) throw env.error; },
+    __addDisposableResource20: (_env: unknown, value: unknown) => value,
+    __disposeResources20(env: { hasError: boolean; error: unknown }) { if (env.hasError) throw env.error; },
     createSpan: (ctx: unknown) => ({ ctx }),
     logger6: log, logger7: log, logger60: log,
     PrivacyMode: { UNSPECIFIED: 0 }, PrivacyCapability: { UNSAFE_ALWAYS_ALLOWED: 0 }, DataClassification: { CODE: 0 },

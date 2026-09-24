@@ -5,6 +5,7 @@ import { lstat, mkdir, open, realpath, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
+import { modelConfigurationRevision } from "@grokbox/runtime-kernel/model-management";
 import { parseModelsFile, persistModelsDocument } from "@grokbox/runtime-kernel/selection";
 import { materializeApiKeyRef, CREDENTIAL_SECRET_MAX_BYTES } from "./credentials.node.ts";
 import type { RuntimeStore } from "./configuration.node.ts";
@@ -32,6 +33,10 @@ export type PersistModelCredentialInput = {
   modelId: string;
   piProvider: string;
   confirmed: boolean;
+  expectedRevision?: string;
+  authorize?: () => Promise<void>;
+  /** Receipt owner records whether a configuration publication was attempted. */
+  beforePublication?: () => void;
   signal?: AbortSignal;
   /** Owned test seam; production always uses the fixed Pi auth adapter above. */
   readCredential?: typeof readPiModelCredential;
@@ -44,12 +49,14 @@ export type PersistModelCredentialInput = {
  */
 export async function persistModelCredential(input: PersistModelCredentialInput): Promise<{
   modelId: string; apiKeyRef: string; persisted: true; reused: boolean;
-  takesEffect: "next_unbound_turn"; configRevision?: string;
+  takesEffect: "next_unbound_turn"; modelRevision: string; configRevision?: string;
 }> {
   if (!input.confirmed) throw new BoxRuntimeError("invalid_usage", "models persist-key requires --confirm.");
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(input.piProvider)) refused("Invalid Pi credential source.");
   if (input.signal?.aborted) refused("Credential import cancelled.");
   const original = await input.store.loadModels();
+  if (input.expectedRevision !== undefined && modelConfigurationRevision(original) !== input.expectedRevision) throw new BoxRuntimeError("invalid_usage", "Model configuration changed before credential import.");
+  await input.authorize?.();
   const model = Object.hasOwn(original.models, input.modelId) ? original.models[input.modelId] : undefined;
   if (!model) throw new BoxRuntimeError("invalid_usage", "Target model must already exist in the catalog.");
   const root = resolve(input.store.root);
@@ -71,7 +78,10 @@ export async function persistModelCredential(input: PersistModelCredentialInput)
         const stat = await lstat(path);
         if (resolve(path) === path && await realpath(path) === path && stat.isFile() && stat.nlink === 1 && (stat.mode & 0o077) === 0
           && stat.uid === process.getuid?.() && await materializeApiKeyRef(model.apiKeyRef, {}, input.signal) === secret) {
-          return { modelId: input.modelId, apiKeyRef: model.apiKeyRef, persisted: true, reused: true, takesEffect: "next_unbound_turn" };
+          await input.authorize?.();
+          if (input.signal?.aborted) refused("Credential import cancelled.");
+          if (modelConfigurationRevision(await input.store.loadModels()) !== modelConfigurationRevision(original)) throw new BoxRuntimeError("invalid_usage", "Model configuration changed during credential import.");
+          return { modelId: input.modelId, apiKeyRef: model.apiKeyRef, persisted: true, reused: true, takesEffect: "next_unbound_turn", modelRevision: modelConfigurationRevision(original) };
         }
       } catch { /* An invalid old reference is not overwritten or trusted. */ }
     }
@@ -101,9 +111,15 @@ export async function persistModelCredential(input: PersistModelCredentialInput)
       ...native,
       models: { ...native.models, [input.modelId]: { ...local, apiKeyRef } },
     });
-    const receipt = await saveRuntimeModels(input.store, next, input.store.root, sha256Text(canonicalJson(persistModelsDocument(original))));
+    await input.authorize?.();
+    if (input.signal?.aborted) refused("Credential import cancelled.");
+    const receipt = await saveRuntimeModels(input.store, next, input.store.root, sha256Text(canonicalJson(persistModelsDocument(original))), async () => {
+      await input.authorize?.();
+      if (input.signal?.aborted) refused("Credential import cancelled.");
+      input.beforePublication?.();
+    });
     if (!await referenced(path)) throw new BoxRuntimeError("invalid_usage", "Credential configuration could not be read back.");
-    return { modelId: input.modelId, apiKeyRef, persisted: true, reused: false, takesEffect: "next_unbound_turn", ...receipt };
+    return { modelId: input.modelId, apiKeyRef, persisted: true, reused: false, takesEffect: "next_unbound_turn", modelRevision: modelConfigurationRevision(next), ...receipt };
   } catch (error) {
     if (created) {
       // A save might have committed before its caller failed. Never delete a

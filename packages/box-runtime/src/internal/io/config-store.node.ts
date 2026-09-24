@@ -73,7 +73,7 @@ export function openConfigStore(layout: ConfigLayout): ConfigStore {
     const fingerprint = sha256Text(configChangeFingerprint(command));
     const replay = (previous: OperationRecord | undefined) => {
       if (!previous) return undefined;
-      if (previous.fingerprint !== fingerprint) throw new ConfigError("config_conflict", "Operation ID was already used for another configuration change.");
+      if (previous.fingerprint !== fingerprint) throw new ConfigError("config_idempotency_conflict", "Operation ID was already used for another configuration change.");
       if (previous.phase !== "committed") throw new ConfigError("config_commit_unknown", "The original configuration commit is unverified; a matching current value cannot establish historical publication.", { operationId: command.operationId });
       return previous.result;
     };
@@ -114,7 +114,8 @@ export function openConfigStore(layout: ConfigLayout): ConfigStore {
           yield* attempt(() => publishConfigFile(operationPath(layout.root, command.operationId), record));
           const again = yield* attempt(read);
           if (again.revision !== current.revision) return yield* Effect.fail(new ConfigError("config_conflict", "Configuration changed before publication."));
-          if (afterRevision !== current.revision || !current.exists) yield* attempt(() => publishConfigFile(layout.configPath, next.document));
+          if (afterRevision !== current.revision || !current.exists) yield* attempt(() => publishConfigFile(layout.configPath, next.document, undefined, false, admit));
+          else if (admit) yield* attempt(admit);
           const committed = yield* attempt(read);
           if (committed.revision !== afterRevision) return yield* Effect.fail(new ConfigError("config_commit_unknown", "Configuration publication did not read back the expected revision.", { operationId: command.operationId }));
           yield* attempt(() => publishConfigFile(operationPath(layout.root, command.operationId), { ...record, phase: "committed" }));

@@ -54,17 +54,23 @@ test("managed terminal blocks outer automation retry before a new TURN or checkp
 test.skipIf(!nativeHostQualificationEnabled())("exact native outer retry loop keeps managed terminal at one attempt and official retries intact", async () => {
   const source = readFileSync(LIVE_HOST_BUNDLE, "utf8");
   expect(createHash("sha256").update(source).digest("hex")).toBe(QUALIFIED_NATIVE_HOST_SHA);
-  const parsed = ts.createSourceFile("qualified-host.cjs", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-  const wanted = new Set(["shouldRetryTurnAttempt", "runWithTransientRetry"]);
+  const wanted = [["shouldRetryTurnAttempt", "function"], ["runWithTransientRetry", "async function"]] as const;
   const selected = new Map<string, string>();
-  function visit(node: ts.Node): void {
-    if (ts.isFunctionDeclaration(node) && node.name && wanted.has(node.name.text)) {
-      expect(selected.has(node.name.text)).toBe(false);
-      selected.set(node.name.text, node.getText(parsed));
-    }
-    ts.forEachChild(node, visit);
+  // These two pinned declarations own the retry experiment; unrelated Host
+  // declarations do not need a retained AST in the execution shard.
+  for (const [name, kind] of wanted) {
+    const marker = `\n${kind} ${name}(`, start = source.indexOf(marker);
+    const end = source.indexOf("\n}", start + marker.length);
+    if (start < 0 || source.indexOf(marker, start + marker.length) !== -1 || end < 0 || end - start > 64 * 1024)
+      throw Error("native_retry_declaration_layout");
+    const parsed = ts.createSourceFile("qualified-host.cjs", source.slice(start + 1, end + 2), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+    const declaration = parsed.statements[0];
+    if ((parsed as unknown as { parseDiagnostics: readonly unknown[] }).parseDiagnostics.length
+      || parsed.statements.length !== 1 || !declaration || !ts.isFunctionDeclaration(declaration) || declaration.name?.text !== name)
+      throw Error("native_retry_declaration_shape");
+    expect(selected.has(name)).toBe(false);
+    selected.set(name, declaration.getText(parsed));
   }
-  visit(parsed);
   expect(selected.size).toBe(2);
   const frame = `${selected.get("shouldRetryTurnAttempt")}\nfunction computeBackoffDelayMs(params) { return 0; }\n${selected.get("runWithTransientRetry")}\nmodule.exports = { shouldRetryTurnAttempt, runWithTransientRetry };`;
   const patches = LIVE_SLICE_PATCHES.filter((p) => p.id === "managed-turn-retry-gate");

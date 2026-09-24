@@ -1,3 +1,4 @@
+import { realpath } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { homedir } from "node:os";
 import { projectModeldAvailability } from "@grokbox/runtime-kernel/status";
@@ -13,6 +14,7 @@ import {
   projectLiveStatus,
   observeModeldService,
   replaceModeld,
+  stopModeld,
   readContracts,
   observeRuntimeEvents,
   maintainObservationJournals,
@@ -325,9 +327,21 @@ export async function runRuntimeModeldReplace(deps: CliDeps, raw: { confirm?: bo
   const roster = await new GatewayClient(deps).listAgents(10_000);
   const busy = roster.agents.filter(isRecord).some(a => a.harness === "box" && (a.isRunning === true || a.isRunningTurn === true));
   if (busy) throw new CliError("invalid_usage", "Managed Bots are running. Wait for them to settle before replacing modeld.");
-  const entry = resolve(process.argv[1] ?? "");
+  const invoked = await realpath(resolve(process.argv[1] ?? ""));
+  const entry = invoked === join(deps.packageRoot, "bin", "grokbox")
+    ? join(deps.packageRoot, "dist", "index.js") : invoked;
   writeSuccess(deps.stdout, await replaceModeld({ durableRoot: runtime.root, runRoot: runtimeRunRoot(deps), expectedEpoch: raw.expectEpoch,
-    confirmed: true, noManagedBotsRunning: true, entry, env: { ...process.env, ...deps.env } }));
+    confirmed: true, noManagedBotsRunning: true, entry, env: { ...process.env, ...deps.env }, signal: deps.signal }));
+}
+
+export async function runRuntimeModeldStop(deps: CliDeps, raw: { confirm?: boolean; expectEpoch?: string }): Promise<void> {
+  const runtime = store(deps);
+  if (!raw.confirm || !raw.expectEpoch || !/^[a-f0-9-]{36}$/i.test(raw.expectEpoch)) throw new CliError("invalid_usage", "stop requires --confirm and --expect-epoch from modeld status");
+  const roster = await new GatewayClient(deps).listAgents(10_000);
+  const busy = roster.agents.filter(isRecord).some(a => a.harness === "box" && (a.isRunning === true || a.isRunningTurn === true));
+  if (busy) throw new CliError("invalid_usage", "Managed Bots are running. Wait for them to settle before stopping modeld.");
+  writeSuccess(deps.stdout, await stopModeld({ durableRoot: runtime.root, runRoot: runtimeRunRoot(deps),
+    expectedEpoch: raw.expectEpoch, confirmed: true, noManagedBotsRunning: true, signal: deps.signal }));
 }
 
 export async function runRuntimeModeldStatus(deps: CliDeps): Promise<void> {

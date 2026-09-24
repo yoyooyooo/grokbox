@@ -91,6 +91,11 @@ test("A2 core-risk inventory is a disjoint complete execution of the maintained 
   });
   expect(new Set(files).size).toBe(files.length);
   expect([...files].sort()).toEqual([...risk.files].sort());
+  for (const path of risk.files.filter(path => /\/(?:native-|context-native-qualification\.test\.ts$)/.test(path))) {
+    expect(risk.commands.filter(command => command.includes(`./${path}`))).toEqual([
+      ["bun", "test", "--timeout", "220000", `./${path}`],
+    ]);
+  }
 });
 
 test("A2 core-risk cannot run without explicit current native qualification inputs", () => {

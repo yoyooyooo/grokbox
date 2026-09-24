@@ -336,12 +336,27 @@ export function migrateLegacyOps(input: unknown): JsonObject {
   delete result.support;
   return result;
 }
+/** Retired network metadata is accepted only by explicit import. Its former
+ * grammar and loopback relationship must hold before any field is discarded. */
+export function migrateLegacyDaemonIntent(input: unknown): DaemonIntent {
+  if (!isObject(input)) bad();
+  validateNode(input, object({ ...DAEMON_INTENT_SCHEMA.properties,
+    serve: object({ httpsPort: integer(1, 65535), dnsName: string(253, "^[A-Za-z0-9.-]+$"), proxyUrl: url }, ["httpsPort", "dnsName", "proxyUrl"]),
+  }));
+  const { serve, ...remaining } = input;
+  const intent = validateDaemonIntent(remaining);
+  if (serve !== undefined && (!isObject(serve) || !intent.network || serve.proxyUrl !== `http://127.0.0.1:${intent.network.port}`)) {
+    bad("Legacy Serve proxy must match the loopback listener.");
+  }
+  return intent;
+}
 function migrateLegacyConfig(input: unknown, version: 2 | 3): UnifiedConfig {
   if (!isObject(input) || input.schemaVersion !== version || Object.hasOwn(input, "storage")
     || version === 2 && isObject(input.runtime) && input.runtime.context !== undefined) {
     throw new ConfigError("config_invalid", "Unsupported legacy configuration shape.");
   }
   const candidate = { ...input, schemaVersion: CONFIG_SCHEMA_VERSION,
+    ...(input.daemon !== undefined ? { daemon: migrateLegacyDaemonIntent(input.daemon) } : {}),
     ...(input.ops !== undefined ? { ops: migrateLegacyOps(input.ops) } : {}) };
   return validateConfig(candidate);
 }

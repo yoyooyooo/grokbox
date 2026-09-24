@@ -16,6 +16,7 @@ const no = (code: "not_found" | "revision_conflict" | "idempotency_conflict" | "
 function errorView(error: unknown): HttpFailure {
   if (error instanceof HttpFailure) return error;
   if (error instanceof ManagementClientError) return new HttpFailure(error.code === "wrong_installation" ? 409 : 400, error.code, error.message);
+  if (error instanceof ConfigError && error.code === "config_idempotency_conflict") return new HttpFailure(409, "idempotency_conflict", "The notification request UUID already names different input.");
   if (error instanceof ConfigError) return new HttpFailure(error.code === "config_commit_unknown" ? 409 : error.code === "config_conflict" ? 409 : 503,
     error.code === "config_commit_unknown" ? "operation_unknown" : error.code === "config_conflict" ? "revision_conflict" : "source_unavailable", "The notification configuration operation requires inspection of its original receipt.");
   if (error instanceof RoutineError || error instanceof RoutineProvisionError || error instanceof OpsPairingError) {

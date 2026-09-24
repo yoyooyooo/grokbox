@@ -12,7 +12,7 @@ test("read lock waiting leaves real Node workers available for the original SQLi
     const entry = join(directory, "suite.mjs");
     await build({ absWorkingDir: root, entryPoints: ["packages/box-runtime/test/sqlite-read-scheduling.node.ts"], outfile: entry,
       bundle: true, platform: "node", target: "node22", format: "esm", external: ["sqlite3"], logLevel: "silent" });
-    const result = spawnSync("node", ["--test", entry], { cwd: directory, encoding: "utf8", timeout: 20000, maxBuffer: 1024 * 1024,
+    const result = spawnSync("node", ["--test", "--test-reporter=tap", entry], { cwd: directory, encoding: "utf8", timeout: 20000, maxBuffer: 1024 * 1024,
       env: { PATH: process.env.PATH ?? "", HOME: directory, TMPDIR: directory, UV_THREADPOOL_SIZE: "1" } });
     expect(result.error, `${result.stdout}\n${result.stderr}`).toBeUndefined();
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);

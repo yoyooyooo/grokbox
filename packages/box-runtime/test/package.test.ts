@@ -12,7 +12,7 @@ describe("workspace packages", () => {
     expect(cliPackage.private).toBe(true);
     expect(rootPackage.name).toBe("grokbox");
     expect("private" in rootPackage).toBe(false);
-    expect(rootPackage.workspaces.packages).toEqual(["packages/*"]);
+    expect(rootPackage.workspaces.packages).toEqual(["packages/*", "apps/*"]);
     expect(rootPackage.dependencies).toEqual({ "classic-level": "3.0.0", "sqlite3": "6.0.1" });
     expect(runtimePackage.dependencies.sqlite3).toBe(rootPackage.dependencies.sqlite3);
     expect(runtimePackage.dependencies["classic-level"]).toBe(rootPackage.dependencies["classic-level"]);

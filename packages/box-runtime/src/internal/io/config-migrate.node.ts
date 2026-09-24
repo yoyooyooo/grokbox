@@ -3,7 +3,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Effect } from "effect";
 import {
-  ConfigError, CONFIG_SCHEMA_VERSION, defaultConfig, effectiveStorage, isObject, validateConfig, migrateConfigV2, migrateConfigV3, migrateLegacyOps, validateDaemonIntent, configRevision,
+  ConfigError, CONFIG_SCHEMA_VERSION, defaultConfig, effectiveStorage, isObject, validateConfig, migrateConfigV2, migrateConfigV3, migrateLegacyOps, migrateLegacyDaemonIntent, configRevision,
   type ConnectionProfile, type JsonObject, type UnifiedConfig,
 } from "@grokbox/runtime-kernel/config";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
@@ -24,6 +24,7 @@ export type MigrationPlan = {
   models: unknown; modelsExist: boolean;
   conflicts: string[]; blockedWriters: MigrationWriter[]; canApply: boolean;
   opsRevalidation: boolean;
+  retiredFields: Array<"daemon.serve">;
   previousMigration?: { operationId: string; planDigest: string; sha256: string };
 };
 type Manifest = {
@@ -178,7 +179,7 @@ export async function planConfigurationMigration(input: MigrationOptions, ports:
       if (typeof network.tokenSha256 !== "string" || !/^[0-9a-f]{64}$/.test(network.tokenSha256)) throw new ConfigError("config_invalid", "Invalid legacy credential verifier.");
       intent.network = { host: network.host, port: network.port }; security.daemon = { tokenSha256: network.tokenSha256 };
     }
-    choose("daemon", validateDaemonIntent(intent));
+    choose("daemon", migrateLegacyDaemonIntent(intent));
     if (daemon.desktop !== undefined) {
       const desktop = migrateDesktop(daemon.desktop); choose("desktop", desktop.intent); security.desktop = desktop.security;
     }
@@ -231,6 +232,10 @@ export async function planConfigurationMigration(input: MigrationOptions, ports:
     models: modelDocument,
     modelsExist: models !== undefined, conflicts: [...new Set(conflicts)], blockedWriters,
     canApply: conflicts.length === 0 && blockedWriters.length === 0, opsRevalidation,
+    retiredFields: sources.some(({ key, value }) => isObject(value) && (
+      key === "daemon" && Object.hasOwn(value, "serve") ||
+      ["canonical", "home"].includes(key) && isObject(value.daemon) && Object.hasOwn(value.daemon, "serve")
+    )) ? ["daemon.serve"] : [],
     ...(previousMigration ? { previousMigration } : {}),
   };
 }
@@ -238,7 +243,7 @@ export function migrationPreview(plan: MigrationPlan) {
   return { schemaVersion: 1, planDigest: plan.planDigest, role: plan.options.role, canApply: plan.canApply,
     sources: plan.sources.map(({ key, sha256, retire }) => ({ key, sha256, disposition: retire ? "backup-and-retire" : "preserve" })),
     conflicts: plan.conflicts, blockedWriters: plan.blockedWriters, models: plan.modelsExist ? "preserved-in-place" : plan.options.role === "box" ? "initialize-empty" : "not-created",
-    modelValidation: "not-performed", credentials: "existing-reference-locations-preserved", opsAuthorization: plan.opsRevalidation ? "revalidation-required" : "not-created",
+    modelValidation: "not-performed", retiredFields: plan.retiredFields, credentials: "existing-reference-locations-preserved", opsAuthorization: plan.opsRevalidation ? "revalidation-required" : "not-created",
     targetSchemaVersion: plan.candidate.schemaVersion,
     support: { disposition: "retired", offerIssue: false, automaticPublishing: false, credentialsCreated: false, bindingsCreated: false },
     storage: { policy: effectiveStorage(plan.candidate.storage), activation: "matching-storage-owners-required", garbageCollectionDuringMigration: false, installationBudgetEnforced: false },

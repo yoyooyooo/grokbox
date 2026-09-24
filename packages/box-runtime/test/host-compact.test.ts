@@ -31,11 +31,11 @@ const TUPLE = {
 
 const COMPACT_HOST = `"use strict";
 var requestIdKey = "requestId";
-var __addDisposableResource23 = function(env, value) {
+var __addDisposableResource22 = function(env, value) {
   if (value != null) env.stack.push({ value: value, dispose: value[Symbol.dispose] });
   return value;
 };
-var __disposeResources23 = function(env) {
+var __disposeResources22 = function(env) {
   while (env.stack.length) {
     var r = env.stack.pop();
     if (r && r.dispose) r.dispose.call(r.value);
@@ -78,7 +78,7 @@ Handler.prototype.runStep = async function(parentCtx, wait) {
     env_2.error = e_2;
     env_2.hasError = true;
   } finally {
-    __disposeResources23(env_2);
+    __disposeResources22(env_2);
   }
 };
 module.exports = { Handler };
@@ -109,7 +109,7 @@ describe("D2 Host compact registration", () => {
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
     expect(applied.source).toContain(HOST_COMPACT_SYMBOL);
-    expect(applied.source).toContain("__addDisposableResource23(env_2, __grokbox_compact_slot, false)");
+    expect(applied.source).toContain("__addDisposableResource22(env_2, __grokbox_compact_slot, false)");
     expect(applied.source.includes("handleSummarization")).toBe(false);
     expect(applied.source.includes("queued summarizeAction")).toBe(false);
   });
@@ -504,7 +504,7 @@ describeLive("D2 live Host compact anchors", () => {
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
     expect(applied.source).toContain(HOST_COMPACT_SYMBOL);
-    expect(applied.source).toContain("__addDisposableResource23(env_2, __grokbox_compact_slot, false)");
+    expect(applied.source).toContain("__addDisposableResource22(env_2, __grokbox_compact_slot, false)");
     const streamAt = source.indexOf("result = rootPromptExecutor.executeToolStream(");
     const closedAt = source.indexOf("let stepClosed = false;");
     expect(streamAt).toBeGreaterThan(-1);

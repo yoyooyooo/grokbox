@@ -74,6 +74,7 @@ import {
   runRuntimeModeld,
   runRuntimeModeldStatus,
   runRuntimeModeldReplace,
+  runRuntimeModeldStop,
   runRuntimeModelsCheck,
   runRuntimeModelsPersistKey,
   runRuntimeProfileAnalyze,
@@ -328,6 +329,7 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "runtime modeld run": async (deps) => await runRuntimeModeld(deps),
     "runtime modeld status": async (deps) => await runRuntimeModeldStatus(deps),
     "runtime modeld replace": async (deps, _args, options) => await runRuntimeModeldReplace(deps, options),
+    "runtime modeld stop": async (deps, _args, options) => await runRuntimeModeldStop(deps, options),
   };
 }
 

@@ -149,6 +149,19 @@ function loadStore(boxRoot: string): { ok: true; store: StoreFile } | { ok: fals
   finally { closeSync(fd); }
 }
 
+/** Read the original controller journal without acquiring ownership or changing
+ * unknown work. Intended for installation-owner diagnostics and reconciliation. */
+export function readControllerOperation(boxRoot: string, operationId: string): OperationRecord | null {
+  if (!isAbsolute(boxRoot) || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(operationId)) {
+    throw new BoxRuntimeError("invalid_usage", "An absolute installation root and exact controller operation identity are required.");
+  }
+  const loaded = loadStore(boxRoot);
+  if (!loaded.ok) throw new BoxRuntimeError("runtime_not_ready", "The original controller operation journal is unavailable.");
+  const record = loaded.store[operationId];
+  return record ? { fingerprint: record.fingerprint, state: record.state,
+    ...(record.prefix ? { prefix: { ...record.prefix } } : {}) } : null;
+}
+
 function saveStore(boxRoot: string, store: StoreFile): void {
   const path = storePath(boxRoot);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });

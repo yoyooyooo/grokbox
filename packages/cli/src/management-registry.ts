@@ -11,7 +11,7 @@ const mutation: readonly OptionSpec[] = [
 function command(path: string, summary: string, target?: { name: string; description: string }, options: readonly OptionSpec[] = [], write = false): LeafCommand {
   return { path: path.split(" "), usage: `grokbox ${path}${target ? ` <${target.name}>` : ""}${write ? " --request-id <uuid> --expect-revision <revision>" : ""}`,
     summary, arguments: target ? [{ syntax: `<${target.name}>`, description: target.description }] : [],
-    options: [...common, ...(write ? mutation : []), ...options], stdin: "none", table: false, timeout: true,
+    options: [...common, ...(write ? mutation : []), ...options], stdin: options.some(option => option.flags.startsWith("--input ")) ? "json" : "none", table: false, timeout: true,
     destructive: write, gateway: false, streaming: false, profile: false, protocol: "management" };
 }
 const bot = { name: "bot-ref", description: "Stable native UUID or scoped Bot reference" };
@@ -47,6 +47,14 @@ export const MANAGEMENT_COMMANDS: readonly LeafCommand[] = [
     { flags: "--scope-id <sha256>", description: "Original account scope", required: true },
     { flags: "--confirm", description: "Confirm reconciliation of the original receipt only", required: true },
   ]), destructive: true },
+  ...["list", "get", "check", "set", "delete", "operation get"].map(action => {
+    const write = action === "set" || action === "delete";
+    const leaf = command(`connection ${action}`, "Manage an explicit initiating-machine connection; never change the remote Box or global selection.",
+      action === "list" ? undefined : { name: action === "operation get" ? "request-id" : "name", description: "Exact local connection name or original request UUID" },
+      [...(action === "set" ? [{ flags: "--input <source>", description: "Strict JSON @file|- with endpoint, installationId and credentialRef", required: true }] : []),
+       ...(write ? [{ flags: "--confirm", description: "Confirm this initiating-machine preference change", required: true }] : [])], write);
+    return { ...leaf, options: leaf.options.filter(option => !option.flags.startsWith("--connection")), stdin: action === "set" ? "json" as const : "none" as const };
+  }),
   { ...command("message send", "Submit one Human input through the management owner; persist its request identity and never resend after uncertainty.", undefined, [
     { flags: "--to <bot-ref>", description: "Stable Bot UUID or scoped Bot reference" },
     { flags: "--input <source>", description: "Strict JSON @file|- with requestId, botRef, text and clientNonce", required: true },
@@ -115,7 +123,21 @@ export const MANAGEMENT_COMMANDS: readonly LeafCommand[] = [
     { flags: "--bot <ref>", description: "Required for context/compaction: exact original Bot UUID/ref" },
     { flags: "--confirm", description: "Authorize continuing the original effects within current permissions", required: true },
   ]), destructive: true },
+  command("system host get", "Observe the official Host identity without starting, stopping or adopting it."),
+  command("system integration get", "Observe desired and actual integration independently."),
+  command("system integration operation get", "Read the original controller receipt without replay.", { name: "operation-id", description: "Exact original controller operation ID" }),
+  command("system integration reconcile", "Compare the original operation with current observation without replay or lock removal.", { name: "operation-id", description: "Exact original controller operation ID" }),
   command("system host health", "Read installation Host source/patch analysis and sensing gaps; not runtime execution authority or a repair."),
+  command("system access list", "Read delegated principals and capabilities without verifier or credential values."),
+  command("system access get", "Read one exact delegated grant without its verifier.", { name: "grant-id", description: "Exact grant UUID" }),
+  command("system access operation get", "Read the installation owner's original access receipt.", { name: "request-id", description: "Original request UUID" }),
+  command("system access grant", "Bind a caller-supplied SHA-256 verifier to a limited principal; never mint or print a secret.", undefined, [
+    { flags: "--input <source>", description: "Strict JSON @file|- with grantId, principalId, tokenSha256 and capabilities", required: true },
+    { flags: "--confirm", description: "Confirm this installation authorization", required: true },
+  ], true),
+  command("system access revoke", "Revoke one exact delegated grant; installation owner authority remains intact.", { name: "grant-id", description: "Exact grant UUID" }, [
+    { flags: "--confirm", description: "Confirm revocation", required: true },
+  ], true),
   command("system identity get", "Read the authenticated management identity and installation."),
   command("system protection get", "Read default protection, current worker and retained subjects; no native request or repair."),
   {...command("system protection set", "Explicitly enable or disable the protection policy; stopping does not erase materials or undo native effects.", undefined, [
@@ -146,9 +168,17 @@ export const MANAGEMENT_COMMANDS: readonly LeafCommand[] = [
     { flags: "--input <@file|->", description: "Strict JSON containing agentIds; use explicit stdin only with -", required: true },
     { flags: "--confirm", description: "Confirm this exact policy replacement" },
   ], true),
-  command("system config apply", "Apply a supported management domain policy; currently desktop idle-reclaim, never arbitrary configuration paths.", undefined, [
-    { flags: "--domain <domain>", description: "desktop: explicit idle-reclaim enabled/minIdleMs policy", required: true },
-    { flags: "--input <@file|->", description: "Strict idle-reclaim action, enabled and minIdleMs", required: true },
+  command("system config get", "Read redacted target configuration through the management Server."),
+  command("system config export", "Export redacted portable target intent without client connections or private grants."),
+  command("system config operation get", "Read this principal's original config receipt.", { name: "request-id", description: "Original request UUID" }),
+  command("system config reset", "Reset one target config domain through its original publisher; does not adopt or restart services.", undefined, [
+    { flags: "--domain <domain>", description: "daemon, runtime, ops, storage or materials", required: true },
+    { flags: "--confirm", description: "Confirm this domain reset", required: true },
+  ], true),
+  command("system config apply", "Apply explicit target domain intent; private authorization and actual adoption remain separate.", undefined, [
+    { flags: "--domain <domain>", description: "daemon, runtime, ops, storage, materials, or the existing desktop policy", required: true },
+    { flags: "--mode <mode>", description: "patch or replace, required except for the existing desktop declaration" },
+    { flags: "--input <@file|->", description: "Strict domain value; desktop uses its existing idle-reclaim declaration", required: true },
     { flags: "--confirm", description: "Confirm the reviewed policy and possible future desktop helper effects" },
   ], true),
   command("system materials get", "Read configured source coverage and index freshness; never initialize or mutate a source."),
@@ -283,6 +313,18 @@ export const MANAGEMENT_COMMANDS: readonly LeafCommand[] = [
     { flags: "--limit <n>", description: "Page size, 1 to 100" },
     { flags: "--cursor <cursor>", description: "Continue the same installation/configuration page" },
   ]),
+  command("model probe", "Send one bounded provider request that may incur cost; no tools, retries or stored response.", model, [
+    { flags: "--probe-timeout-ms <n>", description: "Provider operation deadline, 100–30000 ms (default 10000)" },
+    { flags: "--confirm", description: "Confirm the single provider request and its possible model cost", required: true },
+  ], true),
+  command("model probe-operation get", "Read this principal's original probe receipt without another provider request.", { name: "request-id", description: "Original probe request UUID" }),
+  command("model check", "Check one model's schema and references without a provider request or model cost.", model),
+  command("model credential get", "Read credential source metadata; never resolve or return a secret.", model),
+  command("model credential operation get", "Read this principal's original import receipt; unknown imports are never retried.", { name: "request-id", description: "Original request UUID" }),
+  command("model credential import", "Import one exact Pi provider key through the private credential owner for future unbound turns.", model, [
+    { flags: "--from-pi <provider>", description: "Exact Pi credential provider on the target Box", required: true },
+    { flags: "--confirm", description: "Confirm private credential persistence", required: true },
+  ], true),
   command("model get", "Read one configured model without resolving its credential.", model),
   { ...command("model apply", "Apply an explicit patch or full local model declaration.", undefined, [], true),
     usage: "grokbox model apply [<model-id>] --input @file|- [--mode patch|replace] [--request-id <uuid>] [--expect-revision <revision>]",

@@ -1,12 +1,12 @@
 // Independently authored public fixture. Not extracted from a private Host.
-const __addDisposableResource23 = function (scope, value, asynchronous) {
+const __addDisposableResource22 = function (scope, value, asynchronous) {
   if (asynchronous !== false) throw new Error("sync-only");
   const dispose = value[Symbol.dispose];
   if (typeof dispose !== "function") throw new TypeError("not-disposable");
   scope.stack.push({ value, dispose });
   return value;
 };
-const __disposeResources23 = function (scope) {
+const __disposeResources22 = function (scope) {
   let failed = scope.hasError, error = scope.error;
   while (scope.stack.length) {
     const item = scope.stack.pop();
@@ -47,7 +47,7 @@ let stepClosed = false;
     env_2.error = caught;
     env_2.hasError = true;
   } finally {
-    __disposeResources23(env_2);
+    __disposeResources22(env_2);
   }
 }
 // Independent entry registrations, not inferred from a matcher's output.

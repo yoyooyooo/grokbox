@@ -1,3 +1,4 @@
+export { openModelProbe } from "./internal/roots/model-probe.runtime.ts";
 export { BoxRuntimeError, runtimeNotReady, type BoxRuntimeErrorCode } from "@grokbox/runtime-kernel/contract";
 export {
   applyReset,
@@ -18,6 +19,7 @@ export {
   retainedGenerationSourcePath,
 } from "./internal/io/paths.ts";
 export { openRuntimeStore, type RuntimeStore } from "./internal/io/configuration.node.ts";
+export { openManagementAccess } from "./internal/io/management-access.node.ts";
 export { readStorageConfiguration } from "./internal/io/storage-configuration.node.ts";
 export { runRuntimeServiceCommand, RuntimeServiceError, type RuntimeServiceRequest } from "./internal/roots/runtime-services.runtime.ts";
 export { acquireDaemonSocket, type DaemonSocketLease } from "./internal/io/daemon-socket.node.ts";
@@ -96,6 +98,7 @@ export { previewConfigurationAliases, repairConfigurationAliases } from "./inter
 export { configApplicationRevisions, createConfigConsumerOwner, publishConfigApplication, releaseConfigApplication, observeConfigApplication, type ConfigConsumerOwner } from "./internal/io/config-application.node.ts";
 export { prepareConfigurationBootstrap, installConfigurationResources, rollbackConfigurationBootstrap, type BootstrapInstallation, type BootstrapIntent } from "./internal/io/config-bootstrap.node.ts";
 export { saveRuntimeModels, saveRuntimeDesired, configurationWriteLayer } from "./internal/io/configuration-write.node.ts";
+export { openModelCredentialManagement } from "./internal/io/model-credential-management.node.ts";
 export { persistModelCredential } from "./internal/io/persist-model-credential.node.ts";
 export { readManagedOwnership, type OwnershipReader } from "./internal/io/ownership-admission.node.ts";
 export { modelConfigurationLayer } from "./internal/io/model-management.node.ts";
@@ -121,7 +124,7 @@ export {
   projectHostStreamRejected,
   type HostStreamRejectedEvent,
 } from "./internal/io/journal.node.ts";
-export { replaceModeld } from "./internal/roots/modeld-replace.node.ts";
+export { replaceModeld, stopModeld } from "./internal/roots/modeld-replace.node.ts";
 export { observeModeldService, probeModeldExecution } from "./internal/wire/modeld-probe.node.ts";
 export { observeJournalHealth, readJournalHealth, type JournalHealthObservation } from "./internal/host/journal-health.node.ts";
 export {
@@ -209,6 +212,6 @@ export { runMonitor } from "./internal/roots/monitor.runtime.ts";
 export { runIncidentEvidenceCommand } from "./internal/roots/incident-evidence.runtime.ts";
 export { startRuntimeCommand, type RuntimeStartResult } from "./internal/roots/command.runtime.ts";
 export { startControlOperation, controllerOperationId, observeControllerHostGeneration, diskPreloadSha256, reviewedProfileSha256,
-  recoverControllerOperationState, type OperationRecoveryReport } from "./internal/roots/controller-program.node.ts";
+  recoverControllerOperationState, readControllerOperation, type OperationRecoveryReport } from "./internal/roots/controller-program.node.ts";
 export { stopPatchedHostCoverage, stopLivePatchedHost } from "./internal/process/host-stop.ts";
 export type { IdentityOpResult } from "./internal/process/identity-op.ts";

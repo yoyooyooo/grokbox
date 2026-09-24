@@ -1,5 +1,5 @@
 export type ConfigErrorCode =
-  | "config_invalid" | "config_path_invalid" | "config_conflict"
+  | "config_invalid" | "config_path_invalid" | "config_conflict" | "config_idempotency_conflict"
   | "config_scope_required" | "config_scope_unavailable" | "config_layout_conflict"
   | "config_migration_required" | "config_apply_pending" | "config_commit_unknown";
 

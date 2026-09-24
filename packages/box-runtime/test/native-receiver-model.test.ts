@@ -11,7 +11,7 @@ import { nativeReceiverModelRevision } from "@grokbox/runtime-kernel/observation
 
 // A separate explicit qualification pin; do not silently renew unrelated native
 // probes or make this private bundle a public build/test dependency.
-const SOURCE_SHA = "eb4388069359a0101ac442d3b391def3c28e783161f4b6954ce50169f49e172c";
+const SOURCE_SHA = "7e245862872b56d6be470f20588b24d7a064d045bf8f56d4ce1a154f3a0e8bc7";
 const nativeTest = test.skipIf(process.env.GROKBOX_TEST_NATIVE_HOST !== "1");
 nativeTest("source-pinned automation preview follows original native model selection without starting a session or marking experiment application", () => {
   const source = readFileSync(LIVE_HOST_BUNDLE, "utf8");
@@ -20,14 +20,22 @@ nativeTest("source-pinned automation preview follows original native model selec
   const patched = applyPatchProfile(source, profile); expect(patched.ok, patched.ok ? undefined : patched.code).toBe(true); if (!patched.ok) throw Error("qualified_slice_failed");
   const needed = new Set(["createHostInference", "createCursorSandInference", "resolveSandRequestedModel", "selectSandExperimentTurnModel",
     "selectSandModelExperimentModel", "createSandRequestedModelFromSelection", "createSandDefaultRequestedModel", "createSandSubagentRequestedModel"]);
-  const ast = ts.createSourceFile("native.cjs", patched.source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS), functions = new Map<string, string>();
-  function visit(node: ts.Node) {
-    if (ts.isFunctionDeclaration(node) && node.name && needed.has(node.name.text)) {
-      expect(functions.has(node.name.text)).toBe(false); functions.set(node.name.text, node.getText(ast));
-    }
-    ts.forEachChild(node, visit);
+  const functions = new Map<string, string>();
+  // Keep the pinned function bytes and AST shape checks, but parse only each
+  // unique declaration rather than retaining the complete native Host AST.
+  for (const name of needed) {
+    const marker = `\nfunction ${name}(`, start = patched.source.indexOf(marker);
+    const end = patched.source.indexOf("\n}", start + marker.length);
+    if (start < 0 || patched.source.indexOf(marker, start + marker.length) !== -1 || end < 0 || end - start > 64 * 1024)
+      throw Error("native_receiver_declaration_layout");
+    const ast = ts.createSourceFile("native.cjs", patched.source.slice(start + 1, end + 2), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+    const declaration = ast.statements[0];
+    if ((ast as unknown as { parseDiagnostics: readonly unknown[] }).parseDiagnostics.length
+      || ast.statements.length !== 1 || !declaration || !ts.isFunctionDeclaration(declaration) || declaration.name?.text !== name)
+      throw Error("native_receiver_declaration_shape");
+    expect(functions.has(name)).toBe(false); functions.set(name, declaration.getText(ast));
   }
-  visit(ast); expect(functions.size).toBe(needed.size);
+  expect(functions.size).toBe(needed.size);
   class RequestedModel {
     modelId = ""; maxMode = false; parameters: unknown[] = []; credentials = { case: undefined }; builtInModel = false; isVariantStringRepresentation = false;
     constructor(value: object) { Object.assign(this, value); }

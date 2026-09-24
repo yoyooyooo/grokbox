@@ -3,11 +3,12 @@ import { readNativeSource } from "./native-host-source.ts";
 import { runInNewContext } from "node:vm";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
 import { CONT_NATIVE_PAIR, nativeContinuityEnabled } from "./native-continuity-code.ts";
+import { LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
 
 const nativeTest = test.skipIf(!nativeContinuityEnabled());
 const identities = [
-  ["__addDisposableResource23", "\nvar __disposeResources23 =", "6b765884eb79ed9a26a3d4a190fddb0592faa7028ea5ff7c90422f9b2157c532"],
-  ["__disposeResources23", "\nvar logger65 =", "072532d1842c670a1e86533f8ec1d3a6470e3311641771bc0cefd1f9ed6ea93c"],
+  ["__addDisposableResource22", "\nvar __disposeResources22 =", "6b765884eb79ed9a26a3d4a190fddb0592faa7028ea5ff7c90422f9b2157c532"],
+  ["__disposeResources22", "\nvar logger65 =", "072532d1842c670a1e86533f8ec1d3a6470e3311641771bc0cefd1f9ed6ea93c"],
 ] as const;
 function originalHelpers() {
   const source = readNativeSource("source").toString("utf8");
@@ -21,6 +22,23 @@ function originalHelpers() {
   });
   return { add: values[0], dispose: values[1] };
 }
+nativeTest("compact lease uses the original runStep resource owner and finalizer", () => {
+  const source = readNativeSource("source").toString("utf8");
+  expect(sha256Text(source)).toBe(CONT_NATIVE_PAIR.host);
+  const marker = "  async runStep(";
+  const start = source.indexOf(marker), end = source.indexOf("\n  }", start);
+  expect(start).toBeGreaterThan(-1);
+  expect(source.indexOf(marker, start + marker.length)).toBe(-1);
+  expect(end).toBeGreaterThan(start);
+  expect(end - start).toBeLessThan(256 * 1024);
+  const step = source.slice(start, end);
+  const add = step.match(/(__addDisposableResource\d+)\(env_2,/g);
+  const dispose = step.match(/(__disposeResources\d+)\(env_2\)/g);
+  expect(add).toEqual([`${identities[0][0]}(env_2,`]);
+  expect(dispose).toEqual([`${identities[1][0]}(env_2)`]);
+  const registration = LIVE_SLICE_PATCHES.find(slice => slice.id === "compact-register")!;
+  expect(registration.replacement.includes(`${identities[0][0]}(env_2, __grokbox_compact_slot, false)`)).toBe(true);
+});
 nativeTest("original synchronous disposal ABI preserves receiver, LIFO order and original return/throw", () => {
   const { add, dispose } = originalHelpers(), events: string[] = [], failure = {};
   for (const throws of [false, true]) {

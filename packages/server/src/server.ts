@@ -278,6 +278,8 @@ export async function startManagementServer(options: ManagementServerOptions, te
       const result = yield* application({ ...options, installationId, serviceState, notificationState, hostHealthState,
         modelAuthorize: signal => materialAuthorize(signal, "models.write"),
         incidentAuthorize: signal => materialAuthorize(signal, "incidents.write"),
+        systemIntegrationDomain: { root: options.store.root, runRoot: (options.env ?? process.env).GROKBOX_RUN_ROOT },
+        systemConfigDomain: { root: options.store.root, installationId, authorize: materialAuthorize, store: options.store },
         jobDomain: jobService ? { service: jobService, authorize: materialAuthorize } : undefined,
         fileDomain: fileService ? { service: fileService, authorize: materialAuthorize } : undefined,
         desktopDomain: desktopService ? { service: desktopService, authorize: materialAuthorize } : undefined,
@@ -309,6 +311,14 @@ export async function startManagementServer(options: ManagementServerOptions, te
           if (url.pathname.startsWith("/v1/product-relations/")) { await materialAuthorize(signal, "messages.read"); await materialAuthorize(signal, "routines.read"); }
         }, catch: error => error });
       }
+      if (request.method === "GET" && (url.pathname === "/v1/system/host" || url.pathname === "/v1/system/integration" || url.pathname.startsWith("/v1/system/integration/operations/"))) {
+        yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, "system.read"), catch: error => error });
+        if (url.pathname.startsWith("/v1/system/integration/operations/")) yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, "operations.read"), catch: error => error });
+      }
+      if (request.method === "GET" && url.pathname.startsWith("/v1/model-probe-operations/")) yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, "operations.read"), catch: error => error });
+      if (request.method === "GET" && (url.pathname.startsWith("/v1/model-credential-") || /^\/v1\/models\/[^/]+\/(check|credential)$/.test(url.pathname))) yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, url.pathname.startsWith("/v1/model-credential-operations/") ? "operations.read" : "models.read"), catch: error => error });
+      if (request.method === "GET" && (url.pathname === "/v1/access" || url.pathname.startsWith("/v1/access-"))) yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, url.pathname.startsWith("/v1/access-operations/") ? "operations.read" : "system.access.read"), catch: error => error });
+      if (request.method === "GET" && url.pathname.startsWith("/v1/system-config")) yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, url.pathname.startsWith("/v1/system-config-operations/") ? "operations.read" : "system.config.read"), catch: error => error });
       if (request.method === "GET" && (url.pathname === "/v1/desktop" || url.pathname.startsWith("/v1/desktop-"))) {
         yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, url.pathname.includes("operations/") ? "operations.read" : "desktop.read"), catch: error => error });
       }

@@ -1,4 +1,9 @@
 import { Effect } from "effect";
+import { systemConfigApplication, type SystemConfigDomain } from "./system-config.ts";
+import { accessApplication } from "./access-management.ts";
+import { modelMaintenance } from "./model-maintenance.ts";
+import { systemIntegrationQuery, type SystemIntegrationDomain } from "./system-integration.ts";
+import type { RuntimeStore } from "@grokbox/box-runtime/runtime";
 import { fileApplication, type FileDomain } from "./files.ts";
 import { desktopApplication, type DesktopDomain } from "./desktop.ts";
 import {
@@ -30,7 +35,7 @@ export type ManagementNative = Pick<ReturnType<typeof createManagementGateway>, 
   & Partial<Pick<ReturnType<typeof createManagementGateway>, "readNotificationReceiver" | "readHostWitness" | "routineAccess" | "continuityAccess" | "productAccess">>;
 import { hostHealthQuery } from "./host-health.ts";
 import type { HostHealthStatus } from "@grokbox/box-runtime/runtime";
-export type ApplicationOptions = { modelAuthorize?: (signal: AbortSignal) => Promise<void>; incidentAuthorize?: (signal: AbortSignal) => Promise<void>; productDomain?: ProductDomain; desktopDomain?: DesktopDomain; fileDomain?: FileDomain; jobDomain?: JobDomain; messageDomain?: MessageDomain; hostHealthState?:()=>HostHealthStatus; contextDomain?: ContextDomain; lifecycleDomain?: LifecycleDomain; protectionDomain?: ProtectionDomain; materialDomain?: MaterialApplicationDomain; installationId: string; native: ManagementNative; observations?: ManagementObservations; serviceState?: () => ManagementServiceView; notificationState?: () => NotificationWorkerView; notificationDomain?: NotificationDomain; env?: NodeJS.Dict<string>; fetch?: typeof fetch };
+export type ApplicationOptions = { systemIntegrationDomain?: SystemIntegrationDomain; systemConfigDomain?: SystemConfigDomain & { store: RuntimeStore }; modelAuthorize?: (signal: AbortSignal) => Promise<void>; incidentAuthorize?: (signal: AbortSignal) => Promise<void>; productDomain?: ProductDomain; desktopDomain?: DesktopDomain; fileDomain?: FileDomain; jobDomain?: JobDomain; messageDomain?: MessageDomain; hostHealthState?:()=>HostHealthStatus; contextDomain?: ContextDomain; lifecycleDomain?: LifecycleDomain; protectionDomain?: ProtectionDomain; materialDomain?: MaterialApplicationDomain; installationId: string; native: ManagementNative; observations?: ManagementObservations; serviceState?: () => ManagementServiceView; notificationState?: () => NotificationWorkerView; notificationDomain?: NotificationDomain; env?: NodeJS.Dict<string>; fetch?: typeof fetch };
 export function projectModel(record: ModelRecord): ModelView {
   let endpoint: string | null = null;
   try {
@@ -58,6 +63,22 @@ export function application(options: ApplicationOptions, principal: Principal, m
     if (path === "/v1/products" || path.startsWith("/v1/product-")) {
       if (!options.productDomain) return yield* Effect.fail(new HttpFailure(503, "source_unavailable", "Native product management is unavailable."));
       return yield* productApplication(options.productDomain, principal, method, url, input);
+    }
+    if (path === "/v1/system/host" || path === "/v1/system/integration" || path.startsWith("/v1/system/integration/operations/")) {
+      if (!options.systemIntegrationDomain) return yield* Effect.fail(new HttpFailure(503, "unavailable", "System integration observation is unavailable."));
+      return yield* systemIntegrationQuery(options.systemIntegrationDomain, principal, method, url);
+    }
+    if (path === "/v1/model-probes" || path.startsWith("/v1/model-probe-operations/") || path.startsWith("/v1/model-credential-") || /^\/v1\/models\/[^/]+\/(check|credential)$/.test(path)) {
+      if (!options.systemConfigDomain) return yield* Effect.fail(new HttpFailure(503, "unavailable", "Model maintenance is unavailable."));
+      return yield* modelMaintenance(options.systemConfigDomain, principal, method, url, input);
+    }
+    if (path === "/v1/access" || path.startsWith("/v1/access-")) {
+      if (!options.systemConfigDomain) return yield* Effect.fail(new HttpFailure(503, "unavailable", "Access management is unavailable."));
+      return yield* accessApplication(options.systemConfigDomain, principal, method, url, input);
+    }
+    if (path.startsWith("/v1/system-config")) {
+      if (!options.systemConfigDomain) return yield* Effect.fail(new HttpFailure(503, "unavailable", "System config is unavailable."));
+      return yield* systemConfigApplication(options.systemConfigDomain, principal, method, url, input);
     }
     if (path === "/v1/messages" || path.startsWith("/v1/messages/") || path.startsWith("/v1/message-")) {
       if (!options.messageDomain) return yield* Effect.fail(new HttpFailure(503, "source_unavailable", "Message management is unavailable."));
