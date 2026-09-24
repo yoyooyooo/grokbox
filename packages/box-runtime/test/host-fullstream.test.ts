@@ -12,7 +12,7 @@ import { admitAllAuthorityLayer, startModeldProcess } from "../src/internal/root
 import { echoModelBackendLayer } from "../src/internal/backends/echo.ts";
 import { dispatchingModelBackendLayer } from "../src/internal/backends/dispatch.ts";
 import { createLiveBackendAuth, liveBackendAuthLayer } from "../src/internal/io/credentials.node.ts";
-import { writeAttestation } from "../src/internal/io/authority.node.ts";
+import { writeCompletedRouteFixture } from "./modeld-authority-fixture.ts";
 import { serveModeld } from "../src/internal/modeld/server.node.ts";
 import { bindHostSessionHook } from "../src/internal/host/session-hook.ts";
 import { asHostPromptSession, createStreamingPromptSession } from "../src/internal/host/session.ts";
@@ -186,7 +186,7 @@ describe("host fullStream unix", () => {
     await mkdir(join(durable, "state"), { recursive: true, mode: 0o700 });
     await writeFile(join(durable, "config.json"), JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
     const sha = HEX("e");
-    await writeAttestation(runRoot, {
+    await writeCompletedRouteFixture(runRoot, {
       mode: "route",
       coverage: "attested",
       modeld: true,
@@ -198,7 +198,6 @@ describe("host fullStream unix", () => {
       profileId: "p",
       transformedSha: sha,
       operationId: "op-1",
-      launchMode: "direct-launch",
       compile: { profileId: "p", profileSha256: sha, sourceSha256: sha, transformedSha256: sha },
     });
     const previousFetch = globalThis.fetch;
@@ -378,7 +377,7 @@ describe("host fullStream unix", () => {
     await mkdir(join(durable, "state"), { recursive: true, mode: 0o700 });
     await writeFile(join(durable, "config.json"), JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }), { mode: 0o600 });
     const sha = HEX("e");
-    await writeAttestation(runRoot, {
+    await writeCompletedRouteFixture(runRoot, {
       mode: "route",
       coverage: "attested",
       modeld: true,
@@ -390,7 +389,6 @@ describe("host fullStream unix", () => {
       profileId: "p",
       transformedSha: sha,
       operationId: "op-1",
-      launchMode: "direct-launch",
       compile: { profileId: "p", profileSha256: sha, sourceSha256: sha, transformedSha256: sha },
     });
     const started = await startModeldProcess({ durableRoot: durable, runRoot, env: {}, ownershipRead: ownedOwnershipReader(process.pid) });
@@ -427,7 +425,8 @@ describe("host fullStream unix", () => {
         { role: "user", content: [{ type: "image", data: "AAAA", mimeType: "image/png" }] },
       ]).stream({}, "STEP_UNSUPPORTED_IMAGE");
       await expect(image.response).rejects.toMatchObject({ name: "RetriableError", code: "unsupported_image" });
-      const after = await waitJournal(runRoot, (text) => text.includes("STEP_UNSUPPORTED_IMAGE"));
+      const after = await waitJournal(runRoot, (text) => text.includes("STEP_UNSUPPORTED_IMAGE") && text.split("\n").some(
+        (line) => line.includes('"name":"host_normalized_terminal"') && line.includes('"stepId":"J13_REAL_STEP"')));
       expect(after).toContain("STEP_UNSUPPORTED_IMAGE");
       const stepRows = after.split("\n").filter(Boolean).map((line) => JSON.parse(line) as { stepId?: string; name?: string });
       expect(stepRows.filter((row) => row.name === "host_normalized_terminal" && row.stepId === "J13_REAL_STEP")).toHaveLength(1);

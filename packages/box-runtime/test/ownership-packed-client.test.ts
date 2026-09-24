@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { writeAttestation } from "../src/internal/io/authority.node.ts";
+import { writeCompletedRouteFixture } from "./modeld-authority-fixture.ts";
 import { bindCompiledHost } from "../src/internal/host/host-binding.ts";
 import { startModeldProcess, type StartedModeld } from "../src/internal/roots/modeld.runtime.ts";
 import type { OwnershipReader } from "../src/internal/io/ownership-admission.node.ts";
@@ -117,9 +117,9 @@ for (const scenario of ["confirmed-box", "server-temporal", "legacy-evidence", "
         models: { "openai/owned-model": { provider: "openai", model: "owned-model", endpoint: "https://owned.invalid/v1",
           apiKeyRef: "env:OWNED_KEY", capabilities: { tools: true, vision: false, images: false }, contextWindowTokens: 200000 } },
         assignments: { main: null, agents: { [AGENT]: { modelId: "openai/owned-model" } } } }));
-      await writeAttestation(runRoot, { mode: "route", coverage: "attested", modeld: true, diskSha: SHA,
+      await writeCompletedRouteFixture(runRoot, { mode: "route", coverage: "attested", modeld: true, diskSha: SHA,
         pid, start: 1, identity, at: new Date().toISOString(), profileId: "fixture", transformedSha: SHA,
-        operationId: "owned-op", launchMode: "direct-launch", compile });
+        operationId: "owned-op", compile });
       await client.call("init", { durableRoot, runRoot, binding, compile, agentId: AGENT,
         turnId: `turn-${scenario}`, stepId: `step-${scenario}`, serverHarness: scenario === "server-temporal" ? "temporal" : "box", legacyEvidence: scenario === "legacy-evidence",
         executionState: scenario === "native-paused" ? "paused" : scenario === "native-unbound" ? "unbound"

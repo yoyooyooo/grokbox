@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AdmissionAuthority } from "@grokbox/runtime-kernel/ports";
 import { modeldStorePorts } from "../src/internal/io/store.node.ts";
-import { writeAttestation } from "../src/internal/io/authority.node.ts";
+import { observeAttestation, writeAttestation } from "../src/internal/io/authority.node.ts";
 import { writeAdoptOpState } from "../src/internal/process/transient-adopt.ts";
 import { writeAdoptionOwner, adoptionOwnerPath, adoptionEvidencePath } from "../src/internal/process/adopt-evidence.ts";
 import { bindCompiledHost } from "../src/internal/host/host-binding.ts";
@@ -13,7 +13,7 @@ import { liveAdmissionAuthorityLayer } from "../src/internal/roots/modeld.runtim
 import { ownedOwnershipReader } from "./ownership-fixture.ts";
 import * as observation from "../src/internal/io/observation.node.ts";
 
-async function fixture() {
+async function fixture(complete = true) {
   const root = await mkdtemp(join(tmpdir(), "controller-authority-")), runRoot = join(root, "run");
   const host = { pid: 31337, start: 100, uid: process.getuid!(), exe: "/fixture/node", cmdline: ["node", "/fixture/host-main.cjs"], ppid: 1, ancestry: [1] };
   const compile = { profileId: "fixture", profileSha256: "a".repeat(64), sourceSha256: "b".repeat(64), transformedSha256: "c".repeat(64) };
@@ -22,7 +22,8 @@ async function fixture() {
   const journal = { launchMode: "transient-adopt" as const, phase: "attested" as const, operationId: "original", compile, tempSupervisor: null,
     adoptingSupervisor: { ...host, pid: 31336, start: 99 }, host };
   await writeFile(join(root, "config.json"), JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: "route" } }));
-  await writeAttestation(runRoot, attestation); await writeAdoptOpState(runRoot, journal); await writeAdoptionOwner(runRoot, "original", "complete");
+  await writeAttestation(runRoot, attestation);
+  if (complete) { await writeAdoptOpState(runRoot, journal); await writeAdoptionOwner(runRoot, "original", "complete"); }
   await mkdir(join(root, "state"));
   await writeFile(join(root, "state", "controller-operations.json"), JSON.stringify(Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`older-${i}`, { state: "unknown", fingerprint: `older-${i}` }]))));
   const binding = bindCompiledHost(host, "original", compile);
@@ -43,6 +44,32 @@ test("completed generation admits through current/currentContext; unrelated hist
   }).pipe(Effect.provide(liveAdmissionAuthorityLayer(f.root, f.runRoot, ownedOwnershipReader(f.host.pid))))));
   expect(outcomes.map(row => row.admitted)).toEqual([true, true]);
   expect(await readFile(join(f.root, "state", "controller-operations.json"))).toEqual(before);
+});
+
+for (const launchMode of ["direct-launch", undefined] as const) test(`route with ${launchMode ?? "absent launch mode"} and no completion evidence denies store/current/currentContext`, async () => {
+  const f = await fixture(false), before = await readFile(join(f.root, "state", "controller-operations.json"));
+  await writeAttestation(f.runRoot, { ...f.attestation, launchMode });
+  // JSON serialization omits the undefined variant; neither fixture has an owner or journal.
+  expect(await observation.observeText(adoptionOwnerPath(f.runRoot))).toEqual({ state: "missing" });
+  expect(await observation.observeText(join(f.runRoot, "state", "adopt-op.json"))).toEqual({ state: "missing" });
+  expect(await f.read()).toEqual({ state: "unavailable" });
+  const read = ownedOwnershipReader(f.host.pid); let reads = 0;
+  const outcomes = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const authority = yield* AdmissionAuthority;
+    return [yield* authority.current(f.request), yield* authority.currentContext!(f.request)];
+  }).pipe(Effect.provide(liveAdmissionAuthorityLayer(f.root, f.runRoot, (ids, signal) => { reads++; return read(ids, signal); })))));
+  expect(outcomes).toEqual([{ admitted: false, reason: "authority_not_committed" }, { admitted: false, reason: "authority_not_committed" }]);
+  expect(reads).toBe(0);
+  expect(await readFile(join(f.root, "state", "controller-operations.json"))).toEqual(before);
+});
+
+test("direct identity coverage remains observable without adoption completion and grants no route authority", async () => {
+  const f = await fixture(false);
+  const identity = { coverage: "attested" as const, mode: "identity" as const, modeld: false as const, diskSha: f.attestation.diskSha,
+    pid: f.host.pid, start: f.host.start, identity: f.host, at: f.attestation.at, windowMs: 12, launchMode: "direct-launch" as const };
+  await writeAttestation(f.runRoot, identity);
+  expect(await observeAttestation(f.runRoot)).toEqual({ state: "present", value: identity });
+  expect(await f.read()).toEqual({ state: "unavailable" });
 });
 
 test("unresolved claim denies both mandatory consumers before any native ownership read despite a matching issued pair", async () => {

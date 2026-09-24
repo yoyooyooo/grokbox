@@ -17,7 +17,7 @@ import { requestModeld } from "../src/internal/host/modeld-client.node.ts";
 import { echoModelBackendLayer } from "../src/internal/backends/echo.ts";
 import { dispatchingModelBackendLayer } from "../src/internal/backends/dispatch.ts";
 import { createLiveBackendAuth, liveBackendAuthLayer } from "../src/internal/io/credentials.node.ts";
-import { writeAttestation } from "../src/internal/io/authority.node.ts";
+import { writeCompletedRouteFixture } from "./modeld-authority-fixture.ts";
 import { inferenceMemoryLayer } from "@grokbox/runtime-kernel/inference";
 import { fakeConfigurationReadLayer } from "@grokbox/runtime-kernel/testing";
 import { contextSnapshotBody, WIRE_VERSION } from "@grokbox/runtime-kernel/contract";
@@ -351,7 +351,7 @@ describe("modeld lifecycle", () => {
     }
 
     const sha = "ab".repeat(32);
-    await writeAttestation(routeRun, {
+    await writeCompletedRouteFixture(routeRun, {
       mode: "route",
       coverage: "attested",
       modeld: true,
@@ -371,7 +371,6 @@ describe("modeld lifecycle", () => {
       profileId: "p",
       transformedSha: sha,
       operationId: "op-1",
-      launchMode: "direct-launch",
       compile: {
         profileId: "p",
         profileSha256: sha,

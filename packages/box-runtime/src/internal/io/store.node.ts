@@ -57,22 +57,20 @@ export function modeldStorePorts(durableRoot: string, runRoot: string): ModeldPo
       if (attestation.state === "missing" && (journal.state === "missing" || settling)) return { state: "pending" };
       if (attestation.state !== "present") return { state: "unavailable" };
       const att = attestation.value;
-      if (att.mode !== "route" || !att.modeld || !att.operationId || !att.compile ||
+      if (att.mode !== "route" || !att.modeld || att.launchMode !== "transient-adopt" || !att.operationId || !att.compile ||
         ![att.compile.profileSha256, att.compile.sourceSha256, att.compile.transformedSha256].every((sha) => /^[a-f0-9]{64}$/.test(sha))) {
         return { state: "unavailable" };
       }
-      if (att.launchMode === "transient-adopt") {
-        if (owner.state === "missing" || owner.state === "present" && owner.value.state === "unresolved") return { state: "pending" };
-        if (owner.state !== "present" || owner.value.state !== "complete" || owner.value.operationId !== att.operationId) return { state: "unavailable" };
-        if (journal.state === "missing" || settling) return { state: "pending" };
-        if (journal.state !== "present") return { state: "unavailable" };
-        if (archived.state !== "present" || archived.digest !== journal.digest || owner.value.journalSha256 !== journal.digest) return { state: "unavailable" };
-        const op = journal.value;
-        if (op.phase !== "attested" || op.tempSupervisor !== null || op.operationId !== att.operationId ||
-          !isDeepStrictEqual(op.compile, att.compile) || !op.host || stableIdentitySha(op.host) !== stableIdentitySha(att.identity)) {
-          return { state: "unavailable" };
-        }
-      } else if (journal.state !== "missing" || owner.state !== "missing") return { state: "unavailable" };
+      if (owner.state === "missing" || owner.state === "present" && owner.value.state === "unresolved") return { state: "pending" };
+      if (owner.state !== "present" || owner.value.state !== "complete" || owner.value.operationId !== att.operationId) return { state: "unavailable" };
+      if (journal.state === "missing" || settling) return { state: "pending" };
+      if (journal.state !== "present") return { state: "unavailable" };
+      if (archived.state !== "present" || archived.digest !== journal.digest || owner.value.journalSha256 !== journal.digest) return { state: "unavailable" };
+      const op = journal.value;
+      if (op.phase !== "attested" || op.tempSupervisor !== null || op.operationId !== att.operationId ||
+        !isDeepStrictEqual(op.compile, att.compile) || !op.host || stableIdentitySha(op.host) !== stableIdentitySha(att.identity)) {
+        return { state: "unavailable" };
+      }
       try { return { state: "committed", host: bindCompiledHost(att.identity, att.operationId, att.compile) }; }
       catch { return { state: "unavailable" }; }
     },

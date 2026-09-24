@@ -7,7 +7,7 @@ import { backendFailureFromUnknown } from "../src/internal/backends/provider-err
 import { backendFailureObservation } from "../src/internal/backends/failure-observation.ts";
 import { projectModeldStepOutcome, snapshotWireMeasures } from "../src/internal/io/modeld-outcome.node.ts";
 import { projectModelStepTerminal } from "../src/internal/io/journal.node.ts";
-import { writeAttestation } from "../src/internal/io/authority.node.ts";
+import { writeCompletedRouteFixture } from "./modeld-authority-fixture.ts";
 import { startModeldProcess } from "../src/internal/roots/modeld.runtime.ts";
 import { bindHostSessionHook } from "../src/internal/host/session-hook.ts";
 import { isHostPromptSession } from "../src/internal/host/session.ts";
@@ -30,9 +30,9 @@ async function fixture(fetch: typeof globalThis.fetch, options: { echo?: boolean
   if (options.brokenJournal) await mkdir(join(runRoot, "log/events.ndjson"), { recursive: true });
   const identity = { pid: process.pid, start: 1, uid: 1, ppid: 1, exe: "/owned/node", cmdline: ["node"], ancestry: [1] };
   const binding = bindCompiledHost(identity, "op", compile);
-  await writeAttestation(runRoot, { mode: "route", coverage: "attested", modeld: true, diskSha: sha,
+  await writeCompletedRouteFixture(runRoot, { mode: "route", coverage: "attested", modeld: true, diskSha: sha,
     pid: process.pid, start: 1, identity,
-    at: new Date().toISOString(), profileId: "fixture", transformedSha: sha, operationId: "op", launchMode: "direct-launch", compile });
+    at: new Date().toISOString(), profileId: "fixture", transformedSha: sha, operationId: "op", compile });
   const server = await startModeldProcess({ durableRoot, runRoot, fetch, env: { FIXTURE_KEY: "owned-fixture-key" }, ownershipRead: options.ownershipRead === null ? undefined : options.ownershipRead ?? ownedOwnershipReader(process.pid) });
   const session = bindHostSessionHook({ mode: "route", durableRoot, runRoot, binding, compile })({ agentId: "fixture-agent", sessionOptions: { invocationId: "turn" } });
   if (!isHostPromptSession(session)) throw Error("fixture session");

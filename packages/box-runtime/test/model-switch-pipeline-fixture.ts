@@ -2,7 +2,7 @@ import { expect } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { writeAttestation } from "../src/internal/io/authority.node.ts";
+import { writeCompletedRouteFixture } from "./modeld-authority-fixture.ts";
 import { openRuntimeStore } from "../src/internal/io/configuration.node.ts";
 import { submitModelChange } from "./model-management-fixture.ts";
 import { startModeldProcess } from "../src/internal/roots/modeld.runtime.ts";
@@ -64,9 +64,9 @@ export async function exerciseModelSwitchPipeline(persistence?: PipelineCheckpoi
     assignments: { main: null, agents: { [OTHER]: { modelId: A } } } }), { mode: 0o600 });
   const identity = { pid: process.pid, start: 1, uid: 1, ppid: 1, exe: "/owned/node", cmdline: ["node"], ancestry: [1] };
   const binding = bindCompiledHost(identity, "owned-switch", compile);
-  await writeAttestation(runRoot, { mode: "route", coverage: "attested", modeld: true, diskSha: sha,
+  await writeCompletedRouteFixture(runRoot, { mode: "route", coverage: "attested", modeld: true, diskSha: sha,
     pid: process.pid, start: 1, identity, at: new Date().toISOString(), profileId: "fixture", transformedSha: sha,
-    operationId: "owned-switch", launchMode: "direct-launch", compile });
+    operationId: "owned-switch", compile });
   const requests: Array<{ path: string; body: Record<string, unknown> }> = [];
   const fetchImpl = Object.assign(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     const url = typeof input === "string" ? new URL(input) : input instanceof URL ? input : new URL(input.url);
