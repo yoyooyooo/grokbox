@@ -1,3 +1,4 @@
+import { parseAdoptLaunch } from "./adopt-evidence.ts";
 import { setTimeout as delay } from "node:timers/promises";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -301,7 +302,7 @@ export function createLiveH3AdoptPorts(input: {
         const row = JSON.parse(bytes.toString()), spec = JSON.parse(readFileSync(input.overlayPath, "utf8"));
         const identity = (value: { pid: number; start: number }) => value && Number.isSafeInteger(value.pid) && value.pid > 0 && Number.isSafeInteger(value.start) && value.start > 0;
         if (row.operationId !== spec.env?.GROKBOX_OPERATION_ID || !identity(row) || !identity(row.supervisor)) return null;
-        return { operationId: row.operationId, host: { pid: row.pid, start: row.start }, tempSupervisor: { pid: row.supervisor.pid, start: row.supervisor.start } };
+        return { operationId: row.operationId, host: { pid: row.pid, start: row.start }, tempSupervisor: { pid: row.supervisor.pid, start: row.supervisor.start }, ...(row.launch === undefined ? {} : { launch: parseAdoptLaunch(row.launch) }) };
       } catch { return null; }
     },
     childEvidence: () => {

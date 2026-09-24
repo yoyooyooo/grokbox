@@ -165,6 +165,7 @@ export type ControllerReceipt = {
   guardian: boolean;
   operationId: string;
   diagnostic?: ControllerDiagnostic;
+  persistence?: "uncertain";
 };
 
 export type LeaseDecision =
@@ -176,6 +177,7 @@ export type LeaseDecision =
   | { status: "corrupt" };
 
 export type OperationPrefix = {
+  persistence?: "uncertain";
   diagnostic?: ControllerDiagnostic;
   signaled: boolean;
   spawned: boolean;
@@ -194,8 +196,8 @@ export class ControlResources extends Context.Service<ControlResources, {
   readonly settle: (input: { operationId: string; boxRoot: string; state: "running" | "unknown" | "terminal"; prefix?: OperationPrefix }) => Effect.Effect<void, unknown>;
   readonly preflight: (input: FrozenControllerCommand) => Effect.Effect<{ ok: boolean; reason: string | null; strategy?: LaunchStrategy }, unknown>;
   readonly recheck: (input: FrozenControllerCommand) => Effect.Effect<{ ok: boolean; reason: string | null }, unknown>;
-  readonly signal: (input: FrozenControllerCommand) => Effect.Effect<{ signaled: boolean; diagnostic?: ControllerDiagnostic }, unknown>;
-  readonly spawn: (input: FrozenControllerCommand) => Effect.Effect<{ spawned: boolean; signaled?: boolean; guardian?: boolean; diagnostic?: ControllerDiagnostic }, unknown>;
+  readonly signal: (input: FrozenControllerCommand) => Effect.Effect<{ signaled: boolean; spawned?: boolean; guardian?: boolean; diagnostic?: ControllerDiagnostic; persistence?: "uncertain" }, unknown>;
+  readonly spawn: (input: FrozenControllerCommand) => Effect.Effect<{ spawned: boolean; signaled?: boolean; guardian?: boolean; diagnostic?: ControllerDiagnostic; persistence?: "uncertain" }, unknown>;
   readonly armGuardian: (input: FrozenControllerCommand) => Effect.Effect<{ guardian: boolean }, unknown>;
   readonly wait: (input: FrozenControllerCommand) => Effect.Effect<void, unknown>;
   readonly commit: (input: FrozenControllerCommand) => Effect.Effect<{ committed: boolean; diagnostic?: ControllerDiagnostic }, unknown>;

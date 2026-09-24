@@ -34,3 +34,19 @@ test("real Node publication guard cannot queue attestation or canonical journal 
   expect(exit, stderr).toBe(0);
   expect(JSON.parse(stdout)).toEqual({ cases: ["attestation", "journal"], cryptoJoined: true, noPublicationQueuedPastExpiry: true });
 });
+
+test("real Node result checkpoint faults retain effects and incomplete adoption cannot grant modeld authority", async () => {
+  const repo = fileURLToPath(new URL("../../../", import.meta.url)), root = await mkdtemp(join(tmpdir(), "controller-result-authority-node-"));
+  const outfile = join(root, "faults.mjs");
+  await build({ absWorkingDir: repo, entryPoints: ["packages/box-runtime/test/fixtures/controller-result-authority.node.ts"], outfile,
+    bundle: true, platform: "node", target: "node22", format: "esm", logLevel: "silent" });
+  const child = spawn("node", [outfile, root], { stdio: ["ignore", "pipe", "pipe"], env: { PATH: process.env.PATH, HOME: root } });
+  let stdout = "", stderr = "";
+  child.stdout.on("data", chunk => { stdout += chunk; }); child.stderr.on("data", chunk => { stderr += chunk; });
+  const exit = await new Promise<number | null>((resolve, reject) => { child.once("close", resolve); child.once("error", reject); });
+  expect(exit, stderr).toBe(0);
+  const report = JSON.parse(stdout);
+  expect(report.noProviderRequests).toBe(true);
+  expect(report.structuredCompilationRejected).toBe(true);
+  expect(report.cases.map((row: { mode: string }) => row.mode)).toEqual(["result-once", "result-direct", "result-persistent", "result-interrupt", "result-interrupt-persistent", "terminal-checkpoint", "archive", "inflight", "success"]);
+});

@@ -152,7 +152,7 @@ export type TransientAdoptContext = {
   signal?: AbortSignal;
   markerPath?: string;
   preloadSha256?: string;
-  creationEvidence?: () => { operationId: string; tempSupervisor: { pid: number; start: number }; host: { pid: number; start: number } } | null;
+  creationEvidence?: () => { operationId: string; tempSupervisor: { pid: number; start: number }; host: { pid: number; start: number }; launch?: import("./adopt-evidence.ts").AdoptLaunch } | null;
   processes: ProcessPort;
   classify: RoleClassifier;
   reviewedProfile: PatchProfile;
@@ -572,16 +572,21 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
   } finally {
     dispose?.();
     if (claimed && !complete) {
+      // Each failure-state write is independent. Optional archive failure must
+      // not skip the authority fence or the recovery journal settlement.
+      try { await writeAdoptionOwner(ctx.ephemeralRoot, ctx.operationId, "unresolved"); }
+      catch { /* The pre-effect unresolved claim still denies completion. */ }
+      try { captureCreation(); } catch { /* Missing creation proof stays missing. */ }
       try {
-        captureCreation();
-        if (ctx.markerPath && ctx.readMarker()?.operationId === ctx.operationId) preserveAdoptionMarker(ctx.ephemeralRoot, ctx.operationId, ctx.markerPath);
-        await writeAdoptionOwner(ctx.ephemeralRoot, ctx.operationId, "unresolved");
         const journal = await readAdoptOpState(ctx.ephemeralRoot);
         await writeAdoptOpState(ctx.ephemeralRoot, {
           launchMode: "transient-adopt", tempSupervisor: null, adoptingSupervisor: null, host: null,
           ...journal, phase: "recovery-required", operationId: ctx.operationId, failure: lastFailure, ...(creation ? { creation } : {}),
         });
-      } catch { /* An unreadable/pending journal remains fail-closed. */ }
+      } catch { /* Admission independently requires a matching complete owner. */ }
+      try {
+        if (ctx.markerPath && ctx.readMarker()?.operationId === ctx.operationId) preserveAdoptionMarker(ctx.ephemeralRoot, ctx.operationId, ctx.markerPath);
+      } catch { /* Archive uncertainty cannot promote the issued journal/attestation. */ }
     }
     try { await lock.lock.release(); }
     catch { return fail("operation-lock-release-failed", signaled); }

@@ -1,9 +1,10 @@
-import { adoptionEvidencePath, adoptionOwnerPath } from "./adopt-evidence.ts";
+import { reconcileMarkerCompilation } from "../io/host-compilation.node.ts";
+import { adoptionEvidencePath, adoptionOwnerPath, parseAdoptLaunch } from "./adopt-evidence.ts";
 import { constants, closeSync, fstatSync, fsyncSync, lstatSync, openSync, readSync, linkSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
+import { sha256Bytes, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { attestationPath } from "../io/authority.node.ts";
 import { adoptOpStatePath, parseAdoptOpState } from "./transient-adopt.ts";
 import { findUniqueOfficialChain, type RoleClassifier } from "./official-chain.ts";
@@ -77,6 +78,14 @@ export function prepareOriginalRestoration(input: {
     || !identity(diagnostic.child) || !same(diagnostic.child, creation.host)
     || journal.tempSupervisor && !same(journal.tempSupervisor, creation.tempSupervisor)
     || journal.host && !same(journal.host, creation.host)) throw Error("restoration-creation-provenance-unavailable");
+  if (Object.hasOwn(marker, "compilationObservation")) {
+    const launch = parseAdoptLaunch(creation.launch);
+    const rootDigest = sha256Text(resolve(dirname(dirname(input.storePath))));
+    if (launch.rootDigest !== rootDigest || launch.uid !== original.leaseOwner?.uid) throw Error("restoration-launch-provenance-conflict");
+    const observation = reconcileMarkerCompilation(marker, { rootDigest, targetDigest: launch.targetDigest, uid: launch.uid, now: Date.now() });
+    if (!observation || observation.pid !== creation.host.pid || observation.start !== creation.host.start
+      || observation.mode !== launch.mode || observation.exeDigest !== launch.exeDigest || observation.argvDigest !== launch.argvDigest) throw Error("restoration-compilation-provenance-conflict");
+  }
   const cleanup = diagnostic.cleanup ?? [];
   if (!Array.isArray(cleanup) || cleanup.some((row: { role: string; pid: number; start: number }) => !identity(row)
     || !["host", "temp-supervisor"].includes(row.role) || !same(row, row.role === "host" ? creation.host : creation.tempSupervisor))) throw Error("restoration-owner-provenance-conflict");

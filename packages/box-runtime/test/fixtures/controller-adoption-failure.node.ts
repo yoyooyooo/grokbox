@@ -1,3 +1,4 @@
+import { sha256Text, canonicalJson } from "@grokbox/runtime-kernel/hash";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -100,7 +101,7 @@ ${scenario === "delayed-gateway" ? "setTimeout(()=>fs.writeFileSync(process.env.
 process.on('SIGTERM',()=>{if(!stopping){stopping=true;fs.writeFileSync(process.env.TERM,'received');setTimeout(()=>process.exit(0),1000);}});
 const stat=fs.readFileSync('/proc/self/stat','utf8');const start=Number(stat.slice(stat.lastIndexOf(')')+2).split(' ')[19]);
 fs.writeFileSync(process.env.MARKER,JSON.stringify({operationId:'original',pid:process.pid,start,mode:'identity',transformed:true,compiled:true,modeld:false}));setInterval(()=>{},1000);`);
-  await writeFile(specPath, JSON.stringify({ execPath: process.execPath, argv: [hostPath], env: { GROKBOX_OPERATION_ID: "original", MARKER: markerPath, TERM: termPath } }));
+  await writeFile(specPath, JSON.stringify({ execPath: process.execPath, argv: [hostPath], env: { GROKBOX_OPERATION_ID: "original", GROKBOX_BOX_RUNTIME_ROOT: dir, GROKBOX_HOST_BUNDLE: hostPath, GROKBOX_PRELOAD_MODE: "identity", MARKER: markerPath, TERM: termPath } }));
   const tree = new FakeProcessTree(); tree.nextPid = 900000001;
   const wrapper = tree.spawn("wrapper"), supervisor = tree.spawn("supervisor", { parent: wrapper }); tree.spawn("host", { parent: supervisor });
   let helper: ProcessIdentity | null = null, host: ProcessIdentity | null = null;
@@ -148,6 +149,11 @@ fs.writeFileSync(process.env.MARKER,JSON.stringify({operationId:'original',pid:p
     const journal = JSON.parse(await readFile(join(dir, "state", "adopt-op.json"), "utf8"));
     assert.deepEqual(journal.failure, row?.prefix?.diagnostic);
     assert.equal(journal.creation.operationId, "original");
+    assert.equal(journal.creation.launch.rootDigest, sha256Text(dir));
+    assert.equal(journal.creation.launch.targetDigest, sha256Text(hostPath));
+    assert.equal(journal.creation.launch.argvDigest, sha256Text(canonicalJson([process.execPath, hostPath])));
+    assert.equal(journal.creation.launch.uid, process.getuid!());
+    assert.equal(journal.creation.launch.mode, "identity");
     assert.deepEqual(journal.creation.host, { pid: (host as unknown as ProcessIdentity).pid, start: (host as unknown as ProcessIdentity).start });
     assert.deepEqual(journal.creation.tempSupervisor, { pid: (helper as unknown as ProcessIdentity).pid, start: (helper as unknown as ProcessIdentity).start });
     assert.deepEqual(journal.creation.guardian, guardian!.owners()!.guardian);

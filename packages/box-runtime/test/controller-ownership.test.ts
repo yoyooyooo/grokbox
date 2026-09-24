@@ -19,7 +19,7 @@ function fixture() {
   const classify = (row: ProcessIdentity) => { const role = tree.roles().find(item => item.pid === row.pid)?.role; return role === "wrapper" || role === "supervisor" || role === "host" || role === "temp-supervisor" ? role : null; };
   return { tree, wrapper, classify };
 }
-test("interruption joins original adoption and persists actual facts before either lease is released", async () => {
+test("interruption joins original adoption before controller release and preserves actual facts", async () => {
   const root = await mkdtemp(join(tmpdir(), "controller-interruption-")), runRoot = join(root, "run"), { tree, wrapper, classify } = fixture();
   const reached = barrier(), cancelled = barrier(), finish = barrier(); let host: ProcessIdentity | null = null;
   const layer = liveControlResourcesLayer({ inspect: () => ({ ok: true, reason: null, strategy: "transient" }), adopt: (command, signal) =>

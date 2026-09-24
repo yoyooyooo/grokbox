@@ -3,9 +3,26 @@ import { lstat, open } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { parseConfigJson } from "@grokbox/runtime-kernel/config";
-import { projectHostCompileReceipt, type HostRuntimeObservation } from "@grokbox/runtime-kernel/host-health";
+import { projectHostCompileReceipt, type HostCompileReceipt, type HostRuntimeObservation } from "@grokbox/runtime-kernel/host-health";
 import { inspectPid } from "../host/self-identity.node.ts";
 import { assertSafeDirectory } from "./config-layout.node.ts";
+
+/** Shared reconciliation for live observation and original-operation recovery.
+ * Presence with an invalid/contradictory receipt is never treated as absence. */
+export function reconcileMarkerCompilation(marker: unknown, expected: {
+  rootDigest: string; targetDigest: string; uid: number; now: number;
+}): HostCompileReceipt | null {
+  if (!marker || typeof marker !== "object" || Array.isArray(marker)) return null;
+  const m = marker as Record<string, any>, receipt = projectHostCompileReceipt(m.compilationObservation);
+  if (!receipt || receipt.rootDigest !== expected.rootDigest || receipt.targetDigest !== expected.targetDigest
+    || typeof m.operationId !== "string" || receipt.operationDigest !== sha256Text(m.operationId)
+    || m.pid !== receipt.pid || m.start !== receipt.start || m.mode !== receipt.mode || receipt.uid !== expected.uid
+    || m.transformed !== (receipt.patch === "applied") || m.compiled !== (receipt.patch === "applied" && receipt.nativeCompilation === "returned") || m.modeld !== false
+    || m.compile?.profileSha256 !== receipt.profileDigest || m.compile?.sourceSha256 !== receipt.sourceSha
+    || (m.compile?.transformedSha256 ?? null) !== receipt.candidateSha || m.preloadSha256 !== receipt.preloadDigest
+    || Date.parse(receipt.at) > expected.now) return null;
+  return receipt;
+}
 
 export type CompilationReadPorts = { inspect?: typeof inspectPid; now?: () => number };
 /** Read the existing launch marker, not a process census, Gateway or source
@@ -34,13 +51,8 @@ export async function observeHostCompilation(root: string, runRoot: string, targ
     // Old positive markers remain admissible to their original controller, but
     // they do not acquire this newer, stronger observation contract by inference.
     if (!Object.hasOwn(marker, "compilationObservation")) return empty("not-observed");
-    const receipt = projectHostCompileReceipt(marker.compilationObservation);
-    if (!receipt || receipt.rootDigest !== sha256Text(resolve(root)) || receipt.targetDigest !== sha256Text(resolve(target))
-      || typeof marker.operationId !== "string" || receipt.operationDigest !== sha256Text(marker.operationId)
-      || marker.pid !== receipt.pid || marker.start !== receipt.start || marker.mode !== receipt.mode || receipt.uid !== process.getuid?.()
-      || marker.transformed !== (receipt.patch === "applied") || marker.compiled !== (receipt.patch === "applied" && receipt.nativeCompilation === "returned") || marker.modeld !== false
-      || marker.compile?.profileSha256 !== receipt.profileDigest || marker.compile?.sourceSha256 !== receipt.sourceSha
-      || (marker.compile?.transformedSha256 ?? null) !== receipt.candidateSha || marker.preloadSha256 !== receipt.preloadDigest || Date.parse(receipt.at) > now()) return empty("invalid");
+    const receipt = reconcileMarkerCompilation(marker, { rootDigest: sha256Text(resolve(root)), targetDigest: sha256Text(resolve(target)), uid: process.getuid?.() ?? -1, now: now() });
+    if (!receipt) return empty("invalid");
     const p = (ports.inspect ?? inspectPid)(receipt.pid);
     const same = p?.pid === receipt.pid && p.start === receipt.start && p.uid === receipt.uid
       && sha256Text(p.exe) === receipt.exeDigest && sha256Text(canonicalJson(p.cmdline)) === receipt.argvDigest;

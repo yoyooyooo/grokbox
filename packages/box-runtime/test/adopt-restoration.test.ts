@@ -1,3 +1,6 @@
+import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
+import { projectHostCompileReceipt } from "@grokbox/runtime-kernel/host-health";
+import { observeHostCompilation } from "../src/internal/io/host-compilation.node.ts";
 import { expect, test } from "bun:test";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -10,7 +13,7 @@ import { FakeProcessTree } from "./fake-tree.ts";
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "grokbox-restoration-")), runRoot = join(root, "run");
-  await mkdir(join(root, "state")); await mkdir(join(runRoot, "state"), { recursive: true });
+  await mkdir(join(root, "state"), { mode: 0o700 }); await mkdir(join(runRoot, "state"), { recursive: true, mode: 0o700 });
   const tree = new FakeProcessTree(), wrapper = tree.spawn("wrapper"), supervisor = tree.spawn("supervisor", { parent: wrapper });
   const host = tree.spawn("host", { parent: supervisor });
   const oldTemp = tree.spawn("temp-supervisor"), oldHost = tree.spawn("host", { parent: oldTemp });
@@ -27,11 +30,16 @@ async function fixture() {
   const compile = { profileId: "fixture", profileSha256: "a".repeat(64), sourceSha256: "b".repeat(64), transformedSha256: "c".repeat(64) };
   const ref = (row: { pid: number; start: number }) => ({ pid: row.pid, start: row.start });
   store.original = { prefix: { signaled: true, spawned: true, guardian: true, diagnostic }, state: "unknown", fingerprint: "original-fingerprint", leaseOwner } as never;
+  const launch = { rootDigest: sha256Text(root), targetDigest: sha256Text(oldHost.cmdline[1]!), exeDigest: sha256Text(oldHost.exe), argvDigest: sha256Text(canonicalJson(oldHost.cmdline)), uid: leaseOwner.uid, mode: "route" as const };
+  const compilationObservation = { version: 1, observationId: "12345678-1234-4234-8234-123456789abc", at: new Date().toISOString(), pid: oldHost.pid, start: oldHost.start,
+    ...launch, operationDigest: sha256Text("original"), patch: "applied", nativeCompilation: "returned", code: "compiled", sourceSha: compile.sourceSha256,
+    candidateSha: compile.transformedSha256, profileDigest: compile.profileSha256, preloadDigest: "d".repeat(64) };
+  expect(projectHostCompileReceipt(compilationObservation)).not.toBeNull();
   const journal = { launchMode: "transient-adopt", phase: "recovery-required", operationId: "original",
     tempSupervisor: oldTemp, adoptingSupervisor: null, host: null, failure: diagnostic,
-    creation: { version: 1, operationId: "original", tempSupervisor: ref(oldTemp), host: ref(oldHost), guardian: ref(guardian), holder: ref(holder), compile, preloadSha256: "d".repeat(64) } };
-  const marker = { operationId: "original", pid: oldHost.pid, start: oldHost.start, compiled: true, transformed: true, modeld: false, mode: "route", compile, preloadSha256: "d".repeat(64) };
-  await Promise.all([store, journal, marker, { operationId: "prior-attestation" }].map((value, i) => writeFile(files[i]!, JSON.stringify(value))));
+    creation: { version: 1, operationId: "original", tempSupervisor: ref(oldTemp), host: ref(oldHost), guardian: ref(guardian), holder: ref(holder), compile, preloadSha256: "d".repeat(64), launch } };
+  const marker = { operationId: "original", pid: oldHost.pid, start: oldHost.start, compiled: true, transformed: true, modeld: false, mode: "route", compile, preloadSha256: "d".repeat(64), compilationObservation };
+  await Promise.all([store, journal, marker, { operationId: "prior-attestation" }].map((value, i) => writeFile(files[i]!, JSON.stringify(value), { mode: 0o600 })));
   await mkdir(join(runRoot, "state", "adoptions", "original"), { recursive: true });
   await writeFile(adoptionEvidencePath(runRoot, "original", "journal"), JSON.stringify(journal));
   await writeFile(adoptionEvidencePath(runRoot, "original", "marker"), JSON.stringify(marker));
@@ -49,6 +57,7 @@ test("connected recovery publishes only original-operation restoration; all six 
   const f = await fixture(), before = await Promise.all(f.files.map(path => readFile(path)));
   expect(await recoverControllerOperationState({ ...f.input, confirm: false }, f.ports)).toMatchObject({ outcome: "blocked", reason: "restoration-confirm-required" });
   const result = await recoverControllerOperationState(f.input, f.ports);
+  expect((await observeHostCompilation(f.root, f.runRoot, f.oldHost.cmdline[1]!, { inspect: () => null })).state).toBe("historical");
   expect(result).toMatchObject({ outcome: "restored", adopted: false, signaled: false, replayAuthorized: false,
     clearedLocks: 0, markedUnknown: 0, operations: { unknown: 6 }, restoration: { operationId: "original", physicallyRestored: true } });
   expect(JSON.parse(await readFile(restorationReceiptPath(f.runRoot, "original"), "utf8"))).toEqual({ ...result.restoration, physicallyRestored: false, publication: "prepared" });
@@ -166,4 +175,29 @@ test("completed original restoration discharges only its resource boundary and p
   expect(await readFile(adoptionEvidencePath(f.runRoot, "original", "journal"))).toEqual(original);
   expect(unresolvedAdoption(f.runRoot)).toBe("later");
   expect(await recoverControllerOperationState({ ...f.input, confirm: false }, f.ports)).toMatchObject({ outcome: "recorded", restorationHistorical: true, operations: { unknown: 6 }, replayAuthorized: false });
+});
+
+
+for (const field of ["pid", "start", "uid", "operationDigest", "rootDigest", "targetDigest", "exeDigest", "argvDigest", "mode", "sourceSha", "candidateSha", "profileDigest", "preloadDigest", "at", "invalid", "null", "missing-launch", "live-other"] as const) test(`structured compilation ${field} contradiction blocks original restoration`, async () => {
+  const f = await fixture(), marker = JSON.parse(await readFile(f.files[2]!, "utf8"));
+  if (["pid", "start", "uid"].includes(field)) marker.compilationObservation[field]++;
+  else if (field.endsWith("Digest") || ["sourceSha", "candidateSha"].includes(field)) marker.compilationObservation[field] = "e".repeat(64);
+  else if (field === "mode") marker.compilationObservation.mode = "identity";
+  else if (field === "at") marker.compilationObservation.at = "2099-01-01T00:00:00.000Z";
+  else if (field === "invalid") marker.compilationObservation.code = "not-a-compilation-code";
+  else if (field === "null") marker.compilationObservation = null;
+  else if (field === "missing-launch") {
+    const journal = JSON.parse(await readFile(f.files[1]!, "utf8")); delete journal.creation.launch;
+    for (const path of [f.files[1]!, adoptionEvidencePath(f.runRoot, "original", "journal")]) await writeFile(path, JSON.stringify(journal));
+  } else {
+    const survivor = f.tree.spawn("extra");
+    marker.compilationObservation.pid = survivor.pid; marker.compilationObservation.start = survivor.start;
+    marker.compilationObservation.exeDigest = sha256Text(survivor.exe); marker.compilationObservation.argvDigest = sha256Text(canonicalJson(survivor.cmdline));
+    expect(projectHostCompileReceipt(marker.compilationObservation)).not.toBeNull();
+  }
+  for (const path of [f.files[2]!, adoptionEvidencePath(f.runRoot, "original", "marker")]) await writeFile(path, JSON.stringify(marker));
+  const before = await Promise.all(f.files.map(path => readFile(path)));
+  expect(await recoverControllerOperationState(f.input, f.ports)).toMatchObject({ outcome: "blocked", operations: { unknown: 6 }, adopted: false });
+  expect(await Promise.all(f.files.map(path => readFile(path)))).toEqual(before);
+  if (field !== "missing-launch") expect((await observeHostCompilation(f.root, f.runRoot, f.oldHost.cmdline[1]!, { inspect: () => null })).state).not.toBe("current");
 });

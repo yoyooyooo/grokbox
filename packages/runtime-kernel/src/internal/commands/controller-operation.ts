@@ -61,6 +61,7 @@ function receipt(
     guardian: extras.guardian === true,
     operationId: command.operationId,
     ...(extras.diagnostic ? { diagnostic: extras.diagnostic } : {}),
+    ...(extras.persistence ? { persistence: extras.persistence } : {}),
   };
 }
 
@@ -94,7 +95,9 @@ function markUnknown(
   command: FrozenControllerCommand,
   prefix: OperationPrefix,
 ) {
-  return control.settle({ operationId: command.operationId, boxRoot: command.boxRoot, state: "unknown", prefix });
+  return control.settle({ operationId: command.operationId, boxRoot: command.boxRoot, state: "unknown", prefix }).pipe(
+    Effect.catch(() => Effect.sync(() => { prefix.persistence = "uncertain"; })),
+  );
 }
 
 function persistRunningPrefix(
@@ -106,13 +109,15 @@ function persistRunningPrefix(
     const published = yield* Effect.result(control.settle({
       operationId: command.operationId,
       boxRoot: command.boxRoot,
-      state: "running",
+      state: progress.persistence ? "unknown" : "running",
       prefix: progress,
     }));
     if (published._tag === "Failure") {
+      progress.persistence = "uncertain";
       yield* markUnknown(control, command, progress).pipe(Effect.ignore);
-      return receipt(command, "recovery-required", { reason: "checkpoint-failed", ...progress });
+      return receipt(command, "recovery-required", { reason: progress.diagnostic?.code ?? "checkpoint-failed", ...progress });
     }
+    if (progress.persistence) return receipt(command, "recovery-required", { reason: progress.diagnostic?.code ?? "result-persistence-unproven", ...progress });
     return null;
   });
 }
@@ -219,6 +224,7 @@ export function runControllerOperation(request: ControllerRequest) {
         progress.signaled = spawnedResult.success.signaled === true;
         progress.guardian = spawnedResult.success.guardian === true;
         progress.diagnostic = spawnedResult.success.diagnostic;
+        progress.persistence = spawnedResult.success.persistence;
         const spawnCheckpoint = yield* persistRunningPrefix(control, command, progress);
         if (spawnCheckpoint) return spawnCheckpoint;
         const armed = yield* Effect.result(control.armGuardian(command));
@@ -236,7 +242,10 @@ export function runControllerOperation(request: ControllerRequest) {
           return receipt(command, "partial", { reason: "signal-failed", ...progress });
         }
         progress.signaled = signaledResult.success.signaled === true;
+        progress.spawned = signaledResult.success.spawned === true;
+        progress.guardian = signaledResult.success.guardian === true;
         progress.diagnostic = signaledResult.success.diagnostic;
+        progress.persistence = signaledResult.success.persistence;
         const signalCheckpoint = yield* persistRunningPrefix(control, command, progress);
         if (signalCheckpoint) return signalCheckpoint;
       } else {
@@ -254,7 +263,12 @@ export function runControllerOperation(request: ControllerRequest) {
         yield* markUnknown(control, command, progress);
         return receipt(command, "recovery-required", { reason: progress.diagnostic?.code ?? "commit-failed", ...progress });
       }
-      yield* control.settle({ operationId: command.operationId, boxRoot: command.boxRoot, state: "terminal", prefix: progress });
+      const settled = yield* Effect.result(control.settle({ operationId: command.operationId, boxRoot: command.boxRoot, state: "terminal", prefix: progress }));
+      if (settled._tag === "Failure") {
+        progress.persistence = "uncertain";
+        yield* markUnknown(control, command, progress);
+        return receipt(command, "unknown", { reason: progress.diagnostic?.code ?? "settlement-failed", ...progress });
+      }
       return receipt(command, "signaled", progress);
     })).pipe(Effect.catchCause((cause) => Effect.uninterruptible(Effect.gen(function* () {
       yield* markUnknown(control, command, progress).pipe(Effect.ignore);
@@ -262,7 +276,7 @@ export function runControllerOperation(request: ControllerRequest) {
         return yield* Effect.failCause(cause);
       }
       return receipt(command, "unknown", {
-        reason: Cause.hasDies(cause) ? "defect" : "fault",
+        reason: progress.diagnostic?.code ?? (Cause.hasDies(cause) ? "defect" : "fault"),
         ...progress,
       });
     }))));

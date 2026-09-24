@@ -1,4 +1,4 @@
-import { unresolvedAdoption } from "../process/adopt-evidence.ts";
+import { unresolvedAdoption, writeAdoptionOwner } from "../process/adopt-evidence.ts";
 import { randomUUID } from "node:crypto";
 import { constants, closeSync, existsSync, fstatSync, fsyncSync, lstatSync, openSync, readFileSync, readSync, renameSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
@@ -100,6 +100,7 @@ function parsePrefix(value: unknown): OperationPrefix | undefined {
   if (typeof row.signaled !== "boolean" || typeof row.spawned !== "boolean" || typeof row.guardian !== "boolean") {
     return undefined;
   }
+  if (row.persistence !== undefined && row.persistence !== "uncertain") return undefined;
   let diagnostic: ControllerDiagnostic | undefined;
   if (row.diagnostic !== undefined) {
     const value = row.diagnostic as ControllerDiagnostic;
@@ -138,7 +139,7 @@ function parsePrefix(value: unknown): OperationPrefix | undefined {
       diagnostic.signals = value.signals.map(event => ({ pid: event.pid, start: event.start, signal: event.signal, sent: event.sent }));
     }
   }
-  return { signaled: row.signaled, spawned: row.spawned, guardian: row.guardian, ...(diagnostic ? { diagnostic } : {}) };
+  return { signaled: row.signaled, spawned: row.spawned, guardian: row.guardian, ...(diagnostic ? { diagnostic } : {}), ...(row.persistence ? { persistence: "uncertain" as const } : {}) };
 }
 
 function parseStore(raw: string): { ok: true; store: StoreFile } | { ok: false } {
@@ -497,6 +498,7 @@ export async function commitObservedAdopt(input: {
         exe: captured.host.exe, cmdline: captured.host.cmdline },
     };
     phase = "commit-attestation";
+    await writeAdoptionOwner(input.ephemeralRoot, captured.marker.operationId, "unresolved", publicationGuard);
     await writeAdoptOpState(input.ephemeralRoot, journal, publicationGuard);
     const atCommit = await recheck(); if (atCommit) return fail(atCommit);
     let persistFailed = false;
@@ -513,6 +515,7 @@ export async function commitObservedAdopt(input: {
     if (!isDeepStrictEqual(await readAdoptOpState(input.ephemeralRoot), done)) return fail("journal-uncommitted");
     if (!isDeepStrictEqual(await readAttestation(input.ephemeralRoot), proposed)) return fail("attestation-uncommitted");
     const final = await recheck(); if (final) return fail(final);
+    await writeAdoptionOwner(input.ephemeralRoot, captured.marker.operationId, "complete", publicationGuard);
     return {
       ok: true, recoveryRequired: false, signaled: false,
       diskShaBefore: captured.diskSha256, diskShaAfter: captured.diskSha256,
@@ -646,20 +649,31 @@ export function liveControlResourcesLayer(ports: {
   adopt: (command: FrozenControllerCommand, signal: AbortSignal) => Promise<IdentityOpResult>;
   inspect: (boxRoot: string) => ReturnType<typeof inspectControllerFacts>;
 } = { adopt: applyLiveControllerAdopt, inspect: boxRoot => inspectControllerFacts(boxRoot, defaultLiveAdmissionPorts()) }): Layer.Layer<ControlResources> {
-  const operationAdoptions = new Map<string, IdentityOpResult>();
-  const execute = (input: FrozenControllerCommand) => Effect.callback<IdentityOpResult, unknown>((resume, signal) => {
+  type CompletedResult = IdentityOpResult & { persistence?: "uncertain" };
+  const operationAdoptions = new Map<string, CompletedResult>();
+  const mergePrefix = (known: CompletedResult | undefined, current?: OperationPrefix, next?: OperationPrefix): OperationPrefix => ({
+    signaled: known?.signaled === true || current?.signaled === true || next?.signaled === true,
+    spawned: known?.spawned === true || current?.spawned === true || next?.spawned === true,
+    guardian: known?.guardian === true || current?.guardian === true || next?.guardian === true,
+    ...(known?.diagnostic ?? next?.diagnostic ?? current?.diagnostic ? { diagnostic: known?.diagnostic ?? next?.diagnostic ?? current?.diagnostic } : {}),
+    ...(known?.persistence || current?.persistence || next?.persistence ? { persistence: "uncertain" as const } : {}),
+  });
+  const execute = (input: FrozenControllerCommand) => Effect.callback<CompletedResult, unknown>((resume, signal) => {
     // Cancellation aborts the SAME bounded operation; the disposer joins it
     // before the surrounding controller lease/finalizers may settle or release.
     const work = ports.adopt(input, signal).then(result => {
-      operationAdoptions.set(input.operationId, result);
-      const loaded = loadStore(input.boxRoot);
-      if (!loaded.ok || !loaded.store[input.operationId]) throw new Error("store-corrupt");
-      const row = loaded.store[input.operationId]!;
-      loaded.store[input.operationId] = { ...row, state: signal.aborted ? "unknown" : row.state,
-        prefix: { signaled: result.signaled, spawned: result.spawned === true, guardian: result.guardian === true,
-          ...(result.diagnostic ? { diagnostic: result.diagnostic } : {}) } };
-      saveStore(input.boxRoot, loaded.store);
-      return result;
+      const known: CompletedResult = { ...result };
+      operationAdoptions.set(input.operationId, known);
+      try {
+        const loaded = loadStore(input.boxRoot);
+        if (!loaded.ok || !loaded.store[input.operationId]) throw new Error("store-corrupt");
+        const row = loaded.store[input.operationId]!;
+        loaded.store[input.operationId] = { ...row, state: signal.aborted ? "unknown" : row.state,
+          prefix: mergePrefix(known, row.prefix) };
+        saveStore(input.boxRoot, loaded.store);
+      } catch { known.persistence = "uncertain"; }
+      // Checkpoint uncertainty cannot turn a completed result into a spawn error.
+      return known;
     });
     work.then(result => resume(Effect.succeed(result)), error => resume(Effect.fail(error)));
     return Effect.promise(async () => { try { await work; } catch { /* Original journal/claim remains unresolved. */ } });
@@ -690,18 +704,18 @@ export function liveControlResourcesLayer(ports: {
         catch: (error) => error,
       });
       yield* Effect.addFinalizer(() => Effect.promise(async () => {
-        operationAdoptions.delete(input.operationId);
+        const known = operationAdoptions.get(input.operationId);
         try {
           const latest = loadStore(input.boxRoot);
           if (!latest.ok) return;
           const row = latest.store[input.operationId];
-          if (row && row.state === "running") {
-            latest.store[input.operationId] = { ...row, state: "unknown" };
+          if (row && row.state !== "terminal" && (row.state === "running" || known)) {
+            latest.store[input.operationId] = { ...row, state: "unknown", prefix: mergePrefix(known, row.prefix) };
             saveStore(input.boxRoot, latest.store);
           }
         } catch {
-          /* lock release still runs */
-        }
+          /* Disk uncertainty remains explicit; lock release still runs. */
+        } finally { operationAdoptions.delete(input.operationId); }
       }));
       return decision;
     }),
@@ -719,12 +733,9 @@ export function liveControlResourcesLayer(ports: {
         if (!loaded.ok) throw new Error("store-corrupt");
         const existing = loaded.store[input.operationId];
         if (existing) {
-          loaded.store[input.operationId] = { ...existing, state: input.state, prefix: input.prefix ? {
-            signaled: input.prefix.signaled || existing.prefix?.signaled === true,
-            spawned: input.prefix.spawned || existing.prefix?.spawned === true,
-            guardian: input.prefix.guardian || existing.prefix?.guardian === true,
-            ...(input.prefix.diagnostic ?? existing.prefix?.diagnostic ? { diagnostic: input.prefix.diagnostic ?? existing.prefix?.diagnostic } : {}),
-          } : existing.prefix };
+          const known = operationAdoptions.get(input.operationId);
+          loaded.store[input.operationId] = { ...existing, state: known?.persistence ? "unknown" : input.state,
+            prefix: mergePrefix(known, existing.prefix, input.prefix) };
           saveStore(input.boxRoot, loaded.store);
         }
       },
@@ -735,12 +746,12 @@ export function liveControlResourcesLayer(ports: {
     signal: (input: FrozenControllerCommand) => Effect.gen(function* () {
       liveMutationAttempts.signal += 1;
       const result = yield* execute(input);
-      return { signaled: result.signaled, diagnostic: result.diagnostic };
+      return { signaled: result.signaled, spawned: result.spawned, guardian: result.guardian, diagnostic: result.diagnostic, persistence: result.persistence };
     }),
     spawn: (input: FrozenControllerCommand) => Effect.gen(function* () {
       liveMutationAttempts.spawn += 1;
       const result = yield* execute(input);
-      return { spawned: result.spawned === true, signaled: result.signaled, guardian: result.guardian === true, diagnostic: result.diagnostic };
+      return { spawned: result.spawned === true, signaled: result.signaled, guardian: result.guardian === true, diagnostic: result.diagnostic, persistence: result.persistence };
     }),
     armGuardian: (input: FrozenControllerCommand) => Effect.sync(() => {
       liveMutationAttempts.guardian += 1;
@@ -750,7 +761,6 @@ export function liveControlResourcesLayer(ports: {
     wait: (_input: FrozenControllerCommand) => Effect.void,
     commit: (input: FrozenControllerCommand) => Effect.sync(() => {
       const operationAdopt = operationAdoptions.get(input.operationId);
-      operationAdoptions.delete(input.operationId);
       return { committed: operationAdopt?.ok === true, diagnostic: operationAdopt?.diagnostic };
     }),
   });
