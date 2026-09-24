@@ -5,6 +5,7 @@ import { mkdtemp, writeFile, symlink, rm, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { transformNativeCheckpointWorker } from "../src/internal/host/native-checkpoint-worker-hook.ts";
+import { nativeCheckpointPair } from "../src/internal/host/native-checkpoint-pair.ts";
 import { OBSERVATION_SLICE_IDS, profileFromSource, preflightProfileRecipe } from "../src/internal/host/profile.ts";
 import { upgradeProfileCapability } from "../src/internal/host/profile-capabilities.ts";
 import { envelopeProfileShape, envelopeWindowsFromRecipe, parseEnvelopeWindows } from "../src/internal/ops/host-seam/envelope-windows.ts";
@@ -18,6 +19,16 @@ const repository = resolve(import.meta.dir, "../../..");
 test("worker transform refuses all unqualified source before creating a binding", () => {
   expect(() => transformNativeCheckpointWorker("const fake = 1")).toThrow("unqualified");
 });
+test("current checkpoint pair refuses old or mixed generations rather than accepting an observed hash", () => {
+  const oldHost = "bfa76e4eb13a207e57bbd9c1017482234aa342fa436357d25cc59356c31650be";
+  const oldWorker = "da6796b285ea7e12f7b6979cabaf823c6aba8dbb0ad4a8efddad8fe3e5f1286c";
+  expect(nativeCheckpointPair(CONT_NATIVE_PAIR.host, CONT_NATIVE_PAIR.worker)).toEqual(CONT_NATIVE_PAIR);
+  expect(nativeCheckpointPair(oldHost, oldWorker)).toBeNull();
+  expect(nativeCheckpointPair(CONT_NATIVE_PAIR.host, oldWorker)).toBeNull();
+  expect(nativeCheckpointPair(oldHost, CONT_NATIVE_PAIR.worker)).toBeNull();
+  expect(nativeCheckpointPair("a".repeat(64), "b".repeat(64))).toBeNull();
+});
+
 nativeTest("all new Host slices have unique original anchors and exact worker wrapper advertises its protocol", async () => {
   const host = readNativeSource("source").toString("utf8");
   expect(sha256Bytes(new TextEncoder().encode(host))).toBe(CONT_NATIVE_PAIR.host);
