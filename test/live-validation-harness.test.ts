@@ -1,4 +1,9 @@
 import { expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseLiveIndex, selectLiveScenarios, validateReceipt, READ_ONLY_PROBES } from "../scripts/live-validation.mjs";
 import { LEAF_COMMANDS } from "../packages/cli/src/registry.ts";
 
@@ -76,6 +81,55 @@ test("receipt validation distinguishes structurally eligible evidence from produ
   expect(result.derived.indexEligible).toBe(true);
   expect(result.derived.currentResult).toBe(priorResult);
   expect(parseLiveIndex().find((row) => row.id === receipt.scenario)?.currentResult).toBe(priorResult);
+
+  // A real review of another source is not a review of this candidate, even
+  // when all declared native observations and other receipt fields pass.
+  const mismatchedReview = structuredClone(receipt);
+  mismatchedReview.review.tipCommit = "f".repeat(40);
+  const mismatch = validateReceipt(mismatchedReview);
+  expect(mismatch.ok).toBe(true);
+  expect(mismatch.status).toBe("structural-only");
+  expect(mismatch.derived.indexEligible).toBe(false);
+  expect(mismatch.derived.eligibilityReasons).toContain("REVIEW_CANDIDATE_MISMATCH");
+
+  const changedCandidate = structuredClone(receipt);
+  changedCandidate.candidate.sourceCommit = "e".repeat(40);
+  const staleReview = validateReceipt(changedCandidate);
+  expect(staleReview.status).toBe("structural-only");
+  expect(staleReview.derived.indexEligible).toBe(false);
+  expect(staleReview.derived.eligibilityReasons).toContain("REVIEW_CANDIDATE_MISMATCH");
+
+  // Base can precede tip; hexadecimal case does not change Git object identity.
+  const sameCandidate = structuredClone(receipt);
+  sameCandidate.review.baseCommit = "d".repeat(40);
+  sameCandidate.review.tipCommit = receipt.candidate.sourceCommit.toUpperCase();
+  expect(validateReceipt(sameCandidate).status).toBe("eligible");
+
+  // Exercise the public Node CLI as well as the exported validator. Both
+  // receipts remain readable; neither invocation may modify the LIVE index.
+  const directory = mkdtempSync(join(tmpdir(), "grokbox-review-binding-"));
+  const entry = fileURLToPath(new URL("../scripts/live-validation.mjs", import.meta.url));
+  const index = fileURLToPath(new URL("../docs/tickets/LIVE-integration-validation.md", import.meta.url));
+  const indexBefore = readFileSync(index);
+  try {
+    for (const [name, input, expectedStatus] of [
+      ["matched", sameCandidate, "eligible"],
+      ["foreign-review", mismatchedReview, "structural-only"],
+      ["changed-candidate", changedCandidate, "structural-only"],
+    ] as const) {
+      const file = join(directory, `${name}.json`);
+      writeFileSync(file, JSON.stringify(input));
+      const run = spawnSync("node", [entry, "receipt", "--file", file, "--json"],
+        { encoding: "utf8", timeout: 10_000, maxBuffer: 128 * 1024 });
+      expect(run.error).toBeUndefined();
+      expect(run.status, run.stderr).toBe(0);
+      const checked = JSON.parse(run.stdout);
+      expect(checked.status).toBe(expectedStatus);
+      expect(checked.derived.indexEligible).toBe(expectedStatus === "eligible");
+      if (expectedStatus === "structural-only") expect(checked.derived.eligibilityReasons).toContain("REVIEW_CANDIDATE_MISMATCH");
+    }
+    expect(readFileSync(index)).toEqual(indexBefore);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 
   receipt.evidence.kind = "browser";
   const browserResult = validateReceipt(receipt);

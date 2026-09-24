@@ -25,6 +25,8 @@ bun run verify:live-window -- plan --scenario LIVE-CLI-API --json
 bun run verify:live-window -- receipt --file <redacted-receipt.json> --json
 ```
 
+`receipt` 的 `review.tipCommit` 必须与 `candidate.sourceCommit` 是同一提交；其他提交的审查即使格式正确也只返回 `structural-only`（`REVIEW_CANDIDATE_MISMATCH`）。文档后继等可复用情形须由审查者核对差异并把复查结论记录到最终候选 tip，不能只凭 `candidateBound=true` 沿用旧审查。此关联检查不验证报告真实性，也不授予采用权限。
+
 `candidate` 只检查源码身份、输入稳定性和清单结构，不能单独放行原生操作。`--allow-dirty` 只产生规划信息；正式候选必须固定实际制品。`plan` 不执行场景，已退役场景不再生成执行计划。`receipt` 分两层返回：结构无误仍只是 `structural-only`；只有固定候选的 actual loaded 身份、授权/费用/时间边界、核心 lane 的 native 或 native-isolated 观察（external-real/browser 仅适用于 full-product lane）、未参与实现的独立审查、全步骤通过、清理完成且没有 unknown/not-proven 才能返回 `eligible`。fixture、fake、unknown/planned 等 synthetic loaded identity、缺 loaded 证据或自审永远不能成为现场通过。
 
 `probe` 只运行当前 registry 中显式允许的只读命令，可用 `--bin <固定制品入口>` 指定实际 CLI；默认入口的可达/成功不证明它就是目标候选。当前旧实现的只读发现例子：

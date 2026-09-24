@@ -360,6 +360,12 @@ function validateReceipt(receipt, rows = parseLiveIndex()) {
     && SHA.test(review.baseCommit ?? "") && SHA.test(review.tipCommit ?? "")
     && Array.isArray(review.findings) && review.recheck === "accepted";
   if (!reviewReady) eligibilityReasons.push("INDEPENDENT_REVIEW_NOT_ACCEPTED");
+  else if (typeof review.tipCommit !== "string" || typeof receipt.candidate?.sourceCommit !== "string"
+    || review.tipCommit.toLowerCase() !== receipt.candidate.sourceCommit.toLowerCase()) {
+    // A well-formed review of another source is not candidate-specific evidence.
+    // Any justified reuse must first be rechecked and recorded at this tip.
+    eligibilityReasons.push("REVIEW_CANDIDATE_MISMATCH");
+  }
   const stepStatuses = Array.isArray(receipt.steps) ? receipt.steps.map((step) => step?.status) : [];
   const allStepsPassed = stepStatuses.length > 0 && stepStatuses.every((status) => status === "passed");
   const hasFailure = stepStatuses.some((status) => status === "failed");
