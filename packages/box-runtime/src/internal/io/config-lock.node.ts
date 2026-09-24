@@ -69,7 +69,10 @@ async function createLease(path: string): Promise<ConfigLease | null> {
 async function acquire(path: string, recover: boolean, depth = 0): Promise<ConfigLease> {
   const created = await createLease(path); if (created) return created;
   if (!recover || depth >= 8) throw new ConfigError("config_conflict", "Configuration writer is busy or needs explicit verified lock recovery.");
-  const original = await lstat(path);
+  const original = await lstat(path).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") throw new ConfigError("config_conflict", "Configuration lock changed before recovery inspection; retry the original operation.");
+    throw error;
+  });
   const source = await readConfigSource(path).catch(() => undefined);
   const owner = source ? parseOwner(source.value) : null;
   if (!owner || original.isSymbolicLink() || !await stale(owner)) throw new ConfigError("config_conflict", "Configuration lock owner is live or unproven; it was not removed.");
@@ -102,5 +105,6 @@ export async function inspectConfigurationLease(root: string) {
   if (source === undefined) return { state: "absent" as const };
   const owner = source ? parseOwner(source.value) : null;
   if (!owner) return { state: "unproven" as const, recoverable: false };
-  return { state: await stale(owner) ? "stale" as const : "live-or-unproven" as const, pid: owner.pid, recoverable: await stale(owner) };
+  const recoverable = await stale(owner);
+  return { state: recoverable ? "stale" as const : "live-or-unproven" as const, pid: owner.pid, recoverable };
 }

@@ -53,7 +53,7 @@ const suites={
   "packages/box-runtime/test/hcr-operation-lifetime.test.ts","packages/box-runtime/test/identity-op.test.ts","test/hcr-cli.test.ts","test/admission-observation.test.ts","test/outcome.test.ts",
   "test/jobs.test.ts","test/job-safety-store.test.ts","test/filesystem.test.ts","test/filesystem-mutations.test.ts","test/detail-absorb.test.ts","test/events.test.ts","test/desktop.test.ts","test/desktop-deletion-race.test.ts","test/capabilities_desktop_probe.test.ts",
   "test/network-boundary.test.ts","test/ssh-recovery.test.ts","test/profile.test.ts","test/operator.test.ts","test/recovery.test.ts","test/daemon.test.ts",
-  "packages/runtime-kernel/test/unified-config.test.ts","packages/box-runtime/test/config-bootstrap.test.ts","test/config-cli.test.ts","test/config-application-receipt.test.ts","test/config-packed.test.ts",
+  "packages/runtime-kernel/test/unified-config.test.ts","packages/box-runtime/test/config-bootstrap.test.ts","packages/box-runtime/test/config-read-consistency.test.ts","test/config-cli.test.ts","test/config-application-receipt.test.ts","test/config-packed.test.ts",
   "packages/box-runtime/test/architecture.test.ts","packages/box-runtime/test/legacy-executor-removed.test.ts",
   "packages/box-runtime/test/model-management.test.ts","packages/box-runtime/test/model-publication-check.test.ts","packages/box-runtime/test/management-gateway.test.ts",
   "packages/box-runtime/test/current-model-schema.test.ts","packages/box-runtime/test/continuity-model.test.ts","packages/box-runtime/test/model-selection.test.ts",
