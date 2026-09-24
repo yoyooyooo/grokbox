@@ -21,7 +21,7 @@ A separate Pi reviewer, which did not implement the candidate, completed a read-
 
 The reviewer actually inspected the requested build/provenance/preload/receipt scripts and packaging/preload/receipt tests, plus necessary Web manifests, verifier client/build metadata, CLI entry/root resolution, runtime helpers, verification-source and evidence-controller call sites. Some larger verification/external helpers were read only in bounded excerpts. This is not a claim to have reviewed all A/R/D/E/F/Q implementation.
 
-The exact review session is retained in the implementation worktree under `.scratch/ah162-artifact-review-sessions/`. The attempted repair recheck at `101e77be` was blocked by the tool before execution; no recheck acceptance exists, and the denied call was not retried through another channel. AH-180 remains In Review even when its tested code is integrated. Neither its implementation nor the broad regression below closes AH-162 or J2.
+The exact review session is retained in the implementation worktree under `.scratch/ah162-artifact-review-sessions/`. The attempted repair recheck at `101e77be` was blocked by the tool before execution; no recheck acceptance exists, and the denied call was not retried through another channel. AH-180 has not earned Done even when its tested code is integrated; final independent recheck remains pending. Neither its implementation nor the broad regression below closes AH-162 or J2.
 
 ## Complete current-source core and integration execution
 
@@ -49,3 +49,5 @@ AH-162 still needs the repair's independent recheck and a bounded complete-candi
 AH-156 remains a platform qualification issue, not missing authorization for a Host/modeld switch. The observed process tree is `tini → pod-daemon → sand-exit-watch`; the implemented installer consumes `systemdUserManager()` and requires actual manager/linger qualification. No qualified replacement boot owner has been established in this work. An attempted read of a separate host-ops repository was outside this workspace's allowed roots and was not obtained through another route; this does not establish that the platform has no possible extension point. No init, supervisor, service, global shim, credential, desktop or user Bot was modified.
 
 The next live step remains the J2 decision followed by controlled adoption, not automatic deployment of this commit. No push, release or user daily-use acceptance is implied.
+
+The final Linear status/comment update invocation was also blocked before execution. The proposed In Review state and AH-162/AH-122 comments were not published by that invocation; their prepared text remains in the implementation worktree. The repository records completed integration and checks without claiming that the external issue status was successfully updated.
