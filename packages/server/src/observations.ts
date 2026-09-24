@@ -26,6 +26,10 @@ export function projectIncident(installationId: string, databaseId: string, row:
     status: row.status as IncidentView["status"], firstSeenAtMs: row.firstSeenAtMs, lastSeenAtMs: row.lastSeenAtMs,
     resolvedAtMs: row.resolvedAtMs, revision: row.revision, acknowledged: row.acknowledged, snoozeUntilMs: row.snoozeUntilMs };
 }
+function projectHealth(row: Awaited<ReturnType<ManagementObservations["snapshot"]>>["observationHealth"]) {
+  // Do not synthesize a healthy default for a missing or invalid source row.
+  return row ? { pressureState: row.pressure_state, droppedEvents: row.dropped_events, rejectedBatches: row.rejected_batches } : null;
+}
 const checked = <A>(run: () => A) => Effect.try({ try: run, catch: error => error });
 export function observationQuery(installationId: string, source: ManagementObservations | undefined, principal: Principal, url: URL) {
   return Effect.gen(function* () {
@@ -51,6 +55,7 @@ export function observationQuery(installationId: string, source: ManagementObser
         databaseId: raw.databaseId, collectorEpoch: raw.collectorEpoch, scopeId: raw.scopeId, cursor: raw.cursor, readAtMs,
         collector: { recordedRunning: raw.collectorRecordedRunning, liveness: "not-probed", lastHeartbeatMs: raw.lastHeartbeatMs },
         storage: { schemaVersion: raw.schemaVersion },
+        observationHealth: projectHealth(raw.observationHealth),
         agents: raw.agents.map(row => ({ agentId: row.agentId, botRef: botRef(installationId, row.agentId), lastKnown: row.lastKnown,
           lastAttemptMs: row.lastAttemptMs, lastSuccessMs: row.lastSuccessMs, freshness: row.freshness })),
       };
@@ -72,6 +77,7 @@ export function observationQuery(installationId: string, source: ManagementObser
     const view = {
       source: "local-observations", coverage: "retained-events", cursor: raw.cursor, hasMore: raw.hasMore, retentionFloor: raw.retentionFloor,
       gap: page.cursor === null && raw.retentionFloor > 0 ? "history-truncated" : null,
+      observationHealth: projectHealth(raw.observationHealth),
       entries: raw.entries.map(row => ({ eventId: row.eventId, seq: row.seq, collectorEpoch: row.collectorEpoch, kind: row.kind,
         scopeId: row.scopeId, agentId: row.agentId, botRef: row.agentId ? botRef(installationId, row.agentId) : null,
         incidentId: row.incidentId, incidentRef: row.incidentId ? `incident:${installationId}:${databaseId}:${row.incidentId}` : null,

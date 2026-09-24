@@ -4,6 +4,7 @@ import type { ObservationEventPage, ObservationEvent } from "@grokbox/client";
 import { Badge, Card, Empty, ErrorNotice, Heading, SourceTime, useConsole } from "../components/ui.tsx";
 import { boundedSearch, denied, readView, viewError } from "../lib/views.ts";
 import type { EventWatchState } from "../lib/event-watch.ts";
+import { ObservationHealthNotice } from "../components/observation-health.tsx";
 
 export const Route = createFileRoute("/_console/events")({
   validateSearch: (search: Record<string, unknown>): { cursor?: string; watch?: boolean } => ({ cursor: boundedSearch(search.cursor), watch: search.watch === true || search.watch === "true" ? true : undefined }),
@@ -15,10 +16,10 @@ export const Route = createFileRoute("/_console/events")({
 function Events() {
   const view = Route.useLoaderData(), search = Route.useSearch(), router = useRouter(), navigate = useNavigate({ from: Route.fullPath });
   const { services, bootstrap } = useConsole();
-  const [recent, setRecent] = useState<{ rows: ObservationEvent[]; dropped: number }>({ rows: [], dropped: 0 });
+  const [recent, setRecent] = useState<{ rows: ObservationEvent[]; dropped: number; health?: ObservationEventPage["observationHealth"] }>({ rows: [], dropped: 0 });
   const [watch, setWatch] = useState<EventWatchState>(), [error, setError] = useState<unknown>();
   useEffect(() => {
-    setRecent({ rows: view.data?.entries ?? [], dropped: 0 }); setWatch(undefined);
+    setRecent({ rows: view.data?.entries ?? [], dropped: 0, health: view.data?.observationHealth }); setWatch(undefined);
     if (!search.watch || !view.data) return;
     let cursor = view.data.cursor, stop: (() => void) | undefined, blocked = false, disposed = false;
     const start = () => {
@@ -31,7 +32,7 @@ function Events() {
           setRecent(current => {
             const ids = new Set(current.rows.map(row => row.eventId)), additions = page.entries.filter(row => !ids.has(row.eventId));
             const all = [...current.rows, ...additions];
-            return { rows: all.slice(-100), dropped: current.dropped + Math.max(0, all.length - 100) };
+            return { rows: all.slice(-100), dropped: current.dropped + Math.max(0, all.length - 100), health: page.observationHealth };
           });
         },
         status: state => { if (!disposed) { blocked = state.state === "gap" || state.state === "stopped"; setWatch(state); } },
@@ -40,7 +41,8 @@ function Events() {
     const visibility = () => { if (document.hidden) { stop?.(); stop = undefined; setWatch({ state: "stopped", cursor }); } else start(); };
     start(); document.addEventListener("visibilitychange", visibility);
     return () => { disposed = true; stop?.(); document.removeEventListener("visibilitychange", visibility); };
-  }, [search.watch, view.data?.cursor, bootstrap.binding.installationId, bootstrap.session!.principalId, services]);
+  }, [search.watch, view.data?.cursor, view.data?.observationHealth.pressureState, view.data?.observationHealth.droppedEvents,
+    view.data?.observationHealth.rejectedBatches, bootstrap.binding.installationId, bootstrap.session!.principalId, services]);
   async function newSnapshot() {
     try { const snapshot = await services.client(bootstrap.binding).observation(); await navigate({ search: { cursor: snapshot.data.cursor, watch: true } }); setError(undefined); }
     catch (failure) { setError(failure); }
@@ -52,7 +54,7 @@ function Events() {
     </div><ErrorNotice error={viewError(view)}/><ErrorNotice error={error}/>
     {search.watch && <div className="notice" role="status" data-testid="event-watch-status"><strong>{watch?.state ?? "connecting"}</strong><p>每个窗口有界，使用同一游标接续。关闭或隐藏页面会停止本页订阅，不会停止后台采集。</p>{watch && <code>{watch.cursor}</code>}</div>}
     <ErrorNotice error={watch?.error}/>{watch?.state === "gap" && <button onClick={newSnapshot}>从新快照重新接续</button>}
-    {view.data && <>{view.data.gap && <div className="notice" role="status"><strong>历史覆盖存在缺口</strong><p>更早变化已超出可接续保留范围；没有补造缺失历史。</p></div>}
+    {view.data && <><ObservationHealthNotice health={search.watch && recent.health ? recent.health : view.data.observationHealth}/>{view.data.gap && <div className="notice" role="status"><strong>历史覆盖存在缺口</strong><p>更早变化已超出可接续保留范围；没有补造缺失历史。</p></div>}
       {search.watch && recent.dropped > 0 && <p className="field-note">本页只保留最近 100 条；已移出当前展示 {recent.dropped} 条。原历史仍按后台保留策略查询。</p>}
       <div className="table-wrap"><table><thead><tr><th>序号 / 变化</th><th>对象</th><th>观察时间</th><th>声明变化</th></tr></thead><tbody>{rows.map(row => <tr key={row.eventId}><td><small className="muted">#{row.seq}</small><strong className="block">{row.kind}</strong><code>{row.eventId}</code></td><td>{row.agentId ? <Link to="/bots/$botId" params={{ botId: row.agentId }}><code>{row.agentId}</code></Link> : "采集器 / 共享来源"}{row.incidentRef && <small className="block"><Link to="/incidents" search={{ selected: row.incidentRef }}>查看关联异常</Link></small>}</td><td><SourceTime at={row.observedAtMs}/>{row.observationIntervalStartMs !== null && <small className="block muted">发现区间起点 <SourceTime at={row.observationIntervalStartMs}/></small>}</td><td><Badge>{row.previousHarness ?? "unknown"} → {row.currentHarness ?? "unknown"}</Badge></td></tr>)}</tbody></table></div>
       {!rows.length && <Empty>该游标之后暂未记录新变化；不证明上游没有变化。</Empty>}

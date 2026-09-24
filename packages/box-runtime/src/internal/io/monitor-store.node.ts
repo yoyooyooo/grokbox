@@ -315,7 +315,9 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
    return {databaseId:uuid(m.database_id),collectorEpoch:m.epoch===null?null:uuid(m.epoch),incidents:selected,hasMore:rows.length>limit,cursor:last?`${m.database_id}:${m.epoch??"none"}:incidents:${last.firstSeenAtMs}:${last.id}`:after??null};});},
   async events(after?:string,limit:number=MONITOR_POLICY.maxPage){if(!Number.isSafeInteger(limit)||limit<1||limit>MONITOR_POLICY.maxPage)throw error("monitor_invalid_limit");return read(async db=>{const m=await meta(db);let seq=Number(m.event_floor??0);
    if(after){const p=after.split(":");if(p.length!==3||p[0]!==m.database_id||p[1]!==String(m.epoch??"none")||!/^\d+$/.test(p[2]!))throw error("monitor_cursor_invalid");seq=Number(p[2]);if(!Number.isSafeInteger(seq)||seq>await lastSequence(db))throw error("monitor_cursor_invalid");if(seq<Number(m.event_floor??0))throw error("monitor_cursor_expired");}
-   const rows=await db.all("SELECT * FROM events WHERE seq>? ORDER BY seq LIMIT ?",[seq,limit+1]),selected=rows.slice(0,limit).map(getEvent);return {entries:selected,hasMore:rows.length>limit,cursor:`${m.database_id}:${m.epoch??"none"}:${selected.at(-1)?.seq??seq}`,retentionFloor:Number(m.event_floor??0)};});},
+   const rows=await db.all("SELECT * FROM events WHERE seq>? ORDER BY seq LIMIT ?",[seq,limit+1]),selected=rows.slice(0,limit).map(getEvent);
+   const observationHealth=await db.first("SELECT pressure_state,dropped_events,rejected_batches,last_state FROM observation_maintenance WHERE singleton=1");
+   return {observationHealth,entries:selected,hasMore:rows.length>limit,cursor:`${m.database_id}:${m.epoch??"none"}:${selected.at(-1)?.seq??seq}`,retentionFloor:Number(m.event_floor??0)};});},
   async incidentById(databaseId:string,incidentId:string){
    if(!monitorUuid(databaseId)||!monitorUuid(incidentId))throw error("monitor_invalid_management");
    return read(async db=>{const m=await meta(db);if(m.database_id!==databaseId)throw error("monitor_database_changed");

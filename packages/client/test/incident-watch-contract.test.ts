@@ -7,7 +7,8 @@ const incidentId = "33333333-3333-4333-8333-333333333333", epoch = "44444444-444
 const incidentRef = `incident:${installationId}:${databaseId}:${incidentId}`, cursor = `${databaseId}:${epoch}:0`;
 const invocationId = randomUUID();
 const envelope = (data: unknown) => ({ schemaVersion: 1, installationId, invocationId, ok: true, data });
-const page = () => ({ source: "local-observations", coverage: "retained-events", entries: [], cursor, hasMore: false, retentionFloor: 0, gap: null });
+const page = () => ({ source: "local-observations", coverage: "retained-events", entries: [], cursor, hasMore: false, retentionFloor: 0, gap: null,
+  observationHealth: { pressureState: "normal", droppedEvents: 0, rejectedBatches: 0 } });
 const request = (): IncidentChangeRequest => ({ incidentRef, requestId: randomUUID(), expectedRevision: 1, action: "ack" });
 const receipt = (input: IncidentChangeRequest) => ({ version: 1, requestId: input.requestId,
   operationRef: `incident-operation:${installationId}:${databaseId}:${input.requestId}`, databaseId, incidentRef,

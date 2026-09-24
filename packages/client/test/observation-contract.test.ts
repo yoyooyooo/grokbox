@@ -7,6 +7,7 @@ const D = "33333333-3333-4333-8333-333333333333", E = "44444444-4444-4444-8444-4
 const snapshot: ObservationSnapshot = {
   source: "local-observations", admissionAuthority: false, coverage: "watched-bots-only", databaseId: D, collectorEpoch: E,
   scopeId: "a".repeat(64), cursor: `${D}:${E}:1`, readAtMs: 100,
+  observationHealth: { pressureState: "normal", droppedEvents: 0, rejectedBatches: 0 },
   collector: { recordedRunning: true, liveness: "not-probed", lastHeartbeatMs: 90 }, storage: { schemaVersion: 4 },
   agents: [{ agentId: A, botRef: `bot:${I}:${A}`, lastKnown: { state: "confirmed_box", serverHarness: "box", localHarness: "box" },
     lastAttemptMs: 90, lastSuccessMs: 90, freshness: "fresh" }],
@@ -16,6 +17,7 @@ const incidents: IncidentList = { source: "local-observations", coverage: "retai
     rule: "ownership_conflict", status: "open", firstSeenAtMs: 90, lastSeenAtMs: 100, resolvedAtMs: null, revision: 1, acknowledged: false, snoozeUntilMs: null }],
 };
 const events: ObservationEventPage = { source: "local-observations", coverage: "retained-events", cursor: `${D}:${E}:2`, hasMore: false, retentionFloor: 0, gap: null,
+  observationHealth: { pressureState: "normal", droppedEvents: 0, rejectedBatches: 0 },
   entries: [{ eventId: A, seq: 2, collectorEpoch: E, kind: "incident_opened", scopeId: "a".repeat(64), agentId: A, botRef: `bot:${I}:${A}`,
     incidentId: A, incidentRef: `incident:${I}:${D}:${A}`, observedAtMs: 100, previousHarness: "box", currentHarness: "temporal", observationIntervalStartMs: 90 }],
 };
@@ -69,6 +71,27 @@ test("snapshot transport refuses forged authority, identities, process liveness 
     { ...snapshot, agents: [{ ...snapshot.agents[0], lastSuccessMs: 101 }] },
     { ...snapshot, collector: { ...snapshot.collector, recordedRunning: false } },
   ]) expect(observationSnapshot(invalid, I)).toBe(false);
+});
+
+test("observation health keeps historical loss after recovery and refuses missing or unsafe source fields", () => {
+  for (const health of [
+    { pressureState: "normal", droppedEvents: 128, rejectedBatches: 1 },
+    { pressureState: "storage_pressure", droppedEvents: 0, rejectedBatches: 0 },
+  ]) {
+    expect(observationSnapshot({ ...snapshot, observationHealth: health }, I)).toBe(true);
+    expect(observationEvents({ ...events, observationHealth: health }, I, 1, `${D}:${E}:1`)).toBe(true);
+  }
+  for (const health of [undefined, null, {},
+    { pressureState: "healthy", droppedEvents: 0, rejectedBatches: 0 },
+    { pressureState: "normal", droppedEvents: -1, rejectedBatches: 0 },
+    { pressureState: "normal", droppedEvents: 0, rejectedBatches: 0.5 },
+    { pressureState: "normal", droppedEvents: Number.MAX_SAFE_INTEGER + 1, rejectedBatches: 0 },
+    { pressureState: "normal", droppedEvents: "0", rejectedBatches: 0 },
+    { pressureState: "normal", droppedEvents: 0, rejectedBatches: 0, raw: "synthetic-private-sentinel" },
+  ]) {
+    expect(observationSnapshot({ ...snapshot, observationHealth: health }, I)).toBe(false);
+    expect(observationEvents({ ...events, observationHealth: health }, I, 1, `${D}:${E}:1`)).toBe(false);
+  }
 });
 
 test("incident pages keep database identity and bounded public fields, not diagnostic payloads", () => {

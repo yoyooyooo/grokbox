@@ -71,8 +71,15 @@ export function managementService(value: unknown): value is ManagementServiceVie
   return true;
 }
 
+function observationHealth(value: unknown): boolean {
+  return record(value) && exact(value, ["pressureState", "droppedEvents", "rejectedBatches"])
+    && ["normal", "storage_pressure"].includes(String(value.pressureState))
+    && time(value.droppedEvents) && time(value.rejectedBatches);
+}
+
 export function observationSnapshot(value: unknown, installation: string): value is ObservationSnapshot {
-  return record(value) && exact(value, ["source", "admissionAuthority", "coverage", "databaseId", "collectorEpoch", "scopeId", "cursor", "readAtMs", "collector", "storage", "agents"])
+  return record(value) && exact(value, ["source", "admissionAuthority", "coverage", "databaseId", "collectorEpoch", "scopeId", "cursor", "readAtMs", "collector", "storage", "agents", "observationHealth"])
+    && observationHealth(value.observationHealth)
     && value.source === "local-observations" && value.admissionAuthority === false && value.coverage === "watched-bots-only"
     && id(value.databaseId) && (value.collectorEpoch === null || id(value.collectorEpoch)) && (value.scopeId === null || revision(value.scopeId))
     && eventCursor(value.cursor) && value.cursor.startsWith(`${value.databaseId}:${value.collectorEpoch ?? "none"}:`) && time(value.readAtMs)
@@ -105,7 +112,8 @@ export function incidentList(value: unknown, installation: string, limit: number
 }
 
 export function observationEvents(value: unknown, installation: string, limit: number, after?: string): value is ObservationEventPage {
-  if (!record(value) || !exact(value, ["source", "coverage", "entries", "cursor", "hasMore", "retentionFloor", "gap"])
+  if (!record(value) || !exact(value, ["source", "coverage", "entries", "cursor", "hasMore", "retentionFloor", "gap", "observationHealth"])
+    || !observationHealth(value.observationHealth)
     || value.source !== "local-observations" || value.coverage !== "retained-events" || !eventCursor(value.cursor)
     || typeof value.hasMore !== "boolean" || !time(value.retentionFloor) || ![null, "history-truncated"].includes(value.gap as never)
     || !Array.isArray(value.entries) || value.entries.length > limit || value.hasMore && value.entries.length === 0) return false;

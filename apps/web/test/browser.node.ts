@@ -11,6 +11,7 @@ import { chromium, type Browser, type Page, type BrowserContext } from "playwrig
 import { webFixture, INSTALLATION, FIRST, SECOND, OWNER, READER, KEY_SENTINEL } from "./fixture.ts";
 import { httpsFixture } from "./https-fixture.ts";
 import { seedObservations } from "./observation-fixture.ts";
+import { openMonitorStore } from "@grokbox/box-runtime/runtime";
 import { receiverBrowserJourney } from "./receiver-browser.node.ts";
 import { jobBrowserJourney } from "./job-browser.node.ts";
 import { fileBrowserJourney } from "./file-browser.node.ts";
@@ -165,16 +166,34 @@ test(`relocated production Web (${group}): real Chrome, shared CLI/domain, recov
       const cliSnapshot = await cli(f.root, cliEntry, ["system", "observation", "get"]);
       assert.equal(cliSnapshot.data.cursor, snapshot.cursor);
       assert.equal(cliSnapshot.data.databaseId, snapshot.databaseId);
+      assert.deepEqual(cliSnapshot.data.observationHealth, { pressureState: "normal", droppedEvents: 0, rejectedBatches: 0 });
       const html = await (await context.request.get(`${origin}/observation`)).text();
       assert.ok(html.includes("confirmed_box")); assert.ok(!html.includes("csrfToken"));
       if (evidence) await page.screenshot({ path: join(evidence, "observation-desktop.png"), fullPage: true });
       await page.getByRole("link", { name: "从此快照接续变化 →", exact: true }).click();
       await page.getByText("该游标之后暂未记录新变化；不证明上游没有变化。", { exact: true }).waitFor();
-      await seeded.sample(seeded.at + 2, "temporal");
+      // Pressure loss advances no event sequence: an empty watch page must
+      // still deliver the database counters, even after pressure has recovered.
+      await page.getByRole("button", { name: "开始订阅变化", exact: true }).click();
+      await page.getByTestId("event-watch-status").waitFor();
+      const writer = openMonitorStore(f.root, { maxDatabaseBytes: 512 * 1024 }), sourceKey = "c".repeat(64);
+      const failures = Array.from({ length: 128 }, (_, n) => ({ name: "host_stream_rejected", schemaVersion: 2,
+        at: new Date(seeded.at).toISOString(), mode: "route", hostGenerationId: "d".repeat(64), agentId: FIRST,
+        turnId: `synthetic-pressure-turn-${n}`, stepId: `synthetic-pressure-step-${n}`, stage: "normalize", errorCode: "invalid_stream", reason: "invalid-stream" }));
+      const dropped = await writer.ingestEvidence({ epoch: seeded.epoch, sourceKey, expectedCursor: null,
+        nextCursor: "dropped", events: failures, atMs: seeded.at + 2, notifications: "off" });
+      assert.equal(dropped.storagePressure, true); assert.equal(dropped.droppedEvents, 128);
+      await writer.ingestEvidence({ epoch: seeded.epoch, sourceKey, expectedCursor: "dropped", nextCursor: "resumed",
+        events: [], atMs: seeded.at + 3, notifications: "off" });
+      await page.getByTestId("observation-health").getByText("Dropped evidence: 128. Rejected batches: 1.", { exact: true }).waitFor();
+      await page.getByTestId("observation-health").getByText("Storage pressure has recovered; earlier evidence loss remains.", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "停止订阅", exact: true }).click();
+      await seeded.sample(seeded.at + 4, "temporal");
       await page.getByRole("button", { name: "重新读取当前区间", exact: true }).click();
       await page.getByText("ownership_changed", { exact: true }).first().waitFor();
       const cliEvents = await cli(f.root, cliEntry, ["event", "list", "--cursor", snapshot.cursor]);
       assert.ok(cliEvents.data.entries.some((row: { kind: string }) => row.kind === "ownership_changed"));
+      assert.deepEqual(cliEvents.data.observationHealth, { pressureState: "normal", droppedEvents: 128, rejectedBatches: 1 });
       await page.getByRole("link", { name: "持久异常", exact: true }).click();
       await page.getByRole("heading", { name: "持久异常", exact: true }).waitFor();
       await page.getByText("ownership_conflict", { exact: true }).first().waitFor();
@@ -188,8 +207,9 @@ test(`relocated production Web (${group}): real Chrome, shared CLI/domain, recov
       await page.getByRole("heading", { name: "持续观察", exact: true }).waitFor();
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
       await page.setViewportSize({ width: 1440, height: 1000 });
-      await f.observations.finish(seeded.epoch, seeded.at + 3);
-      await f.observations.begin(randomUUID(), seeded.at + 4, [FIRST, SECOND]);
+      await page.getByTestId("observation-health").getByText("Dropped evidence: 128. Rejected batches: 1.", { exact: true }).waitFor();
+      await f.observations.finish(seeded.epoch, seeded.at + 5);
+      await f.observations.begin(randomUUID(), seeded.at + 6, [FIRST, SECOND]);
       await page.goto(`${origin}/events?cursor=${encodeURIComponent(snapshot.cursor)}`);
       await page.getByRole("alert").filter({ hasText: "cursor_gap" }).waitFor();
       await page.getByRole("link", { name: "重新获取快照", exact: true }).click();

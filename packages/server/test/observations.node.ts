@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { MONITOR_POLICY } from "@grokbox/runtime-kernel/monitor";
-import { configureMonitorService } from "@grokbox/box-runtime/runtime";
+import { configureMonitorService, openMonitorStore } from "@grokbox/box-runtime/runtime";
 import { startManagementServer } from "../src/server.ts";
 import { appendNdjsonLine } from "../../box-runtime/src/internal/host/terminal-journal.node.ts";
 import { webFixture, FIRST, SECOND, INSTALLATION, OWNER, READER } from "../../../apps/web/test/fixture.ts";
@@ -74,6 +74,39 @@ test("real SQLite snapshot, incident pages and event continuation are public rea
     assert.ok(ids.length >= 2); assert.equal(ids.length, new Set(ids).size);
     assert.deepEqual(await readFile(f.observations.path), bytes); assert.equal((await stat(f.observations.path)).mtimeMs, before.mtimeMs);
     assert.deepEqual(await readdir(join(f.root, "observability")), names); assert.equal(f.state.reads, 0); assert.equal(f.state.ownershipReads, 0);
+  } finally { await f.close(); }
+});
+
+for (const surface of ["snapshot", "events"] as const) test(`public ${surface} retains pressure loss after collection resumes without mutating reads`, async () => {
+  const f = await webFixture(origin);
+  try {
+    const seeded = await seedObservations(f), sourceKey = "c".repeat(64);
+    const before = (await f.client().observation()).data;
+    const writer = openMonitorStore(f.root, { maxDatabaseBytes: 512 * 1024 });
+    const failures = Array.from({ length: 128 }, (_, n) => ({ name: "host_stream_rejected", schemaVersion: 2,
+      at: new Date(seeded.at).toISOString(), mode: "route", hostGenerationId: "d".repeat(64), agentId: FIRST,
+      turnId: `synthetic-pressure-turn-${n}`, stepId: `synthetic-pressure-step-${n}`, stage: "normalize", errorCode: "invalid_stream", reason: "invalid-stream" }));
+    const dropped = await writer.ingestEvidence({ epoch: seeded.epoch, sourceKey, expectedCursor: null,
+      nextCursor: "dropped", events: failures, atMs: seeded.at + 2, notifications: "off" });
+    assert.equal(dropped.storagePressure, true); assert.equal(dropped.droppedEvents, failures.length);
+    const pressured = surface === "snapshot" ? (await f.client().observation()).data
+      : (await f.client().observationEvents({ cursor: before.cursor })).data;
+    assert.deepEqual(pressured.observationHealth, { pressureState: "storage_pressure", droppedEvents: failures.length, rejectedBatches: 1 });
+    const resumed = await writer.ingestEvidence({ epoch: seeded.epoch, sourceKey, expectedCursor: "dropped",
+      nextCursor: "resumed", events: [], atMs: seeded.at + 3, notifications: "off" });
+    assert.equal(resumed.storagePressure, false);
+    assert.equal((await writer.evidenceCursor(sourceKey))?.gap, null);
+    const raw = await writer.snapshot();
+    assert.equal(raw.observationHealth?.pressure_state, "normal");
+    assert.equal(raw.observationHealth?.dropped_events, failures.length);
+    const bytes = await readFile(writer.path), metadata = await stat(writer.path);
+    const result = surface === "snapshot" ? (await f.client().observation()).data
+      : (await f.client().observationEvents({ cursor: before.cursor })).data;
+    assert.deepEqual(result.observationHealth,
+      { pressureState: "normal", droppedEvents: failures.length, rejectedBatches: 1 });
+    assert.deepEqual(await readFile(writer.path), bytes);
+    assert.equal((await stat(writer.path)).mtimeMs, metadata.mtimeMs);
+    assert.equal(f.state.reads, 0); assert.equal(f.state.ownershipReads, 0);
   } finally { await f.close(); }
 });
 

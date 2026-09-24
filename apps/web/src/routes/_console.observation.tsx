@@ -2,6 +2,7 @@ import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import type { ObservationSnapshot } from "@grokbox/client";
 import { Badge, Card, Empty, ErrorNotice, Heading, SourceTime } from "../components/ui.tsx";
 import { denied, readView, viewError } from "../lib/views.ts";
+import { ObservationHealthNotice } from "../components/observation-health.tsx";
 
 export const Route = createFileRoute("/_console/observation")({
   loader: async ({ context }) => {
@@ -23,6 +24,7 @@ function Observation() {
       {snapshot && <><dl className="facts"><div><dt>采集器记录</dt><dd><Badge tone={snapshot.collector.recordedRunning ? "info" : "warn"}>{snapshot.collector.recordedRunning ? "记录为运行中 · 未探测进程" : "记录为已停止"}</Badge></dd></div>
         <div><dt>最后心跳</dt><dd>{snapshot.collector.lastHeartbeatMs === null ? "尚无记录" : <SourceTime at={snapshot.collector.lastHeartbeatMs}/>}</dd></div>
         <div><dt>本次读取</dt><dd><SourceTime at={snapshot.readAtMs}/></dd></div><div><dt>存储版本</dt><dd>{snapshot.storage.schemaVersion}</dd></div></dl>
+        <ObservationHealthNotice health={snapshot.observationHealth}/>
         <p className="notice">仅覆盖已登记观察的 {snapshot.agents.length} 个 Bot。记录为运行中不证明进程存活，新读取时间不代表来源刚刚更新。</p>
         <div className="table-wrap"><table><thead><tr><th>Bot 原生身份</th><th>最后确认状态</th><th>Server / 本地声明</th><th>新鲜度</th><th>最后成功观察</th></tr></thead><tbody>{snapshot.agents.map(row => <tr key={row.agentId}><td><Link to="/bots/$botId" params={{ botId: row.agentId }}><code>{row.agentId}</code></Link></td><td>{row.lastKnown?.state ?? "unknown"}</td><td>{row.lastKnown ? `${row.lastKnown.serverHarness ?? "unknown"} / ${row.lastKnown.localHarness ?? "unknown"}` : "unknown"}</td><td><Badge tone={row.freshness === "fresh" ? "info" : "warn"}>{row.freshness}</Badge></td><td>{row.lastSuccessMs === null ? "未观察到" : <SourceTime at={row.lastSuccessMs}/>}</td></tr>)}</tbody></table></div>
         {!snapshot.agents.length && <Empty>观察库尚无已登记对象；不表示原生 Bot 列表为空。</Empty>}

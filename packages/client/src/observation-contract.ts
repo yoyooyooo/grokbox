@@ -7,11 +7,17 @@ export type ObservedBot = {
     serverHarness: "box" | "temporal" | null; localHarness: "box" | "temporal" | null } | null;
   lastAttemptMs: number | null; lastSuccessMs: number | null; freshness: ObservationFreshness;
 };
+/** Database-lifetime loss counters; normal pressure does not erase prior gaps. */
+export type ObservationHealth = {
+  pressureState: "normal" | "storage_pressure";
+  droppedEvents: number; rejectedBatches: number;
+};
 export type ObservationSnapshot = {
   source: "local-observations"; admissionAuthority: false; coverage: "watched-bots-only";
   databaseId: string; collectorEpoch: string | null; scopeId: string | null; cursor: string; readAtMs: number;
   collector: { recordedRunning: boolean; liveness: "not-probed"; lastHeartbeatMs: number | null };
   storage: { schemaVersion: number };
+  observationHealth: ObservationHealth;
   agents: ObservedBot[];
 };
 export type IncidentView = {
@@ -36,4 +42,5 @@ export type ObservationEventPage = {
   source: "local-observations"; coverage: "retained-events";
   entries: ObservationEvent[]; cursor: string; hasMore: boolean; retentionFloor: number;
   gap: "history-truncated" | null;
+  observationHealth: ObservationHealth;
 };

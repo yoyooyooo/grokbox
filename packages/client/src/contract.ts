@@ -2,7 +2,7 @@ import type { BotModelSelection, ModelChange, ModelPatch, ModelChangeRequest, Mo
 import type { ModelCapabilities, ReasoningPolicy } from "@grokbox/runtime-kernel/selection";
 
 export type { BotModelSelection, ModelChange, ModelPatch, ModelChangeRequest, ModelOperation };
-export type { ObservationSnapshot, ObservedBot, ObservationFreshness, IncidentView, IncidentList, ObservationEvent, ObservationEventPage, ObservationWatchFrame } from "./observation-contract.ts";
+export type { ObservationHealth, ObservationSnapshot, ObservedBot, ObservationFreshness, IncidentView, IncidentList, ObservationEvent, ObservationEventPage, ObservationWatchFrame } from "./observation-contract.ts";
 export type { ManagementServiceView } from "./service-contract.ts";
 export type { IncidentChangeRequest, IncidentDetail, IncidentOperation } from "./incident-contract.ts";
 export { incidentIdentity, normalizeIncidentChange } from "./incident-contract.ts";
