@@ -32,3 +32,11 @@ An earlier review continuation ended with `upstream_http2_stream_error`; it supp
 ## Limits and main-line effect
 
 This closes AH-179 and the specific D/E finding, not the whole AH-162 candidate review, AH-156 persistent-service platform qualification, J2 adoption, or real Bot/Provider/App E2E. No active Host/modeld, global shim, user Bot, credential, desktop or native data was changed. No push or deployment was performed.
+
+## Integrated-candidate follow-up
+
+After actual fast-forward integration to `526ca59f45806c5587ea629e9fec3789ed804f97`, the original `test/packaging.test.ts` was executed on that exact candidate: seven passed, zero failed, 653 assertions, including a fresh build, real tarball installation in a disposable prefix, and both Node CLI aliases. This supplies current-package execution evidence, not a full current-candidate core/native run.
+
+A new independent artifact/source-binding review invocation was rejected by the tool before execution. No new reviewer was started and no acceptance was obtained; it was not retried through another channel. The earlier completed AH-179 reviews remain valid within their stated scope. AH-162 and AH-122 remain open, with their latest integration and evidence limits recorded in Linear.
+
+A fresh ordinary-user platform observation again found PID 1 `tini`, user-manager status `offline`, and an unavailable system bus for the linger query. The actual default installer remains `systemdUserManager()` and requires a reachable user manager plus linger. AH-156 therefore remains a supported-host qualification gap; restarting Host/modeld does not supply the absent manager. No init or official-supervisor modification was performed, and temporary processes were not substituted for persistent service ownership.
