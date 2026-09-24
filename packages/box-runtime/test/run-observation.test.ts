@@ -2,9 +2,44 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runInNewContext } from "node:vm";
+import { LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
+import { transformUnchecked } from "../src/internal/host/profile.ts";
+import { HOST_RUN_OBSERVATION_SYMBOL } from "../src/internal/host/run-observation.ts";
 import { createRunObserver, projectRunObservation, type RunObservation } from "../src/internal/host/run-observation.ts";
 import { appendHostJournal } from "../src/internal/host/terminal-journal.node.ts";
 import { observeEvents } from "../src/internal/io/journal.node.ts";
+
+for (const observerMode of ["absent", "records", "throws"] as const) test(`group buffer hook preserves the complete native message: ${observerMode}`, async () => {
+  const source = `class OwnedGroup {
+  async runLocalRoomMemberTurn(args) {
+    const sent = [];
+    for (const update of args.updates) {
+      if (update.type === "send-message" && update.deliverTo !== "dm") {
+          sent.push(update.message);
+      }
+    }
+    return sent;
+  }
+  async runTemporalGroupMemberTurn() { return []; }
+}`;
+  const recipe = LIVE_SLICE_PATCHES.find(s => s.id === "group-buffer-observation")!;
+  const patched = transformUnchecked(source, [recipe]);
+  expect(patched.ok).toBe(true); if (!patched.ok) return;
+  let notices = 0;
+  const observer = { buffered() { notices++; if (observerMode === "throws") throw Error("owned-observer-failure"); } };
+  const Owner = runInNewContext(`${patched.source}; OwnedGroup;`, { Symbol,
+    ...(observerMode === "absent" ? {} : { [Symbol.for(HOST_RUN_OBSERVATION_SYMBOL)]: observer }) });
+  const message = { type: "text", content: "owned-content", metadata: { keep: true } };
+  const result = await new Owner().runLocalRoomMemberTurn({ updates: [
+    { type: "send-message", message }, { type: "send-message", deliverTo: "dm", message: { type: "text", content: "owned-dm" } },
+    { type: "text-delta", message: { content: "not-a-message" } },
+  ] });
+  expect(result).toHaveLength(1); expect(result[0]).toBe(message);
+  expect(notices).toBe(observerMode === "absent" ? 0 : 1);
+  expect(transformUnchecked(source.replace("sent.push(update.message)", "sent.push(update.message.content)"), [recipe]))
+    .toMatchObject({ ok: false, code: "find-missing", sliceId: recipe.id });
+});
 
 function barrier() { let release!: () => void; const promise = new Promise<void>(r => { release = r; }); return { promise, release }; }
 

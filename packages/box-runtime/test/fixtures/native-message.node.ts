@@ -17,7 +17,13 @@ import { decideManagedOwnership } from "@grokbox/runtime-kernel/contract";
 const record = (value: unknown): value is Record<string, any> => !!value && typeof value === "object" && !Array.isArray(value);
 function call(target: Record<string, any>, method: string, ...args: unknown[]): any {
   try { assert.equal(typeof target[method], "function"); return target[method](...args); }
-  catch (error) { throw Error("native_message_execution:" + (error instanceof Error ? error.message : "unknown")); }
+  catch (error) {
+    // VM errors belong to another realm. Keep a bounded identifier-only reason
+    // for missing fixture dependencies, never native source or filesystem paths.
+    const message = record(error) && typeof error.message === "string" ? error.message : "unknown";
+    const safe = /^[A-Za-z0-9_$ .:()-]{1,160}$/.test(message) ? message : "unclassified";
+    throw Error(`native_message_execution:${method}:${safe}`);
+  }
 }
 const BOT = "22222222-2222-4222-8222-222222222222";
 const OTHER = "33333333-3333-4333-8333-333333333333";
@@ -43,9 +49,16 @@ async function fixture(active = true) {
   const file = join(root, "transcript.sqlite");
   let sqlite = new DatabaseSync(file);
   sqlite.exec("CREATE TABLE transcript_entries (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE NOT NULL, entry TEXT NOT NULL)");
+  // Peer roster lookup is an external capability for this transcript test.
+  // Execute its original reader and real declared bound against controlled rows;
+  // transcript statements and their persistence still use original SQLite SQL.
+  let peerReads = 0;
+  const statements = () => ({ ...native.prepare(sqlite), listCloudAgentPeerIds: { all: (limit: number) => {
+    assert.equal(limit, native.peerIdsLimit); peerReads++; return [{ peerId: OTHER }, { peerId: 42 }];
+  } } });
   database = { ...native.database, agentDirName: BOT, isClosed: false,
     runWrite: (_operation: string, write: () => unknown) => { write(); return true; },
-    statements: native.prepare(sqlite), db: sqlite };
+    statements: statements(), db: sqlite };
   const session = { id: BOT, db: database };
   const effects = { pipeline: 0, other: 0, appended: 0, rpc: 0, observedIds: [] as string[] };
   const noop = () => undefined;
@@ -114,9 +127,23 @@ async function fixture(active = true) {
     changeAccount: () => { account = "b".repeat(64); },
     rejectSend: () => { rejectSend = true; },
     holdSend: (barrier: Promise<void>) => { sendBarrier = barrier; },
-    reopen: () => { sqlite.close(); sqlite = new DatabaseSync(file); database.db = sqlite; database.statements = native.prepare(sqlite); },
+    peerReads: () => peerReads,
+    reopen: () => { sqlite.close(); sqlite = new DatabaseSync(file); database.db = sqlite; database.statements = statements(); },
     close: async () => { sqlite.close(); await rm(root, { recursive: true, force: true }); } };
 }
+
+test("original peer reader uses its native bound and filters controlled non-string peer rows", async () => {
+  const f = await fixture();
+  try {
+    const ids = call(f.native, "readCloudAgentPeerIds", f.database.statements);
+    assert.deepEqual(Array.from(ids), [OTHER]);
+    assert.equal(f.peerReads(), 1);
+    const tail = f.raw();
+    assert.deepEqual(Array.from(tail.cloudAgentPeerIds), [OTHER]);
+    assert.equal(f.peerReads(), 2);
+    assert.equal(f.effects.rpc, 0); assert.equal(f.effects.appended, 0);
+  } finally { await f.close(); }
+});
 
 for (const active of [true, false]) test(`original ${active ? "active" : "inactive"} Bot RPC -> request association -> writer -> reopened tail -> management delivery`, async () => {
   const f = await fixture(active);

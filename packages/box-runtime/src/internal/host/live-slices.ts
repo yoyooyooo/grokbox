@@ -178,8 +178,10 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     id: "group-buffer-observation",
     startAnchor: "  async runLocalRoomMemberTurn(args) {\n",
     endAnchor: "  async runTemporalGroupMemberTurn(",
-    find: "          sent.push(update.message.content);\n",
-    replacement: `          sent.push(update.message.content);\n          try { globalThis[Symbol.for("${HOST_RUN_OBSERVATION_SYMBOL}")]?.buffered(); } catch {}\n`,
+    // The native buffer now retains the entire message for its own delivery
+    // policy. Observe the append without projecting or replacing that object.
+    find: "          sent.push(update.message);\n",
+    replacement: `          sent.push(update.message);\n          try { globalThis[Symbol.for("${HOST_RUN_OBSERVATION_SYMBOL}")]?.buffered(); } catch {}\n`,
   },
   {
     id: "tool-execution-observation",

@@ -51,8 +51,22 @@ export function nativeMessageCode(overrides: Record<string, unknown> = {}) {
   const functions = ["createUserMessage", "createSendMessageEntry", "withTimestampMs", "isValidTimestampMs",
     "parseTranscriptEntry", "parseEntryRows", "transcriptEntryOfJson", "isValidTranscriptEntry",
     "withEmailDraftFrom", "withVoiceCallNudgeCounts", "withBoxEnvSecretTargetKeys",
-    "readTranscriptTail", "stampBoxRequestEntry", "stampUserFormEntry", "agentWakeOf", "nextEntryId",
+    "readTranscriptTail", "readCloudAgentPeerIds", "stampBoxRequestEntry", "stampUserFormEntry", "agentWakeOf", "nextEntryId",
     "firstUnusedId", "countUserMessages", "countTrailingUserAttachments", "countTrailingAssistantMessages", "countTrailingSendMessages"];
+  const peerLimitName = "TRANSCRIPT_CLOUD_AGENT_PEER_IDS_MAX";
+  const peerLimitMarker = `\nvar ${peerLimitName} = `, peerStart = source.indexOf(peerLimitMarker);
+  const peerEnd = source.indexOf(";\n", peerStart + peerLimitMarker.length);
+  if (peerStart < 0 || source.indexOf(peerLimitMarker, peerStart + 1) >= 0 || peerEnd <= peerStart || peerEnd - peerStart > 1024)
+    throw Error("native_message_peer_limit_layout");
+  const peerLimitCode = source.slice(peerStart + 1, peerEnd + 1);
+  const peerAst = ts.createSourceFile("peer-limit.js", peerLimitCode, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const peerDeclaration = peerAst.statements[0];
+  if (peerAst.statements.length !== 1 || !peerDeclaration || !ts.isVariableStatement(peerDeclaration)
+    || peerDeclaration.declarationList.declarations.length !== 1) throw Error("native_message_peer_limit_shape");
+  const peerInitializer = peerDeclaration.declarationList.declarations[0]!.initializer;
+  if (!peerInitializer || !ts.isNumericLiteral(peerInitializer) || !Number.isSafeInteger(Number(peerInitializer.text))
+    || Number(peerInitializer.text) <= 0) throw Error("native_message_peer_limit_shape");
+  digest("constant:" + peerLimitName, peerLimitCode);
   const prepare = ts.createSourceFile("prepare.js", fn("prepareStatements"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   const statements: string[] = [];
   const wanted = new Set(["listTranscriptEntries", "listTranscriptTail", "getTranscriptEntry", "insertTranscriptEntry", "updateTranscriptEntry"]);
@@ -93,8 +107,8 @@ export function nativeMessageCode(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
   const native: unknown = runInNewContext(
-    functions.map(fn).join("\n") + "\n({" +
-    "createUserMessage, createSendMessageEntry," +
+    peerLimitCode + "\n" + functions.map(fn).join("\n") + "\n({" +
+    "createUserMessage, createSendMessageEntry, readCloudAgentPeerIds, peerIdsLimit: TRANSCRIPT_CLOUD_AGENT_PEER_IDS_MAX," +
     "prepare: (db) => ({" + statements.join(",") + "})," +
     "database: {" + ["appendTranscriptEntry", "appendTranscriptEntries", "updateTranscriptEntry", "getEntryById", "getTranscriptEntries", "getTranscriptTail"].map(db).join(",") + "}," +
     "turn: {" + ["associateTurnUserMessages", "handleAgentUpdate"].map(turn).join(",") + "}," +

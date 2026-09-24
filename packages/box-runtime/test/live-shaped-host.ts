@@ -293,7 +293,7 @@ class SyntheticGroupScheduler {
     const sent = [];
     const update = { message: { content: "synthetic-reply" } };
     return this.enqueueExclusiveRun(args.member.id, async () => {
-          sent.push(update.message.content);
+          sent.push(update.message);
       return sent;
     }, { source: "group-member" });
   }

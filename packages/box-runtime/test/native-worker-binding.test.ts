@@ -24,6 +24,7 @@ test("current checkpoint pair refuses old or mixed generations rather than accep
   const oldWorker = "da6796b285ea7e12f7b6979cabaf823c6aba8dbb0ad4a8efddad8fe3e5f1286c";
   expect(nativeCheckpointPair(CONT_NATIVE_PAIR.host, CONT_NATIVE_PAIR.worker)).toEqual(CONT_NATIVE_PAIR);
   expect(nativeCheckpointPair(oldHost, oldWorker)).toBeNull();
+  expect(nativeCheckpointPair("89fd93fcb0b04d5a533ebedc833c8ca42e08612191ce008a2e6c257e09ce69cf", CONT_NATIVE_PAIR.worker)).toBeNull();
   expect(nativeCheckpointPair(CONT_NATIVE_PAIR.host, oldWorker)).toBeNull();
   expect(nativeCheckpointPair(oldHost, CONT_NATIVE_PAIR.worker)).toBeNull();
   expect(nativeCheckpointPair("a".repeat(64), "b".repeat(64))).toBeNull();
