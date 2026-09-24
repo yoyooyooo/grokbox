@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
+import { runInNewContext } from "node:vm";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,10 +14,49 @@ import { admitAllAuthorityLayer } from "../src/internal/roots/modeld.runtime.ts"
 import { dispatchingModelBackendLayer } from "../src/internal/backends/dispatch.ts";
 import { createLiveBackendAuth } from "../src/internal/io/credentials.node.ts";
 import { piCompactionAlgorithmLayer } from "../src/internal/context/pi-compaction.ts";
-import { createHostContextControl } from "../src/internal/host/context-control.node.ts";
+import { createHostContextControl, HOST_CONTEXT_CONTROL_SYMBOL } from "../src/internal/host/context-control.node.ts";
+import { CONTEXT_MAINTENANCE_SLICES } from "../src/internal/host/context-slices.ts";
+import { transformUnchecked } from "../src/internal/host/profile.ts";
+import { CONTEXT_SHAPED_HOST } from "./context-shaped-host.ts";
 import { bindHostSessionHook } from "../src/internal/host/session-hook.ts";
 import { isHostPromptSession } from "../src/internal/host/session.ts";
 import { ownedNativeSummary } from "./context-native-fixture.ts";
+
+for (const addedField of [false, true]) for (const hooked of [false, true]) {
+  test(`context shell patches only run and preserves native exports: added-field=${addedField} hook=${hooked}`, async () => {
+    const recipe = CONTEXT_MAINTENANCE_SLICES.find(slice => slice.id === "context-manual-shell-owner")!;
+    const source = addedField ? CONTEXT_SHAPED_HOST.replace("    run,\n    steer,", "    run,\n    activeTurnOriginatingFlow: () => host.flow,\n    steer,") : CONTEXT_SHAPED_HOST;
+    const transformed = transformUnchecked(source, [recipe]);
+    expect(transformed.ok).toBe(true);
+    if (!transformed.ok) return;
+    let wrapCalls = 0, busy: (() => boolean) | undefined, wrapped: unknown;
+    const host = { flow: "owned-first", onRun: async () => { if (busy) expect(busy()).toBe(true); return "owned-result"; }, onSettled: () => undefined };
+    const control = { wrapRun(actualHost: unknown, run: (...args: unknown[]) => Promise<unknown>, isBusy: () => boolean, interrupt: unknown) {
+      expect(actualHost).toBe(host); expect(typeof interrupt).toBe("function");
+      wrapCalls++; busy = isBusy; wrapped = (...args: unknown[]) => run(...args); return wrapped;
+    } };
+    const createShell = runInNewContext(`${transformed.source}\ncreateTurnRunShell;`, {
+      Symbol, hostStatusArgs: {}, rpcBoolean: () => false,
+      ...(hooked ? { [Symbol.for(HOST_CONTEXT_CONTROL_SYMBOL)]: control } : {}),
+    });
+    const shell = createShell(host);
+    expect(Object.keys(shell)).toEqual(addedField ? ["run", "activeTurnOriginatingFlow", "steer", "interrupt", "interruptAll"] : ["run", "steer", "interrupt", "interruptAll"]);
+    expect(wrapCalls).toBe(hooked ? 1 : 0);
+    if (hooked) { expect(shell.run).toBe(wrapped); expect(busy?.()).toBe(false); }
+    const value = {}; expect(shell.steer(value)).toBe(value); expect(shell.interruptAll).toBe(shell.interrupt);
+    expect(await shell.run("owned-input")).toBe("owned-result");
+    if (busy) expect(busy()).toBe(false);
+    if (addedField) { expect(shell.activeTurnOriginatingFlow()).toBe("owned-first"); host.flow = "owned-second"; expect(shell.activeTurnOriginatingFlow()).toBe("owned-second"); }
+  });
+}
+
+test("context shell run replacement still refuses ambiguous or absent exports", () => {
+  const recipe = CONTEXT_MAINTENANCE_SLICES.find(slice => slice.id === "context-manual-shell-owner")!;
+  for (const [source, code] of [
+    [CONTEXT_SHAPED_HOST.replace("    run,\n", "    run: unavailableRun,\n"), "find-missing"],
+    [CONTEXT_SHAPED_HOST.replace("  return {\n    run,\n", "  if (host.other) {\n  return {\n    run,\n  };\n  }\n  return {\n    run,\n"), "find-duplicate"],
+  ]) expect(transformUnchecked(source!, [recipe])).toMatchObject({ ok: false, code, sliceId: recipe.id });
+});
 
 const AGENT = "00000000-0000-4000-8000-000000000919", MODEL = "owned/control";
 const hex = (char: string) => char.repeat(64);

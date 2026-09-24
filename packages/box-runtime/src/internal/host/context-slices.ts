@@ -9,12 +9,11 @@ export const CONTEXT_MAINTENANCE_SLICES: readonly SlicePatch[] = [
     id: "context-manual-shell-owner",
     startAnchor: "function createTurnRunShell(host) {",
     endAnchor: "var SandAgentRunner = class _SandAgentRunner {",
-    find: "  return {\n    run,\n    steer,\n    interrupt,\n    interruptAll,\n",
+    // Replace only the run export. Other native exports, including newer
+    // flow/observation accessors, belong to the original shell and stay intact.
+    find: "  return {\n    run,\n",
     replacement: `  return {
     run: ${control}?.wrapRun(host, run, () => cancelActiveRun !== null || pausingForUpgrade, reason => interrupt(reason)) ?? run,
-    steer,
-    interrupt,
-    interruptAll,
 `,
   },
   {
