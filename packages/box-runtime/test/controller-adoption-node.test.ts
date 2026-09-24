@@ -19,5 +19,5 @@ test("real Node: delayed Gateway, postcompile exit, independent guardian expiry 
   child.stdout.on("data", chunk => { stdout += chunk; }); child.stderr.on("data", chunk => { stderr += chunk; });
   const exit = await new Promise<number | null>((resolve, reject) => { child.once("close", resolve); child.once("error", reject); });
   expect(exit, stderr).toBe(0);
-  expect(JSON.parse(stdout)).toEqual({ cases: ["delayed-gateway", "postcompile-exit", "guardian-expiry", "injector-death"], isolated: true, rawOutputCaptured: false });
+  expect(JSON.parse(stdout)).toEqual({ cases: ["delayed-gateway", "postcompile-exit", "guardian-expiry", "injector-death", "delayed-cleanup"], isolated: true, rawOutputCaptured: false });
 }, 15000);

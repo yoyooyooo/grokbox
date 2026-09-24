@@ -62,6 +62,8 @@ for (const scenario of ["delayed-gateway", "guardian-expiry", "identity-reuse", 
   if (scenario === "identity-reuse") {
     expect(tree.alive(temp!.pid)).toBe(true);
     expect(tree.signals.some(row => row.pid === temp!.pid && row.signal === "SIGTERM")).toBe(false);
+    expect(result.diagnostic?.cleanup).toContainEqual({ role: "temp-supervisor", pid: temp!.pid, start: temp!.start,
+      signalSent: false, outcome: "unproven", observed: "different-identity" });
   }
   if (scenario === "guardian-expiry") expect(tree.signals.filter(row => row.signal === "SIGTERM")).toHaveLength(4);
   expect(await execute()).toMatchObject({ outcome: "unknown", reason: "uncertain-operation" });

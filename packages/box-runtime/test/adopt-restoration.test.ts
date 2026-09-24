@@ -42,6 +42,11 @@ test("connected recovery publishes only original-operation restoration; all six 
   expect(result).toMatchObject({ outcome: "restored", adopted: false, signaled: false, replayAuthorized: false,
     clearedLocks: 0, markedUnknown: 0, operations: { unknown: 6 }, restoration: { operationId: "original", physicallyRestored: true } });
   expect(JSON.parse(await readFile(restorationReceiptPath(f.runRoot, "original"), "utf8"))).toEqual(result.restoration);
+  const historical = await recoverControllerOperationState({ ...f.input, confirm: false }, {
+    ...f.ports, gatewayPid: () => { throw Error("historical receipt inspection must not observe live Gateway"); },
+  });
+  expect(historical).toMatchObject({ outcome: "recorded", restorationHistorical: true, operations: { unknown: 6 },
+    adopted: false, replayAuthorized: false, restoration: result.restoration });
   expect(await Promise.all(f.files.map(path => readFile(path)))).toEqual(before);
   expect(f.tree.signals).toHaveLength(2); // Fixture disposal only, recovery never signals.
   await expect(recoverControllerOperationState(f.input, f.ports)).rejects.toMatchObject({ code: "invalid_usage" });
@@ -90,4 +95,15 @@ test("concurrent original-operation recovery has at most one receipt publisher",
   const f = await fixture();
   const results = await Promise.allSettled([recoverControllerOperationState(f.input, f.ports), recoverControllerOperationState(f.input, f.ports)]);
   expect(results.filter(row => row.status === "fulfilled" && row.value.outcome === "restored")).toHaveLength(1);
+});
+
+
+test("public recovery inspection refuses a malformed historical receipt without changing evidence", async () => {
+  const f = await fixture(), path = restorationReceiptPath(f.runRoot, "original");
+  await writeFile(path, JSON.stringify({ operationId: "original", physicallyRestored: true, raw: "excluded-fixture-output" }));
+  const before = await Promise.all([...f.files, path].map(file => readFile(file)));
+  const result = await recoverControllerOperationState({ ...f.input, confirm: false }, f.ports);
+  expect(result).toMatchObject({ outcome: "blocked", reason: "restoration-receipt-unavailable", operations: { unknown: 6 } });
+  expect(JSON.stringify(result)).not.toContain("excluded-fixture-output");
+  expect(await Promise.all([...f.files, path].map(file => readFile(file)))).toEqual(before);
 });

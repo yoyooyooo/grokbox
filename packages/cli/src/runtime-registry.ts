@@ -415,7 +415,7 @@ export const RUNTIME_COMMANDS: readonly LeafCommand[] = [
     arguments: [],
     options: options([
       { flags: "--confirm", description: "Recover proven stale metadata or publish an original-operation physical restoration receipt; does not adopt or replay" },
-      { flags: "--restore-operation <id>", description: "With --confirm, attest observed physical restoration for this exact failed operation; preserve all unknowns and original evidence" },
+      { flags: "--restore-operation <id>", description: "Inspect the historical restoration receipt for this exact failed operation; --confirm publishes it under recovery guards without resolving unknowns" },
     ]),
     stdin: "none", table: false, timeout: false, destructive: false, gateway: false,
     streaming: false, profile: false, localOnly: true,

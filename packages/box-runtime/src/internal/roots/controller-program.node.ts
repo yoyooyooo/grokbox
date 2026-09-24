@@ -41,7 +41,7 @@ import { proveStableOfficialState, type RoleClassifier } from "../process/offici
 import type { ProcessIdentity, ProcessPort } from "../process/process-port.ts";
 import { resolveNodeRequireablePreload } from "../process/helpers/runtime-helpers.ts";
 import { runTransientAdoptOperation, writeAdoptOpState, readAdoptOpState } from "../process/transient-adopt.ts";
-import { prepareOriginalRestoration, type RestorationPorts } from "../process/adopt-restoration.ts";
+import { prepareOriginalRestoration, readOriginalRestoration, type RestorationPorts } from "../process/adopt-restoration.ts";
 import type { IdentityMarker, IdentityOpResult } from "../process/identity-op.ts";
 import { probeModeldHealth } from "../wire/modeld-probe.node.ts";
 import { isDeepStrictEqual } from "node:util";
@@ -110,6 +110,13 @@ function parsePrefix(value: unknown): OperationPrefix | undefined {
     if (value.guardianContinued !== undefined) {
       if (value.guardianContinued !== null && typeof value.guardianContinued !== "boolean") return undefined;
       diagnostic.guardianContinued = value.guardianContinued;
+    }
+    if (value.cleanup !== undefined) {
+      if (!Array.isArray(value.cleanup) || value.cleanup.length > 8 || value.cleanup.some(row => !row || !natural(row.pid)
+        || !natural(row.start) || !["host", "temp-supervisor"].includes(row.role) || typeof row.signalSent !== "boolean"
+        || !["confirmed-gone", "unproven"].includes(row.outcome) || !["absent", "same-identity", "different-identity", "unavailable"].includes(row.observed))) return undefined;
+      diagnostic.cleanup = value.cleanup.map(row => ({ role: row.role, pid: row.pid, start: row.start,
+        signalSent: row.signalSent, outcome: row.outcome, observed: row.observed }));
     }
     if (value.child !== undefined) {
       const child = value.child;
@@ -736,7 +743,8 @@ export async function startControlOperation(request: ControllerRequest): Promise
 export type OperationRecoveryReport = {
   process: "operation-recovery";
   restoration?: ReturnType<typeof prepareOriginalRestoration>["receipt"];
-  outcome: "clear" | "ready" | "blocked" | "recovered" | "restored";
+  restorationHistorical?: true;
+  outcome: "clear" | "ready" | "blocked" | "recovered" | "restored" | "recorded";
   reason: string | null;
   locks: Array<OperationLeaseObservation & { name: "controller" | "identity" }>;
   operations: { running: number; unknown: number; terminal: number };
@@ -791,7 +799,12 @@ export async function recoverControllerOperationState(input: { boxRoot: string; 
   const program = Effect.gen(function* () {
     if (input.confirm !== true) {
       const facts = yield* Effect.tryPromise(() => operationRecoveryFacts(input.boxRoot, runRoot));
-      return input.restoreOperation ? { ...facts.report, outcome: "blocked" as const, reason: "restoration-confirm-required" } : facts.report;
+      if (!input.restoreOperation) return facts.report;
+      const observed = yield* Effect.result(Effect.try(() => readOriginalRestoration(runRoot, input.restoreOperation!)));
+      if (observed._tag === "Failure") return { ...facts.report, outcome: "blocked" as const, reason: "restoration-receipt-unavailable" };
+      if (!observed.success) return { ...facts.report, outcome: "blocked" as const, reason: "restoration-confirm-required" };
+      return { ...facts.report, outcome: facts.report.reason ? "blocked" as const : "recorded" as const,
+        restoration: observed.success, restorationHistorical: true as const, next: "grokbox runtime status --json" };
     }
     const paths = [lockPath(input.boxRoot), operationLockPath(runRoot)];
     const gate = yield* Effect.acquireRelease(

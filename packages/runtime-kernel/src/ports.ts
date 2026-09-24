@@ -151,6 +151,8 @@ export type ControllerDiagnostic = {
   /** null: independent CONT outcome was not yet observed, never proof of no signal. */
   guardianContinued?: boolean | null;
   signals?: Array<{ pid: number; start: number; signal: "SIGSTOP" | "SIGTERM"; sent: boolean }>;
+  cleanup?: Array<{ role: "host" | "temp-supervisor"; pid: number; start: number; signalSent: boolean;
+    outcome: "confirmed-gone" | "unproven"; observed: "absent" | "same-identity" | "different-identity" | "unavailable" }>;
   child?: { pid: number; start: number; exitCode: number | null; signal: string | null };
   readiness?: { expectedPid: number; gatewayPid: number | null; compiled: boolean; alive: boolean };
 };

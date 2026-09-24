@@ -187,8 +187,10 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
   let ownedTemp: ProcessIdentity | null = null, ownedHost: ProcessIdentity | null = null;
   let lastFailure: IdentityOpResult["diagnostic"];
   const signals: NonNullable<NonNullable<IdentityOpResult["diagnostic"]>["signals"]> = [];
+  const cleanup: NonNullable<NonNullable<IdentityOpResult["diagnostic"]>["cleanup"]> = [];
   const reap = (temp: ProcessIdentity | null, host: ProcessIdentity | null) =>
-    reapOperationOwned(ctx, temp, host, lifetime, event => { if (signals.length < 8) signals.push(event); });
+    reapOperationOwned(ctx, temp, host, lifetime, event => { if (signals.length < 8) signals.push(event); },
+      result => { if (cleanup.length < 8) cleanup.push(result); });
   const signalOwned = (identity: ProcessIdentity, signal: "SIGSTOP" | "SIGTERM") => {
     assertOwned();
     const result = signalIfMatch(ctx.processes, identity, signal);
@@ -215,7 +217,7 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
     const end = guardianEnd();
     lastFailure = {
       code: lifetime?.aborted ? "guardian-ownership-ended" : code,
-      phase, recoveryRequired, guardianEnd: end, guardianContinued: guardianContinued(), signals: [...signals],
+      phase, recoveryRequired, guardianEnd: end, guardianContinued: guardianContinued(), signals: [...signals], cleanup: [...cleanup],
       ...(child ? { child } : {}),
       ...(expectedPid ? { readiness: { expectedPid, gatewayPid: ctx.readGatewayPid(),
         compiled: marker?.operationId === ctx.operationId && marker.pid === expectedPid && marker.compiled === true,
@@ -603,22 +605,31 @@ async function reapOperationOwned(
   host: ProcessIdentity | null,
   signal?: AbortSignal,
   record?: (event: { pid: number; start: number; signal: "SIGTERM"; sent: boolean }) => void,
+  recordCleanup?: (result: NonNullable<NonNullable<IdentityOpResult["diagnostic"]>["cleanup"]>[number]) => void,
 ): Promise<void> {
-  if (host && isOperationOwnedHost(ctx, temp, host)) {
-    const liveHost = ctx.processes.inspect(host.pid);
-    if (liveHost && stableIdentitiesMatch(host, liveHost)) {
-      const result = signalIfMatch(ctx.processes, liveHost, "SIGTERM");
-      record?.({ pid: host.pid, start: host.start, signal: "SIGTERM", sent: result.ok });
-    }
-    await ctx.waitGone(host, signal);
-  }
-  if (temp) {
-    const liveTemp = ctx.processes.inspect(temp.pid);
-    if (liveTemp) {
-      const result = signalIfMatch(ctx.processes, temp, "SIGTERM");
-      record?.({ pid: temp.pid, start: temp.start, signal: "SIGTERM", sent: result.ok });
-    }
-    await ctx.waitGone(temp, signal);
+  for (const [role, expected] of [["host", host], ["temp-supervisor", temp]] as const) {
+    if (!expected) continue;
+    const result: NonNullable<NonNullable<IdentityOpResult["diagnostic"]>["cleanup"]>[number] = {
+      role, pid: expected.pid, start: expected.start, signalSent: false, outcome: "unproven", observed: "unavailable",
+    };
+    try {
+      const before = ctx.processes.inspect(expected.pid);
+      if (!before) { result.observed = "absent"; result.outcome = "confirmed-gone"; continue; }
+      result.observed = stableIdentitiesMatch(expected, before) ? "same-identity" : "different-identity";
+      if (result.observed !== "same-identity" || role === "host" && !isOperationOwnedHost(ctx, temp, expected)) continue;
+      // A Host may have reparented after its exact temp owner exited. Full
+      // identity is still rechecked at the syscall; a reused PID is never used.
+      const sent = signalIfMatch(ctx.processes, role === "host" ? before : expected, "SIGTERM");
+      result.signalSent = sent.ok;
+      record?.({ pid: expected.pid, start: expected.start, signal: "SIGTERM", sent: sent.ok });
+      const waited = await ctx.waitGone(expected, signal);
+      const after = ctx.processes.inspect(expected.pid);
+      result.observed = !after ? "absent" : stableIdentitiesMatch(expected, after) ? "same-identity" : "different-identity";
+      // Expiry cancels the existing wait; it is not an exit receipt. Do not
+      // renew ownership or hide the still-live child behind a completed scope.
+      if (waited && result.observed !== "same-identity") result.outcome = "confirmed-gone";
+    } catch { result.observed = "unavailable"; }
+    finally { recordCleanup?.(result); }
   }
 }
 

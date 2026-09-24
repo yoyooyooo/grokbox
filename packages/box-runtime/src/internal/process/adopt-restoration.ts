@@ -116,3 +116,31 @@ export function prepareOriginalRestoration(input: {
     return receipt;
   } };
 }
+
+/** Read a historical receipt only. No process observation, gate acquisition,
+ * mutation, adoption admission or renewal of the recorded physical proof. */
+export function readOriginalRestoration(root: string, operationId: string): ReturnType<typeof prepareOriginalRestoration>["receipt"] | null {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(operationId)) throw new Error("restoration-operation-invalid");
+  const snapshot = restorationSnapshot(restorationReceiptPath(root, operationId), true);
+  if (!snapshot.bytes) return null;
+  if (snapshot.bytes.length > 4096) throw new Error("restoration-receipt-invalid");
+  const row = JSON.parse(snapshot.bytes.toString());
+  const hash = (value: unknown) => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+  const natural = (value: unknown) => Number.isSafeInteger(value) && Number(value) >= 0;
+  if (!row || row.version !== 1 || row.operationId !== operationId || row.physicallyRestored !== true
+    || row.adopted !== false || row.replayAuthorized !== false || !row.evidence || !row.chain
+    || !hash(row.evidence.operations) || !hash(row.evidence.journal) || !hash(row.evidence.marker)
+    || !(row.evidence.attestation === null || hash(row.evidence.attestation))) throw new Error("restoration-receipt-invalid");
+  const chain: ReturnType<typeof prepareOriginalRestoration>["receipt"]["chain"] = {};
+  for (const role of ["wrapper", "supervisor", "host"]) {
+    const identity = row.chain[role];
+    if (!identity || !natural(identity.pid) || identity.pid === 0 || !natural(identity.start)
+      || !natural(identity.uid) || !natural(identity.ppid)) throw new Error("restoration-receipt-invalid");
+    chain[role] = { pid: identity.pid, start: identity.start, uid: identity.uid, ppid: identity.ppid };
+  }
+  if (row.gatewayPid !== chain.host!.pid || chain.host!.ppid !== chain.supervisor!.pid
+    || chain.supervisor!.ppid !== chain.wrapper!.pid) throw new Error("restoration-receipt-invalid");
+  return { version: 1, operationId, physicallyRestored: true, adopted: false, replayAuthorized: false,
+    evidence: { operations: row.evidence.operations, journal: row.evidence.journal, marker: row.evidence.marker, attestation: row.evidence.attestation },
+    chain, gatewayPid: row.gatewayPid };
+}
