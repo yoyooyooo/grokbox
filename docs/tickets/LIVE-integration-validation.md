@@ -4,7 +4,7 @@
 
 ### 2026-09-24 受控迁移与双 Bot 窗口
 
-[固定报告](../reports/2026-09-24-controlled-dual-bot.md)记录 AH-183/184/185 → AH-162/122 → AH-123/124 → AH-186。实现候选已推进到固定 `cff73feb` / 原生 216a/96c3，并完成适用资格和独立复查、schema4/models3 迁移及管理消费者读回。**一次实际接管返回 recovery-required/commit-failed，原操作保留为第六条 unknown，当前 desired 已恢复 disabled；隔离 owner 修复的六项审查发现正在处理，原操作恢复另受同期父子进程绑定证据缺失阻断。双 Bot/compact/回官方验收尚未完成**。不扩成 J3/J4、完整模型矩阵或持久运行通过；原五条 unknown 与旧回执均保留。
+[固定报告](../reports/2026-09-24-controlled-dual-bot.md)记录 AH-183/184/185 → AH-162/122 → AH-123/124 → AH-186。源码修复的已报告问题已在各自范围关闭，最后 `99836167` 独立复核为 OK with notes；组合实现 `18e3e696` / 冻结原生 688f/96c3 已完成所选资格、合入 v2、独立安装及隔离烟测。现场消费者与 shim 仍为 `cff73feb`，schema4/models3 迁移保留。**此前一次实际接管返回 recovery-required/commit-failed，原操作仍是第六条 unknown，desired disabled；原操作恢复另受同期直接子进程创建关系缺失阻断，调查以 bounded UNPROVEN 结束。源码修复和新安装不能补造该证据，双 Bot/compact/回官方验收尚未执行。** 不扩成 J3/J4、完整模型矩阵或持久运行通过；原五条 unknown、失败探针和历史资格均保留原范围。
 
 ### F1 持久宿主当前探针回执（2026-09-22）
 

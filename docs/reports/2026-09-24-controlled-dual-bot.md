@@ -1,8 +1,8 @@
 # 2026-09-24 受控迁移、固定候选与双 Bot 窗口
 
-本报告记录 AH-183/184/185 → AH-162/122 → AH-123/124 → AH-186 的同一授权窗口。当前已执行一次固定候选接管，结果为 **recovery-required / commit-failed**；已由原配置 writer 将 desired 恢复为 disabled，进入 owner 修复。双 Bot 验收尚未开始。它不签 J3/J4、全模型矩阵、完整 App 或长期运行。
+本报告记录 AH-183/184/185 → AH-162/122 → AH-123/124 → AH-186 的同一授权窗口。当前已执行一次固定候选接管，结果为 **recovery-required / commit-failed**；desired 已由原配置 writer 恢复为 disabled。后续源码修复已通过独立复查，组合候选 `18e3e696` 已完成所选范围资格、合入 v2 并独立安装；现场消费者与全局 shim 仍保持 `cff73feb`。原操作恢复另受同期创建证据缺失阻断，双 Bot 验收尚未开始。本报告不签 J3/J4、全模型矩阵、完整 App 或长期运行。
 
-## 固定候选与证据边界
+## 早期 734 候选与证据边界
 
 - 实现候选：`734206b78af3951942b0fd9013d739f716f0672c`，已线性合入 v2；前序为 `b1d3d9a09bd5f0e81488e991352d97e3d5531d5b`。
 - 包：`grokbox-0.1.0-alpha.6.tgz`，3,377,130 bytes，SHA256 `d48150f2880bf9aca89d90b7d93f7448424ab30b13286fe3b6012d6c4d9a89fc`。构建清单 SHA256 `2c197ff64bf255481fb62a427543fe2804575a2c6bbc4e30633005b99a4df6c9`；独立复查逐项核对全部 72 个产物及包内各次出现。
@@ -11,7 +11,7 @@
 - 冻结原生输入：Host `68a020b8483656c3eb89d0ce991bacdf089ceabb16f95549ba3084061375a68e` / worker `96c32f4dd4e99f91576a720f88b4e24281212faf76b341709b83bce2502f71a2`。实际采用前仍须重核目标字节/进程；静态回执保持 `qualified=false`。
 - 独立 Astra high 复查：原主体修复闭合，b1d3 后四文件/四行增量为 **OK with notes**，未建立剩余 P0/P1/P2。原始审查、私有来源和逐笔回执在仓库外保留，非公开测试依赖。
 
-当前候选串行检查：类型/构建通过；原生组合 40/40，61/61 切片与四项语义义务通过，四个合法 JavaScript 反例被拒绝；受影响公共检查 52 pass / 35 skip，固定输入 receiver 1 pass / 72 assertions。全部命令已结束，产物哈希稳定。公共 469 文件清单的 3507 pass / 0 fail / 69 skip 是原分片与必要重跑的逐文件对账，**不是 734206 的新全仓运行**。
+734 阶段串行检查：类型/构建通过；原生组合 40/40，61/61 切片与四项语义义务通过，四个合法 JavaScript 反例被拒绝；受影响公共检查 52 pass / 35 skip，固定输入 receiver 1 pass / 72 assertions。全部命令已结束，产物哈希稳定。公共 469 文件清单的 3507 pass / 0 fail / 69 skip 是原分片与必要重跑的逐文件对账，**不是 734206 的新全仓运行**。
 
 68a 相对 c361 的完整原生变化为五段、151 bytes、3 行：构建身份、Playwright settle 参数、wait-for 上限。原始纯函数探针覆盖配置/归一化差异；未声称实际 MCP 接受新参数或真实浏览器时序通过。所选 29 声明、12 owner/helper、21 执行声明和 196 Gateway 属性保持对应字节/绑定；worker 不变。历史完整 native-runtime/core-risk/core-observation 仍绑定原输入。首次原生组合的 39 pass / 1 fail 保留，原因未证；未改变代码/门/期限的重跑及独立组合运行随后通过。
 
@@ -39,7 +39,7 @@
 
 ## 现场结果
 
-采用前 Bot 创建预览因缺少当前 ownership 来源被拒绝，未创建对象或改走其他 writer。当前 Host 仅有进程/入口观察与 stale-attestation 状态，完整 loaded provenance 尚未签定。真实接管、模型请求、DM、工具、compact、follow-up 和官方退出结果待后续实测填写，未计通过。
+采用前 Bot 创建预览因缺少当前 ownership 来源被拒绝，未创建对象或改走其他 writer。当时 Host 仅有进程/入口观察与 stale-attestation 状态，完整 loaded provenance 尚未签定。后续一次真实采用的失败见下一节；模型请求、DM、工具、compact、follow-up 和官方退出验收仍未执行。
 
 ## 后续 216a 候选与一次采用结果
 
@@ -59,10 +59,22 @@ cff73 已线性合入 v2 并独立安装。模型文件原为 version2，后续�
 
 ## 修复审查与原始创建证据限制
 
-隔离修复范围 `cff73feb..550419e7` 的独立审查为 **BLOCK（五项 P1、一项 P2）**。71 项定向测试通过，但独立反例仍复现：Effect 中断未等待原采用 Promise 结束、未退出子进程可被新操作 ID 再次操作且覆盖原单例 journal、恢复遗漏原诊断中的子进程身份、未完成的恢复发布被历史读取器当成完成、异步 rename 可越过期限，以及完整 `/proc` 身份可见性要求阻断正常用户。六项修复仍在独占工作树进行；上述范围未合入或安装，运行制品仍为 `cff73feb`。
+隔离修复范围 `cff73feb..550419e7` 的初次独立审查为 **BLOCK（五项 P1、一项 P2）**：中断未等待原采用 Promise 结束、未退出子进程可能被新操作 ID 再次操作并覆盖单例证据、恢复遗漏子进程身份、未完成发布被历史读取器当成完成、异步 rename 可越过期限，以及完整 `/proc` 可见性要求阻断正常用户。后续反例又推动了 checkpoint 写入失败时的事实保留、物理完成与业务账本不确定性的分离、结构化编译观察一致性，以及所有 route authority 的完成证据检查。这些已报告源码问题在各自审查范围内均已关闭。最后范围 `6c07327e..99836167` 的独立复核为 **OK with notes**，24 项测试、146 个断言通过；两个不受支持的 route 变体经真实 store、`current`、`currentContext` 拒绝，未读取原生 ownership。合法 direct identity 与六条历史 unknown 保留。原审查、反例、失败和修复回执均未覆盖。
 
 原现场操作还存在独立的历史证据缺口。固定临时 supervisor helper 的一次 spawn 不变量及制品字节已核对；原编译观察也绑定 PID/start、操作及 source/profile/preload 等摘要。但没有找到当时临时 supervisor 与所记录 Host 的直接父子绑定。原 journal 的 Host 为 null；后续进程扫描只记录已返回的官方链。补充找到的原 Host 健康记录仅有 PID。原会话在 41 秒采用期间没有采集父子关系。相关原始文件与检索边界保留于私有证据目录。
 
 同入口主进程继承配置后产生 marker 的可能性，尚未被原有公开合同或受限原生来源核查排除；这不是认定现场发生过该行为。恢复仍缺一条同期直接子进程身份绑定、等价的完整受控范围退出证明，或能排除该替代解释的合格不变量。当前已知 PID 不存在、后来官方链健康及两次空闲快照不能补造该事实。**原操作保持 unknown，物理恢复尚未取得证明，后续接管与双 Bot 验收仍受阻。** 不导入补造的历史回执，不通过新 ID 重放，不清除原证据。
 
-平台 Host 随后推进到 `688f0852fb5ac705b23a17d48603982c4c5e07544cfaeb0e96aa045295c08d98`，worker `96c3…` 未变。冻结增量包含 71 处变化、增加 10,640 bytes/239 行，涉及模型上下文键、存储同步就绪、工具结果与请求上下文、子任务 transport 等行为。61 个锚点及选定声明/Gateway 属性的结构检查不变；这不足以证明其传递依赖或运行行为。四文件、四行绑定补丁仅为未应用提案，正式原生及相关行为资格尚未执行；216a 证据保留原范围。
+平台 Host 随后推进到 `688f0852fb5ac705b23a17d48603982c4c5e07544cfaeb0e96aa045295c08d98`，worker `96c3…` 未变。冻结增量包含 71 处变化、增加 10,640 bytes/239 行，涉及模型上下文键、存储同步就绪、工具结果与请求上下文、子任务 transport 等行为。61 个锚点及选定声明/Gateway 属性的结构检查不变；这些事实不证明传递依赖或完整 Host 行为。四文件、四行绑定增量已单独合入组合候选，没有重放原生工作树的累计补丁；216a 证据保留原范围。
+
+## 组合候选 18e3：源码闭合、所选资格与独立安装
+
+修复按原顺序移入 `6a494668` 之后，再加入上述四行增量，得到 `18e3e69624b24679f19fd341975a09fbd055eb6a`。与独立审查的 `99836167` 相比，额外差异只有两份已有现场报告和四处原生绑定。该实现已线性合入 v2，原提交及各次独立审查仍可追溯。
+
+对冻结 688f 的六组原始片段/受控依赖探针，首次 context 执行因测试装载遗漏一个依赖常量而出现 ReferenceError；当次 0 通过、其余五组未执行，失败留存。随后补入冻结源码中的原值 60,000 ms，没有扩大期限。原 72 项选择和其他执行/断言文件保持字节一致；新增标量及装载顺序经 AST/哈希核对后，修订清单 `d5234a17…` 下的 context、mirror、mcp、draft、subagent、interop 六组全部实际执行通过，每组退出与同次 stdout 回执验证均为零。它们不签整个 Host、完整镜像 I/O、RPC/工具路由、provider 或采用。
+
+`18e3e696` 的串行组合检查已完成：类型、构建通过；61/61 静态切片与四项具名语义检查通过，静态工具仍报告 `qualified=false`、覆盖不完整且尚未发布 profile；冻结原生组合 40/40；受影响公共检查 137 pass / 35 skip / 0 fail、725 assertions；receiver 1 pass / 72 assertions；原生 AgentStore/worker SQLite 与独立 Node 读回后的模型切换链 1 pass / 53 assertions。后两项使用冻结输入和拥有的测试上游，没有外部 provider 请求。文档 16 项/1740 assertions 通过。历史 3507 项公共对账和其他原生组仍绑定原范围，不代表此提交的全仓重跑。
+
+包为 3,389,985 bytes，SHA256 `c295326a8714e149a91566d4c7c777d3a99fcc6c80a6e52febac7f0316db0fee`；构建清单 SHA256 `9137f881d378a2e5e32c37520369cb6881ead3befd5b6476aaea977a5743ea67`。72 个产物及包内各次出现逐项一致，重复 `bin/grokbox` 的内容/模式相同。Bun 打包只重排了 `package.json` 格式，全部 JSON 字段一致；其余 96 个包文件逐字节匹配。固定安装位于 `/workspace/opt/grokbox/releases/18e3e69624b24679f19fd341975a09fbd055eb6a`，5244 个生产依赖文件和 84 个链接核对一致且闭包留在安装目录内。最初字节比较拒绝的暂存目录与回执另行保留。
+
+独立安装从 `/tmp`、隔离配置根启动：管理/模型 HTTP200、无凭据401、Web200、CLI 配置校验和 modeld ready 均通过；烟测进程完整退出并自行清理 socket。没有连接实际 Host、发布新 profile、切换现场服务或全局 shim。19:42 UTC 的实际只读回查仍为 schema4、models3、12 个绑定、desired disabled；原操作保持 unknown，合计六条 unknown、46 条 terminal、无 running/reserved。modeld 原 epoch 保持 ready/wire8，accepted/completed/active 均为零。A/B/C、真实 provider/DM/tool/compact/follow-up 和官方退出验收继续未执行。**源码与安装资格闭合没有补齐原操作的历史创建关系；AH-124 仍保持 In Progress，现场恢复仍为 BLOCKED / bounded UNPROVEN。**
