@@ -49,7 +49,11 @@ describe("modeld C1 credentials", () => {
     const dir = await tmpDir();
     const file = join(dir, "cmd");
     await writeFile(file, `${command}\n`, { mode: 0o600 });
-    await expect(materializeApiKeyRef(`file:${file}`, {})).rejects.toMatchObject({ code: "credential_invalid" });
+    const failure = await materializeApiKeyRef(`file:${file}`, {}).catch(error => error);
+    expect(failure).toMatchObject({ code: "credential_invalid",
+      message: "Referenced file credential holds a command reference, not a secret." });
+    expect(failure.message).not.toContain(file);
+    expect(failure.message).not.toContain(command);
   });
 
   test("file hit/miss/too-large/non-regular; env and file fingerprint the same trimmed payload", async () => {

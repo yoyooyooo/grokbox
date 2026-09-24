@@ -35,9 +35,9 @@ import { modelsPath } from "./paths.ts";
  *   symlinks fail as non-regular (`ELOOP` / `!isFile`).
  * - `fingerprintSecret` is SHA-256 hex of the trimmed secret. Fingerprint never
  *   returns or logs the secret. Pin/IPC/parts receive only the hex.
- * - OpenAI `resolveApiKey` **re-reads** through this same Effect (no pin-scoped
- *   secret cache). Pin-time fingerprint and complete-time materialization can
- *   diverge if the env/file changes between them.
+ * - Direct materialization re-reads through this Effect. BackendAuth pins the
+ *   trimmed secret in a root-local, Scope-owned lease; verify re-reads its
+ *   fingerprint before dispatch, and release clears the pinned secret.
  */
 export const CREDENTIAL_SECRET_MAX_BYTES = 4 * 1024;
 
@@ -182,7 +182,7 @@ function readSecretFile(path: string): Effect.Effect<string, BoxRuntimeError> {
       if (secret === null) {
         return yield* Effect.fail(new BoxRuntimeError("credential_invalid", "Referenced file credential is empty."));
       }
-      return yield* rejectCommandFormSecret(secret);
+      return yield* rejectCommandFormSecret(secret, "file");
     }),
     (file) => Effect.promise(() => file.close().then(() => undefined, () => undefined)),
   );
