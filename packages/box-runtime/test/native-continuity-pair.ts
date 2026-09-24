@@ -1,7 +1,7 @@
 /** Independent expected bytes for the explicit isolated native qualification.
  * Advancing this expectation does not alter the production admission tuple. */
 const CURRENT = Object.freeze({
-  host: "f0eb3e68086cffb6d6da99205f59ad83e73adc851d7179f973277b729df689a9",
+  host: "c3617a47ced5323278912ac779fd312baf07d68873b178298ac5b20066e3248c",
   worker: "96c32f4dd4e99f91576a720f88b4e24281212faf76b341709b83bce2502f71a2",
   schema: "native-checkpoint-proto-20260918",
 });

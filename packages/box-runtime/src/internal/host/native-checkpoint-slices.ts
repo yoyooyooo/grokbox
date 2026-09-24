@@ -28,7 +28,7 @@ export const NATIVE_CHECKPOINT_HOST_SLICES: readonly SlicePatch[] = [
   {
     id: "continuity-native-blob-owner",
     startAnchor: "var WorkerBlobStore = class {",
-    endAnchor: "// src/host/extensions/session/session-store-factories.ts\nvar import_node_path137 =",
+    endAnchor: "// src/host/extensions/session/session-store-factories.ts\nvar import_node_path138 =",
     find: "  async getBlob(_ctx, blobId) {\n",
     replacement: `  async grokboxCurrentState(action, payload) {
     if (!["capture", "compose", "prepare", "apply", "observe", "release"].includes(action)) throw new Error("grokbox_checkpoint_action_invalid");

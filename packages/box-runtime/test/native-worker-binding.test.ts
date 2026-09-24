@@ -2,7 +2,8 @@ import { expect, test } from "bun:test";
 import { build } from "esbuild";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, writeFile, symlink, rm, readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, posix, resolve } from "node:path";
+import { runInNewContext } from "node:vm";
 import { tmpdir } from "node:os";
 import { transformNativeCheckpointWorker } from "../src/internal/host/native-checkpoint-worker-hook.ts";
 import { nativeCheckpointPair } from "../src/internal/host/native-checkpoint-pair.ts";
@@ -13,6 +14,7 @@ import { CONT_NATIVE_PAIR, nativeContinuityEnabled } from "./native-continuity-c
 import { HOST_RECIPE } from "../src/internal/host/source-recipes.ts";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import { readNativeSource, nativeWindowEnv } from "./native-host-source.ts";
+import { NATIVE_CURRENT_STATE_SYMBOL } from "../src/internal/host/native-current-state-owner.ts";
 
 const nativeTest = test.skipIf(!nativeContinuityEnabled());
 const repository = resolve(import.meta.dir, "../../..");
@@ -69,6 +71,35 @@ nativeTest("explicit current-state upgrade preserves its baseline and measures t
   expect(parseEnvelopeWindows(windows).slices.length).toBeGreaterThan(26);
   expect(envelopeProfileShape({ ...profile, slices: profile.slices.filter(s => s.id !== "continuity-native-run-fence") })).toBe(false);
 }, 30000);
+
+nativeTest("current native session registration uses the materialization owner's path binding", async () => {
+  const source = readNativeSource("source").toString("utf8");
+  expect(sha256Bytes(new TextEncoder().encode(source))).toBe(CONT_NATIVE_PAIR.host);
+  const slice = HOST_RECIPE.currentState.find(value => value.id === "continuity-native-session-owner")!;
+  const start = source.indexOf(slice.startAnchor), end = source.indexOf(slice.endAnchor, start);
+  expect(start).toBeGreaterThan(-1); expect(end).toBeGreaterThan(start);
+  expect(source.indexOf(slice.startAnchor, start + slice.startAnchor.length)).toBe(-1);
+  const pathBindings = [...new Set(source.slice(start, end).match(/\bimport_node_path\d+(?=\.)/g))];
+  expect(pathBindings).toHaveLength(1);
+  const memory = {}, store = {}, db = { isClosed: false }, ctx = {};
+  let directory: unknown, registration: any;
+  const globals: Record<PropertyKey, unknown> = { Symbol, agentId: "owned-agent", agentStore: store, db,
+    dbPath: "/owned/agent/store.db", SAND_CONVERSATION_ROOT_SLOT_ID: "owned-root", [pathBindings[0]!]: posix,
+    [Symbol.for(NATIVE_CURRENT_STATE_SYMBOL)]: { deferMaintenance: () => true, register: (id: string, value: unknown) => {
+      expect(id).toBe("owned-agent"); registration = value;
+    } },
+  };
+  const register = runInNewContext(`(async function(){${slice.replacement}})`, globals,
+    { timeout: 1000, contextCodeGeneration: { strings: false, wasm: false } });
+  await register.call({ host: { ctx, maintenanceHost: () => ({}), memory: () => ({
+    createAgentStore: (path: unknown) => { directory = path; return memory; },
+  }) } });
+  expect(directory).toBe("/owned/agent");
+  expect(registration.store).toBe(store); expect(registration.metadata).toBe(db); expect(registration.ctx).toBe(ctx);
+  expect(registration.material.memory).toBe(memory); expect(registration.material.history).toBe(db);
+  expect(registration.source.hostSourceSha).toBe(CONT_NATIVE_PAIR.host);
+  expect(registration.valid()).toBe(true); db.isClosed = true; expect(registration.valid()).toBe(false);
+});
 
 nativeTest("actual original worker threads persist their own transactions, receipts and preparation fence", async () => {
   const root = await mkdtemp(join(tmpdir(), "grokbox-original-worker-"));

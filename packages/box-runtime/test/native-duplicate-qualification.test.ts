@@ -37,12 +37,12 @@ function fixture(patched = false) {
     const patch = HOST_RECIPE.currentState.find(slice => slice.id === "continuity-native-duplicate-identity")!;
     originals[3] = originals[3]!.replace(patch.find, patch.replacement);
   }
-  const globals = { import_node_fs79: {
+  const globals = { import_node_fs80: {
     mkdirSync: () => undefined,
     existsSync: (p: string) => files.has(p),
     copyFileSync: (a: string,b: string) => { if (!files.has(a)) throw Error("fake-file-missing"); recorded.push(`copy:${a}`); files.set(b, files.get(a)!); },
     rmSync: () => { recorded.push("rollback"); },
-  }, import_node_path128: posix, STORE_FILENAME: "store.db", CANONICAL_AVATAR_FILENAME: "avatar.png", AUTOMATION_CONFIG_FILENAME2: "automation.json",
+  }, import_node_path129: posix, STORE_FILENAME: "store.db", CANONICAL_AVATAR_FILENAME: "avatar.png", AUTOMATION_CONFIG_FILENAME2: "automation.json",
     checkpointSandAgentDb: (path: string) => { recorded.push(`checkpoint:${path}`); },
     getSandProfilePath: (p: string) => p + "/profile.json", getSandSettingsPath: (p: string) => p + "/settings.json",
     getAgentAutomationsDir: (p: string) => p + "/automations",
