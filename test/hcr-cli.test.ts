@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -39,14 +40,11 @@ test("operation recovery preview is read-only and remains box-local", async () =
     expect(remote.code).toBe(2);
     expect(await readdir(deps.boxRuntimeRoot)).toEqual([]);
     await mkdir(join(root, "run", "state"), { recursive: true });
-    const receipt = { version: 2, operationId: "original", physicallyRestored: true, adopted: false, replayAuthorized: false,
+    const receipt = { version: 3, operationId: "original", physicallyRestored: true, adopted: false, replayAuthorized: false, priorPreparationSha256: null,
       evidence: { ownerClaim: "d".repeat(64), operations: "a".repeat(64), journal: "b".repeat(64), marker: "c".repeat(64), attestation: null, archivedJournal: "b".repeat(64), archivedMarker: "c".repeat(64) },
       proof: { kind: "exact-lifetime-absence", observedAt: new Date().toISOString(), qualificationSha256: null, observationSha256: null },
       chain: { wrapper: { pid: 11, start: 1, uid: 1000, ppid: 1 }, supervisor: { pid: 12, start: 2, uid: 1000, ppid: 11 }, host: { pid: 13, start: 3, uid: 1000, ppid: 12 } }, gatewayPid: 13 };
-    const pending = JSON.stringify({ ...receipt, physicallyRestored: false, publication: "prepared" });
-    await writeFile(join(root, "run", "state", "adopt-restoration-original.json"), pending);
-    const { createHash } = await import("node:crypto");
-    await writeFile(join(root, "run", "state", "adopt-restoration-original.json.complete.json"), JSON.stringify({ version: 2, operationId: "original", publication: "complete", receiptSha256: createHash("sha256").update(pending).digest("hex") }));
+    await writeFile(join(root, "run", "state", "adopt-restoration-original.json.complete.json"), JSON.stringify({ version: 3, operationId: "original", publication: "complete", receiptSha256: sha256Text(canonicalJson(receipt)), receipt }));
     const recorded = await captureCli(["runtime", "operation-recovery", "--restore-operation", "original", "--json"], deps);
     expect(recorded.code, recorded.stderr).toBe(0);
     expect(JSON.parse(recorded.stdout).data).toMatchObject({ outcome: "recorded", restorationHistorical: true, restoration: receipt, replayAuthorized: false });

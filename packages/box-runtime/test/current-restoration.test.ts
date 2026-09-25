@@ -4,9 +4,9 @@ import { acquireCurrentRestorationPorts } from "../src/internal/process/current-
 import { startModeldProcess } from "../src/internal/roots/modeld.runtime.ts";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { sha256Text } from "@grokbox/runtime-kernel/hash";
+import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { recoverControllerOperationState } from "../src/internal/roots/controller-program.node.ts";
-import { restorationSnapshot, restorationReceiptPath } from "../src/internal/process/restoration-proof.ts";
+import { restorationSnapshot, restorationReceiptPath, restorationCompletionPath } from "../src/internal/process/restoration-proof.ts";
 import { unresolvedAdoption, writeAdoptionOwner } from "../src/internal/process/adopt-evidence.ts";
 
 import { currentRestorationFixture as fixture } from "./current-restoration-fixture.ts";
@@ -17,7 +17,7 @@ for (const replacement of [false, true]) test(`qualified ${replacement ? "exec r
   expect(unresolvedAdoption(f.runRoot)).toBe("original");
   const result = await recoverControllerOperationState(f.input, f.ports);
   expect(result).toMatchObject({ outcome: "restored", operations: { unknown: 2 }, adopted: false, signaled: false, replayAuthorized: false });
-  expect(f.reads()).toBe(3); expect(unresolvedAdoption(f.runRoot)).toBeNull();
+  expect(f.reads()).toBe(2); expect(unresolvedAdoption(f.runRoot)).toBeNull();
   expect(await Promise.all(f.files.map(path => readFile(path)))).toEqual(before);
   for (const path of [join(f.runRoot, "state", "adoption-owner.json"), join(f.runRoot, "state", "adoptions", "original", "journal.json")]) expect(restorationSnapshot(path, true).bytes).toBeNull();
   await writeAdoptionOwner(f.runRoot, "new-id", "unresolved"); expect(unresolvedAdoption(f.runRoot)).toBe("new-id");
@@ -46,7 +46,7 @@ for (const fault of ["lock", "preload", "relevant-fd", "image", "library", "fd",
     f.q.original[fault === "creation" ? "journal" : "marker"] = restorationSnapshot(path).sha256!;
   }
   await f.save();
-  if (fault === "modeld-appears-final") { let checks = 0; f.ports.current!.assertModeldAbsent = () => { if (++checks === 8) throw Error("modeld appeared before completion"); }; }
+  if (fault === "modeld-appears-final") { let checks = 0; f.ports.current!.assertModeldAbsent = () => { if (++checks === 5) throw Error("modeld appeared before completion"); }; }
   if (["absent-owner-appears", "absent-archive-appears", "qualification-change", "census-change", "mount-change", "auxv-change", "modeld-appears"].includes(fault)) {
     let n = 0; const observe = f.ports.current!.observe;
     f.ports.current!.observe = async (...args) => {
@@ -93,7 +93,26 @@ for (const holdsRequiredResource of [false, true]) test(`unrelated process churn
   expect(await Promise.all(f.files.map(path => readFile(path)))).toEqual(before);
 });
 
-for (const conflict of [false, true]) test(`prepared current recovery ${conflict ? "preserves conflicting evidence" : "resumes exact bytes after an interrupted observation"}`, async () => {
+for (const restarted of [false, true]) test(`retained negative preparation does not freeze the current official chain: ${restarted}`, async () => {
+  const f = await fixture(true), initial = f.prepare().receipt;
+  const prior: Record<string, unknown> = { ...initial, version: 2, publication: "prepared", physicallyRestored: false };
+  delete prior.priorPreparationSha256;
+  const path = restorationReceiptPath(f.runRoot, "original"), bytes = Buffer.from(JSON.stringify(prior));
+  await writeFile(path, bytes, { mode: 0o600 });
+  expect(unresolvedAdoption(f.runRoot)).toBe("original");
+  if (restarted) {
+    const next = f.tree.spawn("host", { pid: f.host.pid, parent: f.ports.processes.inspect(initial.chain.supervisor!.pid)! });
+    f.observation.census.find(row => row.pid === next.pid)!.start = next.start;
+  }
+  const result = await recoverControllerOperationState(f.input, f.ports);
+  expect(result.outcome).toBe("restored");
+  expect(result.restoration?.priorPreparationSha256).toBe(sha256Text(bytes.toString()));
+  expect(await readFile(path)).toEqual(bytes);
+  expect(unresolvedAdoption(f.runRoot)).toBeNull();
+  expect(result.restoration?.chain.host!.start).toBe(f.ports.processes.inspect(f.host.pid)!.start);
+});
+
+test("failed precommit observation publishes no authority and allows fresh same-operation recovery", async () => {
   const f = await fixture(true), observe = f.ports.current!.observe;
   let reads = 0;
   f.ports.current!.observe = async (...args) => {
@@ -101,20 +120,11 @@ for (const conflict of [false, true]) test(`prepared current recovery ${conflict
     return observe(...args);
   };
   await expect(recoverControllerOperationState(f.input, f.ports)).rejects.toMatchObject({ code: "invalid_usage" });
-  const path = restorationReceiptPath(f.runRoot, "original"), prepared = await readFile(path);
-  expect(JSON.parse(prepared.toString()).physicallyRestored).toBe(false);
+  expect(restorationSnapshot(restorationCompletionPath(f.runRoot, "original"), true).bytes).toBeNull();
   expect(unresolvedAdoption(f.runRoot)).toBe("original");
   f.ports.current!.observe = observe;
-  if (conflict) {
-    f.q.qualifiedAt = "2000-01-01T00:00:00.000Z"; await f.save();
-    await expect(recoverControllerOperationState(f.input, f.ports)).rejects.toMatchObject({ code: "invalid_usage" });
-    expect(unresolvedAdoption(f.runRoot)).toBe("original");
-    expect(restorationSnapshot(`${path}.complete.json`, true).bytes).toBeNull();
-  } else {
-    expect((await recoverControllerOperationState(f.input, f.ports)).outcome).toBe("restored");
-    expect(unresolvedAdoption(f.runRoot)).toBeNull();
-  }
-  expect(await readFile(path)).toEqual(prepared);
+  expect((await recoverControllerOperationState(f.input, f.ports)).outcome).toBe("restored");
+  expect(unresolvedAdoption(f.runRoot)).toBeNull();
 });
 
 for (const message of ["restoration-observation-unproved", "restoration-observation-unproved-at-observe-line-369-errno-13-pid-1", "private-input-value-must-not-escape"]) test(`recovery exposes only a fixed diagnostic code: ${message.startsWith("restoration-")}`, async () => {
@@ -124,7 +134,7 @@ for (const message of ["restoration-observation-unproved", "restoration-observat
   expect(error.code).toBe("invalid_usage");
   if (message.startsWith("restoration-")) expect(error.message).toContain(message);
   else expect(error.message).not.toContain(message);
-  expect(restorationSnapshot(restorationReceiptPath(f.runRoot, "original"), true).bytes).toBeNull();
+  expect(restorationSnapshot(restorationCompletionPath(f.runRoot, "original"), true).bytes).toBeNull();
   expect(unresolvedAdoption(f.runRoot)).toBe("original");
 });
 
@@ -139,7 +149,7 @@ test("current observation cancellation joins work before releasing recovery gate
   const competitor = await recoverControllerOperationState(f.input, f.ports);
   expect(competitor.reason).toBe("operation_busy");
   release(); await expect(work).rejects.toMatchObject({ code: "invalid_usage" });
-  expect(restorationSnapshot(restorationReceiptPath(f.runRoot, "original"), true).bytes).toBeNull();
+  expect(restorationSnapshot(restorationCompletionPath(f.runRoot, "original"), true).bytes).toBeNull();
   expect((await recoverControllerOperationState(f.input, f.ports)).outcome).toBe("restored");
 });
 
@@ -177,9 +187,23 @@ for (const role of ["guardian", "delegatedTools"] as const) test(`qualified unkn
 test("nonmatching completed publication never discharges missing original evidence", async () => {
   const f = await fixture();
   expect((await recoverControllerOperationState(f.input, f.ports)).outcome).toBe("restored");
-  await writeFile(`${restorationReceiptPath(f.runRoot, "original")}.complete.json`, JSON.stringify({ version: 2, operationId: "original", publication: "complete", receiptSha256: "b".repeat(64) }));
+  const path = restorationCompletionPath(f.runRoot, "original"), completed = JSON.parse(await readFile(path, "utf8"));
+  completed.receiptSha256 = "b".repeat(64); await writeFile(path, JSON.stringify(completed));
   expect(unresolvedAdoption(f.runRoot)).toBe("original");
   expect((await recoverControllerOperationState({ ...f.input, confirm: false }, f.ports)).reason).toBe("restoration-receipt-unavailable");
+});
+
+test("retired paired completion is retained without current authority", async () => {
+  const f = await fixture();
+  const result = await recoverControllerOperationState(f.input, f.ports);
+  const prior: Record<string, unknown> = { ...result.restoration!, version: 2, publication: "prepared", physicallyRestored: false };
+  delete prior.priorPreparationSha256;
+  const bytes = JSON.stringify(prior);
+  await writeFile(restorationReceiptPath(f.runRoot, "original"), bytes);
+  await writeFile(restorationCompletionPath(f.runRoot, "original"), JSON.stringify({ version: 2, operationId: "original", publication: "complete", receiptSha256: sha256Text(bytes) }));
+  expect((await recoverControllerOperationState({ ...f.input, confirm: false }, f.ports)).reason).toBe("restoration-receipt-unavailable");
+  expect(unresolvedAdoption(f.runRoot)).toBe("original");
+  expect(await readFile(restorationReceiptPath(f.runRoot, "original"), "utf8")).toBe(bytes);
 });
 
 test("captured marker clock cannot replace the independently qualified causal endpoint", async () => {
@@ -193,10 +217,10 @@ test("captured marker clock cannot replace the independently qualified causal en
 test("historical current-proof inspection never emits unexpected raw evidence fields", async () => {
   const f = await fixture();
   expect((await recoverControllerOperationState(f.input, f.ports)).outcome).toBe("restored");
-  const path = restorationReceiptPath(f.runRoot, "original"), row = JSON.parse(await readFile(path, "utf8"));
-  row.evidence.raw = "PRIVATE_FIXTURE_BODY";
-  const bytes = JSON.stringify(row); await writeFile(path, bytes);
-  await writeFile(`${path}.complete.json`, JSON.stringify({ version: 2, operationId: "original", publication: "complete", receiptSha256: sha256Text(bytes) }));
+  const path = restorationCompletionPath(f.runRoot, "original"), completed = JSON.parse(await readFile(path, "utf8"));
+  completed.receipt.evidence.raw = "PRIVATE_FIXTURE_BODY";
+  completed.receiptSha256 = sha256Text(canonicalJson(completed.receipt));
+  await writeFile(path, JSON.stringify(completed));
   const result = await recoverControllerOperationState({ ...f.input, confirm: false }, f.ports);
   expect(result.reason).toBe("restoration-receipt-unavailable");
   expect(JSON.stringify(result)).not.toContain("PRIVATE_FIXTURE_BODY");
@@ -248,10 +272,10 @@ test("retired live-modeld qualification and completed-proof shape grant no autho
   expect((await recoverControllerOperationState(f.input, f.ports)).reason).toBe("restoration-evidence-unproven");
   f.q.resources.modeld = { kind: "absent", owners: [], socketPath: join(f.runRoot, "modeld.sock") }; await f.save();
   expect((await recoverControllerOperationState(f.input, f.ports)).outcome).toBe("restored");
-  const path = restorationReceiptPath(f.runRoot, "original"), row = JSON.parse(await readFile(path, "utf8"));
-  row.proof.kind = "qualified-current-retirement";
-  const bytes = JSON.stringify(row); await writeFile(path, bytes);
-  await writeFile(`${path}.complete.json`, JSON.stringify({ version: 2, operationId: "original", publication: "complete", receiptSha256: sha256Text(bytes) }));
+  const path = restorationCompletionPath(f.runRoot, "original"), completed = JSON.parse(await readFile(path, "utf8"));
+  completed.receipt.proof.kind = "qualified-current-retirement";
+  completed.receiptSha256 = sha256Text(canonicalJson(completed.receipt));
+  await writeFile(path, JSON.stringify(completed));
   expect((await recoverControllerOperationState({ ...f.input, confirm: false }, f.ports)).reason).toBe("restoration-receipt-unavailable");
   expect(unresolvedAdoption(f.runRoot)).toBe("original");
 });

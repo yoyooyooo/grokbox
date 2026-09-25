@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { acquireOperationLease } from "../src/internal/io/operation-lease.node.ts";
 import { recoverControllerOperationState } from "../src/internal/roots/controller-program.node.ts";
-import { prepareOriginalRestoration, restorationReceiptPath, type RestorationPorts } from "../src/internal/process/adopt-restoration.ts";
+import { prepareOriginalRestoration, restorationSnapshot, restorationReceiptPath, restorationCompletionPath, type RestorationPorts } from "../src/internal/process/adopt-restoration.ts";
 import { adoptionEvidencePath, unresolvedAdoption, writeAdoptionOwner } from "../src/internal/process/adopt-evidence.ts";
 import { FakeProcessTree } from "./fake-tree.ts";
 
@@ -60,7 +60,7 @@ test("connected recovery publishes only original-operation restoration; all six 
   expect((await observeHostCompilation(f.root, f.runRoot, f.oldHost.cmdline[1]!, { inspect: () => null })).state).toBe("historical");
   expect(result).toMatchObject({ outcome: "restored", adopted: false, signaled: false, replayAuthorized: false,
     clearedLocks: 0, markedUnknown: 0, operations: { unknown: 6 }, restoration: { operationId: "original", physicallyRestored: true } });
-  expect(JSON.parse(await readFile(restorationReceiptPath(f.runRoot, "original"), "utf8"))).toEqual({ ...result.restoration, physicallyRestored: false, publication: "prepared" });
+  expect(JSON.parse(await readFile(restorationCompletionPath(f.runRoot, "original"), "utf8")).receipt).toEqual(result.restoration);
   const historical = await recoverControllerOperationState({ ...f.input, confirm: false }, {
     ...f.ports, gatewayPid: () => { throw Error("historical receipt inspection must not observe live Gateway"); },
   });
@@ -118,7 +118,7 @@ test("concurrent original-operation recovery has at most one receipt publisher",
 
 
 test("public recovery inspection refuses a malformed historical receipt without changing evidence", async () => {
-  const f = await fixture(), path = restorationReceiptPath(f.runRoot, "original");
+  const f = await fixture(), path = restorationCompletionPath(f.runRoot, "original");
   await writeFile(path, JSON.stringify({ operationId: "original", physicallyRestored: true, raw: "excluded-fixture-output" }));
   const before = await Promise.all([...f.files, path].map(file => readFile(file)));
   const result = await recoverControllerOperationState({ ...f.input, confirm: false }, f.ports);
@@ -149,18 +149,17 @@ for (const source of ["contradictory-child", "exec-changed-child", "missing-crea
   expect(await Promise.all(f.files.map(path => readFile(path)))).toEqual(before);
 });
 
-test("failed post-link proof remains incomplete through public historical inspection", async () => {
+test("failed final proof publishes no authority and does not freeze a later fresh recovery", async () => {
   const f = await fixture(); let reads = 0;
   f.ports.gatewayPid = () => ++reads <= 2 ? f.host.pid : null;
   await expect(recoverControllerOperationState(f.input, f.ports)).rejects.toMatchObject({ code: "invalid_usage" });
   expect(reads).toBe(3);
-  const path = restorationReceiptPath(f.runRoot, "original"), preserved = await readFile(path);
-  expect(JSON.parse(preserved.toString())).toMatchObject({ publication: "prepared", physicallyRestored: false });
+  const path = restorationCompletionPath(f.runRoot, "original");
+  expect(restorationSnapshot(path, true).bytes).toBeNull();
   const historical = await recoverControllerOperationState({ ...f.input, confirm: false }, f.ports);
   expect(historical).toMatchObject({ outcome: "blocked", operations: { unknown: 6 }, replayAuthorized: false });
   expect(historical.restoration).toBeUndefined(); expect(reads).toBe(3);
-  expect(await readFile(path)).toEqual(preserved);
-  await expect(recoverControllerOperationState(f.input, { ...f.ports, gatewayPid: () => f.host.pid })).rejects.toMatchObject({ code: "invalid_usage" });
+  expect((await recoverControllerOperationState(f.input, { ...f.ports, gatewayPid: () => f.host.pid })).outcome).toBe("restored");
 });
 
 

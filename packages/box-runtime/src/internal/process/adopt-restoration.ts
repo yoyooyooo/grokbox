@@ -4,16 +4,16 @@ import { constants, closeSync, fsyncSync, openSync, readSync, linkSync, writeFil
 import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { sha256Bytes, sha256Text } from "@grokbox/runtime-kernel/hash";
+import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { attestationPath } from "../io/authority.node.ts";
 import { adoptOpStatePath, parseAdoptOpState } from "./transient-adopt.ts";
 import { findUniqueOfficialChain, type RoleClassifier } from "./official-chain.ts";
 import type { ProcessPort } from "./process-port.ts";
 
-import { restorationSnapshot, restorationReceiptPath, readCompletedRestoration, validateCompletedRestoration, type RestorationReceipt, type OriginalEvidence } from "./restoration-proof.ts";
+import { restorationSnapshot, restorationReceiptPath, restorationCompletionPath, readCompletedRestoration, validateCompletedRestoration, type RestorationReceipt, type OriginalEvidence } from "./restoration-proof.ts";
 import { parseCurrentRestorationQualification, validateRetirementObservation, type CurrentRestorationQualification } from "./current-restoration.ts";
 import type { RetirementObserver } from "./retirement-observer.node.ts";
-export { restorationSnapshot, restorationReceiptPath } from "./restoration-proof.ts";
+export { restorationSnapshot, restorationReceiptPath, restorationCompletionPath } from "./restoration-proof.ts";
 export type CurrentRestorationPorts = RetirementObserver & { recoveryOwner: { pid: number; start: number }; assertModeldAbsent: () => void };
 
 export type RestorationPorts = {
@@ -49,6 +49,7 @@ export function prepareOriginalRestoration(input: {
   const evidence: OriginalEvidence = { operations: sources[0]!.sha256!, journal: sources[1]!.sha256!, marker: sources[2]!.sha256!,
     attestation: sources[3]!.sha256, ownerClaim: ownerClaim.sha256, archivedJournal: archivedJournal.sha256, archivedMarker: archivedMarker.sha256 };
   let qualification: CurrentRestorationQualification | undefined;
+  let qualificationSha256: string | null = null;
   if (input.qualificationPath) {
     const qualified = restorationSnapshot(input.qualificationPath);
     if (!qualified.bytes || (qualified.identity![5]! & 0o077) !== 0) throw Error("restoration-qualification-unprotected");
@@ -61,6 +62,7 @@ export function prepareOriginalRestoration(input: {
       || [journal.tempSupervisor.pid, marker.pid].includes(qualification.hostScope.upper.pid)) throw Error("restoration-qualified-scope-conflict");
     if (qualification.resources.modeld.socketPath !== join(input.runRoot, "modeld.sock")) throw Error("restoration-modeld-scope-conflict");
     if (![input.runRoot, dirname(dirname(input.storePath))].every(root => qualification!.resources.roots.includes(resolve(root)))) throw Error("restoration-resource-roots-incomplete");
+    qualificationSha256 = qualified.sha256;
     sources.push(qualified);
   }
   if (!qualification && (!archivedJournal.bytes || !archivedMarker.bytes || !ownerClaim.bytes)) throw Error("restoration-creation-provenance-unavailable");
@@ -144,6 +146,8 @@ export function prepareOriginalRestoration(input: {
     }
     return unique.chain;
   };
+  const priorPreparation = restorationSnapshot(restorationReceiptPath(input.runRoot, input.operationId), true);
+  sources.push(priorPreparation);
   const chain = observe();
   const recheck = () => {
     for (const source of sources) {
@@ -154,14 +158,15 @@ export function prepareOriginalRestoration(input: {
     if (!isDeepStrictEqual(observe(), chain)) throw new Error("restoration-chain-changed");
   };
   const receipt: RestorationReceipt = {
-    version: 2, operationId: input.operationId, physicallyRestored: true, adopted: false, replayAuthorized: false,
+    version: 3, operationId: input.operationId, physicallyRestored: true, adopted: false, replayAuthorized: false,
+    priorPreparationSha256: priorPreparation.sha256,
     evidence,
     proof: { kind: qualification ? "qualified-modeld-absent-retirement" : "exact-lifetime-absence", observedAt: new Date().toISOString(),
-      qualificationSha256: qualification ? sources.at(-1)!.sha256 : null, observationSha256: null },
+      qualificationSha256, observationSha256: null },
     chain: Object.fromEntries(Object.entries(chain).map(([role, row]) => [role, { pid: row.pid, start: row.start, uid: row.uid, ppid: row.ppid }])),
     gatewayPid: chain.host.pid,
   };
-  const path = restorationReceiptPath(input.runRoot, input.operationId);
+  const path = restorationCompletionPath(input.runRoot, input.operationId);
   const verify = async (current?: CurrentRestorationPorts) => {
     recheck();
     if (qualification) {
@@ -181,48 +186,26 @@ export function prepareOriginalRestoration(input: {
     cancelled();
     if (qualification) await verify(current);
     await recheckOwnership(); cancelled();
-    // A prepared record is negative evidence. Resume its exact bytes only when
-    // fresh proof, original evidence, qualification and official chain all agree.
-    const previous = restorationSnapshot(path, true);
-    let bytes: Buffer;
-    if (previous.bytes) {
-      const prior = JSON.parse(previous.bytes.toString());
-      const observedAt = prior?.proof?.observedAt;
-      const expected = { ...receipt, publication: "prepared", physicallyRestored: false };
-      if (typeof observedAt !== "string" || !Number.isFinite(Date.parse(observedAt)) || Date.parse(observedAt) > Date.now()
-        || !isDeepStrictEqual({ ...prior, proof: { ...prior.proof, observedAt: receipt.proof.observedAt } }, expected)) {
-        throw Error("restoration-preparation-conflict");
-      }
-      receipt.proof.observedAt = observedAt;
-      bytes = previous.bytes;
-    } else {
-      const staging = `${path}.${randomUUID()}.tmp`;
-      bytes = Buffer.from(`${JSON.stringify({ ...receipt, publication: "prepared", physicallyRestored: false })}\n`);
-      const fd = openSync(staging, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-      try { writeFileSync(fd, bytes); fsyncSync(fd); } finally { closeSync(fd); }
-      cancelled(); current?.assertModeldAbsent(); recheck();
-      linkSync(staging, path);
-    }
+    // The only authority is one complete, self-contained record linked after
+    // fresh checks. Earlier prepared records remain untouched historical evidence.
+    const staging = `${path}.${randomUUID()}.tmp`;
+    const completed = { version: 3, operationId: input.operationId, publication: "complete",
+      receiptSha256: sha256Text(canonicalJson(receipt)), receipt };
+    const bytes = Buffer.from(`${JSON.stringify(completed)}\n`);
+    const fd = openSync(staging, constants.O_RDWR | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    try {
+      writeFileSync(fd, bytes); fsyncSync(fd);
+      const readBack = Buffer.alloc(bytes.length);
+      if (readSync(fd, readBack, 0, readBack.length, 0) !== bytes.length || !readBack.equals(bytes)) throw Error("restoration-completion-unproven");
+    } finally { closeSync(fd); }
     const directory = openSync(dirname(path), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
     try { fsyncSync(directory); } finally { closeSync(directory); }
-    if (!restorationSnapshot(path).bytes?.equals(bytes)) throw new Error("restoration-readback-unproven");
-    await verify(current);
-    // Preparation, durable pending receipt, readback and final proof all precede
-    // the sole completion commit. A crash before this link remains unknown.
-    const completionPath = `${path}.complete.json`, completionStaging = `${completionPath}.${randomUUID()}.tmp`;
-    const completed = Buffer.from(`${JSON.stringify({ version: 2, operationId: input.operationId, publication: "complete", receiptSha256: sha256Bytes(bytes) })}\n`);
-    const completeFd = openSync(completionStaging, constants.O_RDWR | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-    try {
-      writeFileSync(completeFd, completed); fsyncSync(completeFd);
-      const readBack = Buffer.alloc(completed.length);
-      if (readSync(completeFd, readBack, 0, readBack.length, 0) !== completed.length || !readBack.equals(completed)) throw Error("restoration-completion-unproven");
-    } finally { closeSync(completeFd); }
     await verify(current);
     await recheckOwnership();
     cancelled(); current?.assertModeldAbsent(); recheck();
-    validateCompletedRestoration(JSON.parse(bytes.toString()), JSON.parse(completed.toString()), input.operationId, sha256Bytes(bytes));
+    validateCompletedRestoration(JSON.parse(bytes.toString()), input.operationId);
     // No fallible post-publication work can relabel an incomplete proof as complete.
-    linkSync(completionStaging, completionPath);
+    linkSync(staging, path);
     return receipt;
   } };
 }

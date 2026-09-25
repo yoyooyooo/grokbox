@@ -43,5 +43,5 @@ export async function currentRestorationFixture(replacement = false) {
     current: { recoveryOwner: ref(wrapper), assertModeldAbsent: () => {}, observe: async () => { reads++; return structuredClone(observation); } } };
   const input = { boxRoot: root, ephemeralRoot: runRoot, confirm: true, restoreOperation: "original", restorationQualification: qualificationPath };
   const prepare = () => prepareOriginalRestoration({ operationId: "original", runRoot, storePath: files[0]!, expectedOperation: original, ports, qualificationPath });
-  return { root, runRoot, files, q, observation, ports, input, save, prepare, reads: () => reads, candidate, markerHost, journal };
+  return { root, runRoot, files, q, observation, ports, input, save, prepare, reads: () => reads, candidate, markerHost, journal, tree, host };
 }

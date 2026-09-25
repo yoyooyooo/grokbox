@@ -1,7 +1,7 @@
 import { constants, closeSync, fstatSync, lstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
+import { canonicalJson, sha256Bytes, sha256Text } from "@grokbox/runtime-kernel/hash";
 
 export type Lifetime = { pid: number; start: number };
 export type OriginalEvidence = { operations: string; journal: string; marker: string; attestation: string | null;
@@ -16,6 +16,7 @@ export function restorationOperationId(id: string) {
   return id;
 }
 export const restorationReceiptPath = (root: string, id: string) => join(root, "state", `adopt-restoration-${restorationOperationId(id)}.json`);
+export const restorationCompletionPath = (root: string, id: string) => `${restorationReceiptPath(root, id)}.complete.json`;
 
 /** Missing optional bytes are a fact. EACCES, symlinks and changed files are not absence. */
 export function restorationSnapshot(path: string, optional = false) {
@@ -39,7 +40,8 @@ export function restorationSnapshot(path: string, optional = false) {
 }
 
 export type RestorationReceipt = {
-  version: 2; operationId: string; physicallyRestored: true; adopted: false; replayAuthorized: false;
+  version: 3; operationId: string; physicallyRestored: true; adopted: false; replayAuthorized: false;
+  priorPreparationSha256: string | null;
   evidence: OriginalEvidence;
   proof: { kind: "exact-lifetime-absence" | "qualified-modeld-absent-retirement"; observedAt: string;
     qualificationSha256: string | null; observationSha256: string | null };
@@ -49,11 +51,9 @@ export type RestorationReceipt = {
 /** One completed negative-proof parser for historical inspection and the resource fence.
  * This receipt is never an adoption completion claim or permission to replay. */
 export function readCompletedRestoration(root: string, id: string, currentEvidence = false): RestorationReceipt | null {
-  const snapshot = restorationSnapshot(restorationReceiptPath(root, id), true);
+  const snapshot = restorationSnapshot(restorationCompletionPath(root, id), true);
   if (!snapshot.bytes) return null;
-  const completion = restorationSnapshot(`${snapshot.path}.complete.json`, true);
-  if (!completion.bytes || completion.bytes.length > 1024) throw Error("restoration-publication-incomplete");
-  const receipt = validateCompletedRestoration(JSON.parse(snapshot.bytes.toString()), JSON.parse(completion.bytes.toString()), id, snapshot.sha256!);
+  const receipt = validateCompletedRestoration(JSON.parse(snapshot.bytes.toString()), id);
   const e = receipt.evidence;
   if (currentEvidence) {
     const paths = { journal: join(root, "state", "adopt-op.json"), marker: join(root, "state", "preload-marker.json"),
@@ -62,22 +62,25 @@ export function readCompletedRestoration(root: string, id: string, currentEviden
     for (const [key, path] of Object.entries(paths)) {
       if (restorationSnapshot(path, e[key as keyof OriginalEvidence] === null).sha256 !== e[key as keyof OriginalEvidence]) throw Error("restoration-evidence-conflict");
     }
+    if (restorationSnapshot(restorationReceiptPath(root, id), receipt.priorPreparationSha256 === null).sha256 !== receipt.priorPreparationSha256) throw Error("restoration-evidence-conflict");
   }
   return receipt;
 }
 
-export function validateCompletedRestoration(row: any, completed: any, id: string, receiptSha256: string): RestorationReceipt {
+export function validateCompletedRestoration(completed: any, id: string): RestorationReceipt {
+  const row = completed?.receipt;
   const keys = (value: unknown, expected: string[]) => !!value && typeof value === "object" && !Array.isArray(value)
     && Object.keys(value).sort().join(",") === expected.sort().join(",");
-  if (!keys(row, ["version", "operationId", "physicallyRestored", "publication", "adopted", "replayAuthorized", "evidence", "proof", "chain", "gatewayPid"])
-    || !keys(completed, ["version", "operationId", "publication", "receiptSha256"])
+  if (!keys(completed, ["version", "operationId", "publication", "receiptSha256", "receipt"])
+    || !keys(row, ["version", "operationId", "physicallyRestored", "adopted", "replayAuthorized", "priorPreparationSha256", "evidence", "proof", "chain", "gatewayPid"])
     || !keys(row.evidence, ["operations", "journal", "marker", "attestation", "ownerClaim", "archivedJournal", "archivedMarker"])
     || !keys(row.proof, ["kind", "observedAt", "qualificationSha256", "observationSha256"])
     || !keys(row.chain, ["wrapper", "supervisor", "host"])) throw Error("restoration-receipt-invalid");
-  if (completed.version !== 2 || completed.operationId !== id || completed.publication !== "complete"
-    || completed.receiptSha256 !== receiptSha256) throw Error("restoration-publication-incomplete");
+  if (completed.version !== 3 || completed.operationId !== id || completed.publication !== "complete"
+    || completed.receiptSha256 !== sha256Text(canonicalJson(row))) throw Error("restoration-publication-incomplete");
   const e = row?.evidence, proof = row?.proof;
-  if (row?.version !== 2 || row.operationId !== id || row.physicallyRestored !== false || row.publication !== "prepared"
+  if (row?.version !== 3 || row.operationId !== id || row.physicallyRestored !== true
+    || !(row.priorPreparationSha256 === null || isDigest(row.priorPreparationSha256))
     || row.adopted !== false || row.replayAuthorized !== false || !e || !proof || !row.chain
     || ![e.operations, e.journal, e.marker].every(isDigest)
     || ![e.attestation, e.ownerClaim, e.archivedJournal, e.archivedMarker].every(value => value === null || isDigest(value))
@@ -94,6 +97,6 @@ export function validateCompletedRestoration(row: any, completed: any, id: strin
   }
   if (row.gatewayPid !== chain.host!.pid || chain.host!.ppid !== chain.supervisor!.pid
     || chain.supervisor!.ppid !== chain.wrapper!.pid) throw Error("restoration-receipt-invalid");
-  return { version: 2, operationId: id, physicallyRestored: true, adopted: false, replayAuthorized: false,
-    evidence: e, proof, chain, gatewayPid: row.gatewayPid };
+  return { version: 3, operationId: id, physicallyRestored: true, adopted: false, replayAuthorized: false,
+    priorPreparationSha256: row.priorPreparationSha256, evidence: e, proof, chain, gatewayPid: row.gatewayPid };
 }
