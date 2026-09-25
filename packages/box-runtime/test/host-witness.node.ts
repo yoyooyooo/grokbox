@@ -144,8 +144,7 @@ test("Server shutdown cancels the actual pending native metadata read and never 
 });
 
 test("execution withdrawal keeps observation; explicit observation withdrawal cancels reads without repairing attachment", async () => {
-  let enabled=true;
-  const f = await hostWitnessFixture("https://witness-disabled.example.test", {observationEnabled:()=>enabled});
+  const f = await hostWitnessFixture("https://witness-disabled.example.test");
   try { await current(f); await f.control("replace"); await until(() => observation(f), o => o?.snapshot?.capabilities[0]?.handles === "changed");
     await until(() => rows(f), r => r.some(row => row.status === "open"));
     const ids=(await rows(f)).filter(r=>r.status==="open").map(r=>r.id).sort(), before=f.probeState.calls;
@@ -153,7 +152,8 @@ test("execution withdrawal keeps observation; explicit observation withdrawal ca
     await until(async()=>f.probeState.calls,n=>n>before);
     assert.equal((await f.client().hostHealth()).data.state,"running");
     await f.control("delay",{ms:5000});const pending=f.probeState.calls;
-    await until(async()=>f.probeState.calls,n=>n>pending);enabled=false;
+    await until(async()=>f.probeState.calls,n=>n>pending);
+    config.ops={...config.ops,observation:{enabled:false}};await publishConfigFile(join(f.root,"config.json"),config);
     await until(() => f.client().hostHealth(), v => v.data.state === "disabled"); const count = f.probeState.calls;
     assert.ok(f.probeState.aborted>0);assert.equal(f.process.child.exitCode,null);
     await delay(120); assert.equal(f.probeState.calls, count); assert.equal((await f.client().hostHealth()).data.witness, null);
