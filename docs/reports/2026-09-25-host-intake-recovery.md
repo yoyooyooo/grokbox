@@ -40,6 +40,16 @@
 
 `8aeda5f9/0378b9f4` 的原生隔离组 40/0（native Node 22.14.0）、原生接收模型与持久化后切换两项通过；这些与 CLI 本身的声明 Bun/Node 验证分开。CLI 实际解析→原发布者的完整刷新、错误摘要拒绝、全部切片保留，以及 gate 内并发写入拒绝已测试。新绑定不是任意未来 Host 的资格；完整 Agent 自动修复/策略授权仍属原 AH-189/AH-190。
 
+## 真实采用与创建意图缺口
+
+`433184fb` 已固定安装并替换管理 Server/Web；原发布者完成 61 切片 source refresh，随后原 controller 对当前来源真实采用，返回 `alignment=verified`。这是该时点的运行事实，不是模型、DM 或未来来源保证；原恢复历史没有重跑。
+
+原 B 的旧计划是 Temporal，不能验证 Box-local modeld。正式原请求查询为 not_found、未曾提交后，在本窗口明确改为 Box/deferStart=true，保留原名/描述/requestId，重新 preview 后首次提交。原生返回明确 ID，回执 complete，但独立 readBack 为 Temporal/mismatch；这不是 A 的 unknown，也不能再提交 B 原请求。A 原未知、静默 C 和其余用户 Bot 没有被重放或改 harness。
+
+从实际原生创建方法追到出站口：显式 Box 只使 wantsTemporal=false，base 请求未包含 harness，服务端因此仍可按默认创建 Temporal。新增一个精确 `native-create-box-harness` 切片，只让明确 Box 意图进入原出站请求；默认与 Temporal 保持原样，服务端授权/拒绝不绕过。当前原方法与修后方法在有限隔离环境执行至同一 requestMint 边界，4 个原生用例通过；不伪造服务端回执或声明实际 Box 创建已通过。后续应使用独立未提交对象读回，不重发已完成的 B。
+
+此能力使完整配方从 61 扩展为 62。原有历史完整 envelope 仍可读取，缺的新能力明确要求 review，不能把历史黄金样本一律判损坏，也不能假称历史已验证新切片。普通 CLI/原发布者/transform 与相关 envelope 检查通过；真实创建读回与必要清理仍需实际结果。
+
 ## 接回主线
 
 原操作物理恢复已完成，历史 unknown 不重开。当前 Host 无补丁与其准确来源资格分别处理；已有合格候选的重新加载不应等待 Agent 修改补丁。新来源的 codec/worker 与运行前提仍需针对受影响契约核对，不能从窗口无变化推造整 Host 语义等价。A 原创建 unknown 保留，B/C 独立声明不再受旧全局创建围栏阻挡；实际身份、模型、DM、compact 与非目标收场继续按原场景记录。

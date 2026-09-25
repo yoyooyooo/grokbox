@@ -136,6 +136,13 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     replacement: auxExecutor("episode", "        "),
   },
   {
+    id: "native-create-box-harness",
+    startAnchor: "  async createRemoteAgentFirst(fields2, options2) {",
+    endAnchor: "  ensureServerRoomMembers(agentIds) {",
+    find: "      fields: dealt,\n",
+    replacement: "      fields: options2?.harness === \"box\" ? { ...dealt, harness: \"box\" } : dealt,\n",
+  },
+  {
     id: "harness-blank",
     startAnchor:
       "    ...fileProfile?.namedBy === void 0 ? {} : { namedBy: fileProfile.namedBy },\n    ...readSandProfileHarness(profilePath) === \"temporal\" ? { harness: \"temporal\" } : {},\n",

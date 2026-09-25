@@ -29,6 +29,8 @@ grokbox product operation get "$REQUEST_ID" --scope-id "$SCOPE"
 
 profile 接受 name/description/title/avatarShape/avatarColor。Group 创建只接受 name/description 与 1–6 个不同的 Bot UUID；不接受嵌套群。成员更改使用完整 memberIds 集合，必须先读取并审阅，不能从旧集合盲覆盖新配置。现有对象 update 不接受 harness 迁移。
 
+显式 `harness=box` 必须一直传到原 native remote mint，不能仅变成“没有请求 Temporal”。当前 Host 的原默认路径省略该字段时，服务端可能返回 Temporal；`native-create-box-harness` 只为明确 Box 请求补传这个字段，保留默认/Temporal 路径与服务端拒绝，不迁移既有对象。创建后仍核对原返回 ID 与独立 harness 读回；`complete` 加 `readBack=mismatch` 是已结算但未满足目标，不可重复原创建或把它当作 Box 模型验收对象。
+
 `deferStart=true` 仅用于 Box Bot 创建，表示请求抑制 introduction/kickstart，不是建立输入屏障。未抑制的创建与复制本地启用 Routine 都可能导致后续运行或费用，预览会披露；不能把创建成功推断为零费用或 managed model 已配置。
 
 ## 权限、原回执与失败

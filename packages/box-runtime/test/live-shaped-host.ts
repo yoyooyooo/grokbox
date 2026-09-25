@@ -10,6 +10,15 @@ ${ALERT_SHAPED_HOST}
 ${SERVER_ACTIVITY_SHAPED_HOST}
 ${CONTEXT_SHAPED_HOST}
 ${RECEIVER_SHAPED_HOST}
+class SyntheticCreationIdentity {
+  async createRemoteAgentFirst(fields2, options2) {
+    const dealt = fields2;
+    return this.mintRemoteFirst({
+      fields: dealt,
+    });
+  }
+  ensureServerRoomMembers(agentIds) { return agentIds; }
+}
 // Synthetic tool shell: only the selected interoperability anchors are kept.
 // This is not a copy of the native handler and supplies no execution authority.
 const toolOwner = {

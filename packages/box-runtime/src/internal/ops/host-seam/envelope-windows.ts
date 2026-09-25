@@ -14,6 +14,7 @@ import {
   CONTEXT_SLICE_IDS,
   NATIVE_CHECKPOINT_SLICE_IDS,
   NATIVE_CURRENT_STATE_SLICE_IDS,
+  NATIVE_CREATION_SLICE_IDS,
   REQUIRED_SLICE_IDS,
   type PatchProfile,
   type SliceId,
@@ -29,15 +30,22 @@ import type { HostBundlesObservation } from "../../io/provenance.node.ts";
 // adding one must not invalidate every historical execution golden.
 const CURRENT_STATE_ENVELOPE_IDS: readonly SliceId[] = [...NATIVE_CHECKPOINT_SLICE_IDS, ...NATIVE_CURRENT_STATE_SLICE_IDS];
 export const ENVELOPE_SLICE_IDS = [...REQUIRED_SLICE_IDS, ...OPTIONAL_SLICE_IDS.filter(id => !(OBSERVATION_SLICE_IDS as readonly string[]).includes(id)
-  && !(CONTEXT_SLICE_IDS as readonly string[]).includes(id) && !CURRENT_STATE_ENVELOPE_IDS.includes(id))] as const satisfies readonly SliceId[];
+  && !(CONTEXT_SLICE_IDS as readonly string[]).includes(id) && !CURRENT_STATE_ENVELOPE_IDS.includes(id)
+  && !(NATIVE_CREATION_SLICE_IDS as readonly string[]).includes(id))] as const satisfies readonly SliceId[];
 export const ENVELOPE_SLICE_COUNT = ENVELOPE_SLICE_IDS.length;
 const WITH_CONTEXT_IDS: readonly SliceId[] = [...ENVELOPE_SLICE_IDS, ...CONTEXT_SLICE_IDS];
-export const ALL_ENVELOPE_SLICE_IDS: readonly SliceId[] = [...WITH_CONTEXT_IDS, ...CURRENT_STATE_ENVELOPE_IDS];
-const validEnvelopeLength = (length: number) => [ENVELOPE_SLICE_COUNT, WITH_CONTEXT_IDS.length, ALL_ENVELOPE_SLICE_IDS.length].includes(length);
+const WITH_CURRENT_STATE_IDS: readonly SliceId[] = [...WITH_CONTEXT_IDS, ...CURRENT_STATE_ENVELOPE_IDS];
+export const ALL_ENVELOPE_SLICE_IDS: readonly SliceId[] = [...WITH_CURRENT_STATE_IDS, ...NATIVE_CREATION_SLICE_IDS];
+// A newly qualified capability must not corrupt older immutable goldens. A
+// missing creation group is absent evidence, not a claim that it was checked.
+const validEnvelopeLength = (length: number) => [ENVELOPE_SLICE_COUNT, WITH_CONTEXT_IDS.length, WITH_CURRENT_STATE_IDS.length]
+  .some(size => length === size || length === size + NATIVE_CREATION_SLICE_IDS.length);
 function completeEnvelopeIds(ids: ReadonlySet<string>): boolean {
   const withCurrentState = CURRENT_STATE_ENVELOPE_IDS.some(id => ids.has(id));
   const withContext = CONTEXT_SLICE_IDS.some(id => ids.has(id));
-  const expected = withCurrentState ? ALL_ENVELOPE_SLICE_IDS : withContext ? WITH_CONTEXT_IDS : ENVELOPE_SLICE_IDS;
+  const base = withCurrentState ? WITH_CURRENT_STATE_IDS : withContext ? WITH_CONTEXT_IDS : ENVELOPE_SLICE_IDS;
+  const withCreation = NATIVE_CREATION_SLICE_IDS.some(id => ids.has(id));
+  const expected = withCreation ? [...base, ...NATIVE_CREATION_SLICE_IDS] : base;
   return ids.size === expected.length && expected.every(id => ids.has(id));
 }
 export const ENVELOPE_WINDOWS_FILE = "envelope-windows.json";

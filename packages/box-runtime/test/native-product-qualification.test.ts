@@ -4,6 +4,8 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
 import { CONT_NATIVE_PAIR, nativeContinuityEnabled } from "./native-continuity-code.ts";
+import { LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
+import { transformUnchecked } from "../src/internal/host/profile.ts";
 
 const nativeTest = test.skipIf(!nativeContinuityEnabled());
 /** Execute selected original declarations only. The full Host is never loaded;
@@ -51,12 +53,47 @@ function gatewayFixture() {
     { Map, createAgentMintsByNonce: new Map(), CREATE_AGENT_NONCE_LEDGER_CAP: selected.literal("CREATE_AGENT_NONCE_LEDGER_CAP") },
     { timeout: 1000, contextCodeGeneration: { strings: false, wasm: false } });
   const create = () => make(manager, { extensions: { api: (name: string) => {
+    if (name === "telemetry") return { analytics: { markActive() {}, trackEvent() {} }, logs: { reportAgentDuplicated() {} } };
     expect(name).toBe("agent-identity"); return { noteAgentMinted: (...args: unknown[]) => calls.push({ method: "noteAgentMinted", args }) };
   } } }, async (id: unknown, update: () => Promise<unknown>) => { calls.push({ method: "writeLocalProfile", args: [id] }); return update(); },
   async (ids: unknown) => { calls.push({ method: "deleteAgentsAndReport", args: [ids] }); return { transcript: [] }; },
   async (input: unknown) => { calls.push({ method: "mintAgent", args: [input] }); if (failed) throw Error("synthetic-mint-failure"); return response; });
   return { api: create(), calls, response, fail: () => { failed = true; }, recover: () => { failed = false; }, hashes: selected.digest };
 }
+
+nativeTest("explicit Box creation reaches the original remote mint as Box rather than an omitted default", async () => {
+  const selected = source(), patch = LIVE_SLICE_PATCHES.find(s => s.id === "native-create-box-harness")!;
+  const changed = transformUnchecked(selected.text, [patch]); expect(changed.ok).toBe(true); if (!changed.ok) throw Error(changed.code);
+  const extract = (text: string, marker: string, endMarker: string) => {
+    const start = text.indexOf(marker), end = text.indexOf(endMarker, start + marker.length);
+    if (start < 0 || text.indexOf(marker, start + 1) >= 0 || end < 0 || end - start > 32768) throw Error("native_creation_identity_shape");
+    return text.slice(start, endMarker === "\n  }\n" ? end + 4 : end);
+  };
+  const run = async (text: string, harness: "box" | "temporal" | undefined, temporalCreationEnabled: boolean) => {
+    const code = extract(text, "\n  async createRemoteAgentFirst(fields2, options2) {", "\n  ensureServerRoomMembers(agentIds)")
+      + extract(text, "\n  async mintRemoteFirst({", "\n  }\n");
+    const Native = runInNewContext(`(class {${code}})`, {
+      withGeneratedMark: (_id: string, fields: unknown) => fields, defaultedName: (name: string) => name,
+      toRemoteGrokBotAgent: (row: unknown) => row, invariant: (ok: unknown) => { if (!ok) throw Error("native_identity_invariant"); },
+    }, { timeout: 1000, contextCodeGeneration: { strings: false, wasm: false } });
+    const owner = new Native(), id = "aaaa0000-aaaa-4aaa-8aaa-aaaaaaaaaaaa", sent: Array<Record<string, unknown>> = [];
+    owner.deps = { getCreationPolicy: async () => ({ temporalCreationEnabled, isLegacy: false, durableIdentityWritesEnabled: true }), newAgentId: () => id,
+      createRemoteAgent: async () => { throw Error("owned_transport_not_called_directly"); }, report() {}, log() {} };
+    owner.pendingLocalMaterializationIds = new Set(); owner.serverAvatarVersions = new Map(); owner.rememberServerIdentity = () => {};
+    owner.rollbackRemoteAgent = async () => { throw Error("unexpected_rollback"); };
+    // Observe the real outgoing request and stop at the external-effect port;
+    // do not fabricate a server response or qualify its confirmation semantics.
+    const stopped = Error("owned_remote_boundary");
+    owner.requestMint = async (_create: unknown, input: Record<string, unknown>) => { sent.push(input); throw stopped; };
+    await expect(owner.createRemoteAgentFirst({ name: "Synthetic", introductionSuppressed: true, kickstartRequested: false }, { harness })).rejects.toBe(stopped);
+    return sent;
+  };
+  const before = await run(selected.text, "box", true), after = await run(changed.source, "box", true);
+  expect(before).toHaveLength(1); expect(before[0]!.harness).toBeUndefined();
+  expect(after).toHaveLength(1); expect(after[0]).toEqual({ ...before[0], harness: "box" });
+  for (const [harness, enabled] of [["temporal", true], [undefined, true], [undefined, false]] as const)
+    expect(await run(changed.source, harness, enabled)).toEqual(await run(selected.text, harness, enabled));
+});
 
 nativeTest("selected current native product RPCs preserve argument shape and original lifecycle delegates", async () => {
   const f = gatewayFixture();
@@ -69,7 +106,13 @@ nativeTest("selected current native product RPCs preserve argument shape and ori
   expect(await f.api.deleteAgent({ id: "bot" })).toEqual({ transcript: [] });
   expect(f.calls.pop()).toEqual({ method: "deleteAgentsAndReport", args: [["bot"]] });
   await f.api.duplicateAgent({ id: "bot" });
-  expect(f.calls.splice(0)).toEqual([{ method: "cloneAgent", args: ["bot"] }, { method: "noteAgentMinted", args: ["synthetic-created", "register-existing-local"] }]);
+  // Current native delegation includes a callback. This shape check does not
+  // claim that the callback's execution/receipt lifecycle was exercised here.
+  const duplicateCalls = f.calls.splice(0);
+  expect(duplicateCalls).toHaveLength(2); expect(duplicateCalls[0]!.method).toBe("cloneAgent");
+  expect(duplicateCalls[0]!.args).toHaveLength(2); expect(duplicateCalls[0]!.args[0]).toBe("bot");
+  expect(typeof duplicateCalls[0]!.args[1]).toBe("function");
+  expect(duplicateCalls[1]).toEqual({ method: "noteAgentMinted", args: ["synthetic-created", "register-existing-local"] });
   await f.api.setAgentHiddenFromSidebar({ id: "bot", isHidden: true });
   await f.api.setAgentNotifyOnUpdates({ id: "bot", isEnabled: false });
   expect(f.calls.splice(0)).toEqual([{ method: "setAgentHiddenFromSidebar", args: ["bot", true] }, { method: "setAgentNotifyOnUpdates", args: ["bot", false] }]);
