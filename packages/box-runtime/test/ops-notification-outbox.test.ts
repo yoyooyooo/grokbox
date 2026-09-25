@@ -13,7 +13,7 @@ let packedCli = "";
 beforeAll(() => { packedCli = ensurePackedCli(); }, 90000);
 import { defaultConfig, effectiveOps, validateConfig } from "@grokbox/runtime-kernel/config";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
-import { selectNotificationTarget, type NotificationBinding, type NotificationScope, type NotificationTarget } from "@grokbox/runtime-kernel/observation";
+import { createNoticeReplayFence, selectNotificationTarget, type NotificationBinding, type NotificationScope, type NotificationTarget } from "@grokbox/runtime-kernel/observation";
 import { openMonitorStore, type MonitorStoreOptions } from "../src/internal/io/monitor-store.node.ts";
 import { acquireConfigurationLease } from "../src/internal/io/config-lock.node.ts";
 import { runOpsNotificationDelivery, type PairedNotificationDriver } from "../src/internal/roots/ops-notification.runtime.ts";
@@ -52,6 +52,70 @@ async function fixture(max = 10) {
 }
 const driverFor = (f: Awaited<ReturnType<typeof fixture>>, send: PairedNotificationDriver["send"]): PairedNotificationDriver => ({
   inspect: async ({ target, scope }) => f.bind(target, scope), send,
+});
+
+test("automatic definite rejection retries only after backoff with the same frozen receiver and a retained attempt history", async () => {
+  const f = await fixture(3);
+  try {
+    const workId = await f.work(), start = f.now(), replayFence = createNoticeReplayFence(start - 1);
+    let calls = 0;
+    const driver = driverFor(f, async () => ++calls === 1
+      ? { state: "definitely-not-accepted", reason: "native_rejected" }
+      : { state: "native-accepted" });
+    const input = { durableRoot: f.root, workId, driver, now: f.now, replayFence, automaticRetry: true as const };
+    expect(await runOpsNotificationDelivery(input)).toMatchObject({ state: "definitely-not-accepted" });
+    expect(await f.store.notificationDelivery(workId, undefined, f.now())).toMatchObject({ retry: { state: "waiting", attempts: 1, notBeforeMs: start + 30000 } });
+    expect(await f.store.nextAutomaticNotification(start - 1, f.now())).toBeNull();
+    await runOpsNotificationDelivery(input); expect(calls).toBe(1);
+    f.advance(30000);
+    expect(await f.store.nextAutomaticNotification(start - 1, f.now())).toBe(workId);
+    expect(await runOpsNotificationDelivery({ ...input, automaticRetry: undefined })).toMatchObject({ state: "already_attempted" });
+    expect(await runOpsNotificationDelivery(input)).toMatchObject({ state: "native-accepted" });
+    const status = await f.store.notificationDelivery(workId, undefined, f.now());
+    expect(status).toMatchObject({ state: "completed", botReport: "not_observed", userRead: "not_observed",
+      attemptHistory: [{ state: "definitely-not-accepted" }, { state: "native-accepted" }] });
+    expect(calls).toBe(2);
+    expect(await f.store.acceptedNotificationSeed(workId)).not.toBeNull();
+  } finally { await f.close(); }
+});
+
+test("retry ceiling counts every reservation against the original installation and actual receiver budget", async () => {
+  const f = await fixture(3);
+  try {
+    const workId = await f.work(); let calls = 0;
+    const driver = driverFor(f, async () => { calls++; return { state: "definitely-not-accepted", reason: "native_rejected" }; });
+    const input = { durableRoot: f.root, workId, driver, now: f.now, automaticRetry: true as const };
+    await runOpsNotificationDelivery(input); f.advance(30000);
+    await runOpsNotificationDelivery(input); f.advance(120000);
+    await runOpsNotificationDelivery(input); f.advance(120000);
+    expect(await runOpsNotificationDelivery(input)).toMatchObject({ state: "already_attempted" });
+    expect(calls).toBe(3);
+    expect(await f.store.notificationDelivery(workId, undefined, f.now())).toMatchObject({ retry: { state: "not_retryable", reason: "retry_limit", attempts: 3 } });
+    expect(await f.store.notificationBudgetAvailable(f.selected(), f.now())).toBe(false);
+  } finally { await f.close(); }
+});
+
+test("a rejected attempt does not permit a changed model or a restored older rejection to repeat an unknown HTTP effect", async () => {
+  const f = await fixture();
+  try {
+    const workId = await f.work(), replayFence = createNoticeReplayFence(f.now() - 1); let calls = 0;
+    const driver = driverFor(f, async () => ++calls === 1
+      ? { state: "definitely-not-accepted", reason: "native_rejected" }
+      : { state: "unknown", reason: "acknowledgement_lost" });
+    const input = { durableRoot: f.root, workId, driver, now: f.now, replayFence, automaticRetry: true as const };
+    await runOpsNotificationDelivery(input); f.advance(30000);
+    const changed = { ...driver, inspect: async () => ({ ...f.bind(), modelRevision: "9".repeat(64) }) };
+    expect(await runOpsNotificationDelivery({ ...input, driver: changed })).toMatchObject({ state: "blocked", reason: "retry_binding_changed" });
+    expect(calls).toBe(1);
+    const rejectedSnapshot = await readFile(f.store.path);
+    expect(await runOpsNotificationDelivery(input)).toMatchObject({ state: "unknown" });
+    await runOpsNotificationDelivery(input); expect(calls).toBe(2);
+    // Only this isolated DB is rolled back; the live sender retains its newest
+    // original attempt, so an older durable rejection cannot grant another POST.
+    await writeFile(f.store.path, rejectedSnapshot, { mode: 0o600 });
+    expect(await runOpsNotificationDelivery(input)).toMatchObject({ state: "unknown" });
+    expect(calls).toBe(2);
+  } finally { await f.close(); }
 });
 
 test("single delivery commits its fixed body and budget before network; DB and config locks are free during transport", async () => {

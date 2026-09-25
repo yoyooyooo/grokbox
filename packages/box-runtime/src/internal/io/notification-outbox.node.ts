@@ -34,7 +34,7 @@ function decode(row: SqlRow): AttemptRecord {
       || (f.incidentId === null ? f.evidenceRevision !== null : !monitorUuid(f.incidentId) || !Number.isSafeInteger(f.evidenceRevision) || Number(f.evidenceRevision) < 1)
       || !timestamp(f.expiresAtMs)
       || !/^[a-f0-9]{64}$/.test(f.envelopeDigest) || !Number.isSafeInteger(f.envelopeBytes) || f.envelopeBytes < 1
-      || f.envelopeBytes > NOTIFICATION_DELIVERY_POLICY.maxBytes) return failure("attempt_corrupt");
+      || f.envelopeBytes > NOTIFICATION_DELIVERY_POLICY.maxBytes || f.retryOf !== undefined && !monitorUuid(f.retryOf)) return failure("attempt_corrupt");
     const binding = validateNotificationBinding(f.binding, validateNotificationTarget(f.target), f.scope, Number(row.reserved_at));
     if (notificationBindingIdentity(binding) !== f.bindingDigest) return failure("attempt_corrupt");
     state(row.state);
@@ -68,10 +68,41 @@ async function pending(db: MonitorSqlite, workId: string, nowMs: number) {
   return { work } as const;
 }
 
-/** Uses the original monitor transaction and tables. One attempt per work in
- * this lane; unknown and even definite rejection are never automatically reset.
- * All reservations (including lost pre-send acknowledgements) consume the cap.
- * Not a generic network queue, native sender or bot action authority. */
+type RetryStatus = { state: "not_retryable" | "waiting" | "ready"; reason: string; attempts: number; notBeforeMs: number | null };
+async function attemptHistory(db: MonitorSqlite, workId: string) {
+  const rows = await db.all("SELECT * FROM notification_attempts WHERE work_id=? ORDER BY reserved_at,id LIMIT ?",
+    [workId, NOTIFICATION_DELIVERY_POLICY.maxAttemptsPerWork + 1]);
+  if (rows.length > NOTIFICATION_DELIVERY_POLICY.maxAttemptsPerWork) return failure("attempt_conflict");
+  const records = rows.map(decode);
+  for (let i = 1; i < rows.length; i++) {
+    const before = records[i - 1]!, current = records[i]!;
+    if (rows[i - 1]!.state !== "definitely-not-accepted" || before.result?.state !== "definitely-not-accepted"
+      || before.result.reason !== "native_rejected" || current.frozen.retryOf !== rows[i - 1]!.id
+      || current.frozen.bindingDigest !== before.frozen.bindingDigest
+      || current.frozen.incidentId !== before.frozen.incidentId || current.frozen.evidenceRevision !== before.frozen.evidenceRevision)
+      return failure("attempt_conflict");
+  }
+  if (records[0]?.frozen.retryOf !== undefined) return failure("attempt_conflict");
+  return { rows, records };
+}
+function retryStatus(history: Awaited<ReturnType<typeof attemptHistory>>, expiresAtMs: number, nowMs: number,
+  separatelyOwned: boolean): RetryStatus {
+  const attempts = history.rows.length, base = { attempts, notBeforeMs: null };
+  const last = history.rows.at(-1), record = history.records.at(-1);
+  if (!last || !record) return { ...base, state: "not_retryable", reason: "not_attempted" };
+  if (separatelyOwned || record.frozen.incidentId === null) return { ...base, state: "not_retryable", reason: "explicit_or_test_owned" };
+  if (last.state !== "definitely-not-accepted" || record.result?.state !== "definitely-not-accepted"
+    || record.result.reason !== "native_rejected") return { ...base, state: "not_retryable", reason: "not_definitely_rejected" };
+  if (attempts >= NOTIFICATION_DELIVERY_POLICY.maxAttemptsPerWork) return { ...base, state: "not_retryable", reason: "retry_limit" };
+  if (!timestamp(Number(last.settled_at)) || nowMs < Number(last.settled_at)) return { ...base, state: "not_retryable", reason: "clock_reversed" };
+  const notBeforeMs = Number(last.settled_at) + NOTIFICATION_DELIVERY_POLICY.retryDelaysMs[attempts - 1]!;
+  if (expiresAtMs <= nowMs || notBeforeMs >= expiresAtMs) return { ...base, state: "not_retryable", reason: "expired" };
+  return { attempts, notBeforeMs, state: nowMs < notBeforeMs ? "waiting" : "ready", reason: "definite_rejection" };
+}
+
+/** Uses the original monitor transaction and tables. Only the authorized
+ * automatic lane may retry a proven native rejection, under the same frozen
+ * identity and budget. Unknown, explicit sends and tests never reopen. */
 export function notificationOutbox(access: Access) {
   return {
     notificationScope: () => access.read(db => scope(db, access.rootId)),
@@ -174,9 +205,9 @@ export function notificationOutbox(access: Access) {
     acceptedNotificationSeed: (workId: string) => {
       if (!monitorUuid(workId)) return failure("invalid_work");
       return access.read(async db => {
-        const rows = await db.all("SELECT a.* FROM notification_attempts a JOIN notification_work w ON w.id=a.work_id WHERE a.work_id=? AND w.state='completed' LIMIT 2", [workId]);
-        if (rows.length !== 1) return null;
-        const row = rows[0]!, record = decode(row);
+        if (!await db.first("SELECT 1 FROM notification_work WHERE id=? AND state='completed'", [workId])) return null;
+        const history = await attemptHistory(db, workId), row = history.rows.at(-1), record = history.records.at(-1);
+        if (!row || !record) return null;
         if (row.state !== "native-accepted" || record.result?.state !== "native-accepted" || !timestamp(Number(row.settled_at))) return null;
         if (canonicalJson(record.frozen.scope) !== canonicalJson(await scope(db, access.rootId))) return null;
         return { frozen: record.frozen, acceptedAtMs: Number(row.settled_at) };
@@ -202,10 +233,15 @@ export function notificationOutbox(access: Access) {
           WHERE w.state IN ('ready','blocked','preparing') AND w.created_at>? AND w.created_at<=? AND w.expires_at>?
           AND i.first_seen>? AND i.first_seen<=?
           AND i.acknowledged=0 AND (i.snooze_until IS NULL OR i.snooze_until<=?) AND s.tier='detail' AND s.expires_at>?
-          AND NOT EXISTS(SELECT 1 FROM notification_attempts a WHERE a.work_id=w.id)
+          AND NOT EXISTS(SELECT 1 FROM notification_attempts a WHERE a.work_id=w.id
+            AND (a.state<>'definitely-not-accepted' OR COALESCE(json_extract(a.receipt_json,'$.result.reason'),'')<>'native_rejected'))
+          AND (SELECT COUNT(*) FROM notification_attempts a WHERE a.work_id=w.id) < ${NOTIFICATION_DELIVERY_POLICY.maxAttemptsPerWork}
+          AND (NOT EXISTS(SELECT 1 FROM notification_attempts a WHERE a.work_id=w.id) OR
+            (SELECT MAX(a.settled_at) + CASE COUNT(*) WHEN 1 THEN ${NOTIFICATION_DELIVERY_POLICY.retryDelaysMs[0]}
+              ELSE ${NOTIFICATION_DELIVERY_POLICY.retryDelaysMs[1]} END FROM notification_attempts a WHERE a.work_id=w.id)<=?)
           AND NOT EXISTS(SELECT 1 FROM notification_sends d WHERE d.work_id=w.id)
           AND NOT EXISTS(SELECT 1 FROM events e WHERE e.incident_id=w.incident_id AND e.kind='notification_export_unknown')
-          ORDER BY w.created_at,w.id LIMIT 1`, [afterMs, nowMs, nowMs, afterMs, nowMs, nowMs, nowMs]);
+          ORDER BY w.created_at,w.id LIMIT 1`, [afterMs, nowMs, nowMs, afterMs, nowMs, nowMs, nowMs, nowMs]);
         return row ? String(row.id) : null;
       });
     },
@@ -225,7 +261,7 @@ export function notificationOutbox(access: Access) {
         return { state: "quarantined" as const };
       });
     },
-    notificationDelivery: async (workId: string, databaseId?: string) => {
+    notificationDelivery: async (workId: string, databaseId?: string, nowMs = Date.now()) => {
       if (!monitorUuid(workId)) return failure("invalid_work");
       return access.read(async db => {
         if (databaseId !== undefined && (await scope(db, access.rootId)).databaseId !== databaseId) return failure("scope_changed");
@@ -233,9 +269,8 @@ export function notificationOutbox(access: Access) {
         const test = work ? null : await db.first("SELECT * FROM notification_tests WHERE id=?", [workId]);
         if (!work && test) work = { ...test, incident_id: null, evidence_revision: null, incident_first_seen: null, incident_scope: null, occurrence_key: null, rule: null };
         if (!work) return { state: "not_found", automaticRetry: false, botReport: "not_observed", userRead: "not_observed" };
-        const rows = await db.all("SELECT * FROM notification_attempts WHERE work_id=? ORDER BY reserved_at LIMIT 2", [workId]);
-        if (rows.length > 1) return failure("attempt_conflict");
-        const attempt = rows[0], decoded = attempt ? decode(attempt) : null;
+        const history = await attemptHistory(db, workId);
+        const attempt = history.rows.at(-1), decoded = history.records.at(-1) ?? null;
         const manual = test ? null : await db.first("SELECT attempt_id,reason FROM notification_sends WHERE work_id=?", [workId]);
         if (manual?.attempt_id !== null && manual?.attempt_id !== undefined && manual.attempt_id !== attempt?.id) return failure("send_corrupt");
         // A durable send claim with no attempt is still unresolved. Lists and
@@ -251,17 +286,28 @@ export function notificationOutbox(access: Access) {
             targetAgentId: String(attempt.target_id), bindingRevision: Number(attempt.binding_revision),
             envelopeDigest: decoded.frozen.envelopeDigest, envelopeBytes: decoded.frozen.envelopeBytes,
             reservedAtMs: Number(attempt.reserved_at), settledAtMs: attempt.settled_at === null ? null : Number(attempt.settled_at), result: decoded.result } : null,
+          retry: retryStatus(history, Number(work.expires_at), nowMs, test !== null || manual !== null),
+          attemptHistory: history.rows.map((row, index) => ({ attemptId: String(row.id), state: state(row.state),
+            reservedAtMs: Number(row.reserved_at), settledAtMs: row.settled_at === null ? null : Number(row.settled_at),
+            result: history.records[index]!.result })),
           automaticRetry: false, botReport: "not_observed", userRead: "not_observed", transportAvailability: "not_checked" };
       });
     },
-    reserveNotification: async (input: { workId: string; target: NotificationTarget; binding: NotificationBinding; nowMs: number; managementOperationId?: string }): Promise<NotificationReservation> => {
+    reserveNotification: async (input: { workId: string; target: NotificationTarget; binding: NotificationBinding; nowMs: number; managementOperationId?: string; automaticRetry?: true }): Promise<NotificationReservation> => {
       if (!monitorUuid(input.workId) || !timestamp(input.nowMs)) return failure("invalid_reservation");
       return access.mutate(async db => {
         const destination = validateNotificationTarget(input.target), installation = await scope(db, access.rootId);
         const binding = validateNotificationBinding(input.binding, destination, installation, input.nowMs);
-        const previous = await db.first("SELECT state FROM notification_attempts WHERE work_id=? LIMIT 1", [input.workId]);
-        if (previous) return { state: "already_attempted", attemptState: state(previous.state) };
+        const history = await attemptHistory(db, input.workId), previous = history.rows.at(-1);
         const management = await db.first("SELECT * FROM notification_sends WHERE work_id=?", [input.workId]);
+        if (previous) {
+          if (input.automaticRetry !== true || management || input.managementOperationId !== undefined)
+            return { state: "already_attempted", attemptState: state(previous.state) };
+          const fixed = history.records.at(-1)!.frozen;
+          const retry = retryStatus(history, fixed.expiresAtMs, input.nowMs, false);
+          if (retry.state !== "ready") return { state: "blocked", reason: retry.reason === "definite_rejection" ? "retry_backoff" : retry.reason };
+          if (notificationBindingIdentity(binding) !== fixed.bindingDigest) return { state: "blocked", reason: "retry_binding_changed" };
+        }
         if (management || input.managementOperationId !== undefined) {
           if (!management || management.operation_id !== input.managementOperationId || management.attempt_id !== null || management.reason !== null
             || management.binding_id !== binding.bindingId || management.binding_revision !== binding.revision || management.model_revision !== binding.modelRevision)
@@ -287,6 +333,7 @@ export function notificationOutbox(access: Access) {
         const notice = test ? notificationTestNotice(input.workId, Number(test.created_at), Number(test.expires_at)) : await noticeForWork(db, input.workId), attemptId = randomUUID();
         const prepared = freezeNotification({ scope: installation, target: destination, binding, workId: input.workId, attemptId,
           createdAtMs: input.nowMs, expiresAtMs: Number(eligibility.work.expires_at), notice });
+        if (previous) prepared.frozen.retryOf = String(previous.id);
         await db.run("INSERT INTO notification_attempts(id,work_id,target_id,binding_revision,state,reserved_at,receipt_json) VALUES(?,?,?,?,'reserved',?,?)",
           [attemptId, input.workId, destination.agentId, binding.revision, input.nowMs, canonicalJson({ schemaVersion: 1, frozen: prepared.frozen, result: null })]);
         if (management) await db.run("UPDATE notification_sends SET attempt_id=? WHERE operation_id=?", [attemptId, String(management.operation_id)]);

@@ -15,6 +15,8 @@ export type NotificationView = { notificationRef: string; databaseId: string; wo
   createdAtMs: number; expiresAtMs: number;
   attempt: { attemptId: string; state: "reserved" | "attempting" | "native-accepted" | "definitely-not-accepted" | "unknown";
     targetAgentId: string; bindingRevision: number; envelopeDigest: string; envelopeBytes: number; reservedAtMs: number; settledAtMs: number | null } | null;
+  retry?: { state: "not_retryable" | "waiting" | "ready"; reason: string; attempts: number; notBeforeMs: number | null };
+  attemptHistory?: Array<{ attemptId: string; state: string; reservedAtMs: number; settledAtMs: number | null }>;
   automaticRetry: false; botReport: "not_observed"; userRead: "not_observed" };
 export type NotificationList = { notifications: NotificationView[]; databaseId: string; nextCursor: string | null; coverage: "retained-work" };
 export type NotificationTestOperation = { version: 1; operationRef: string; requestId: string; receiverRef: string;

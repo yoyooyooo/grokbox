@@ -37,7 +37,8 @@ export async function runAutomaticOpsNotification(input: Input & { workId: strin
     return { state: "blocked", reason: "work_precedes_authorization" };
   const prepared = createPreparedNoticeDriver({ durableRoot: input.durableRoot, expectedBindingRevision: record.revision,
     expectedModelRevision: record.automatic.modelRevision, authorizationId: record.automatic.id, readNative: input.readNative, signal: input.signal }, ports);
-  return runOpsNotificationDelivery({ durableRoot: input.durableRoot, workId: input.workId, driver: prepared.driver, signal: input.signal, replayFence: input.replayFence });
+  return runOpsNotificationDelivery({ durableRoot: input.durableRoot, workId: input.workId, driver: prepared.driver,
+    signal: input.signal, replayFence: input.replayFence, automaticRetry: true });
 }
 
 /** One bounded pass. No database initialization, remote calls without eligible
@@ -65,7 +66,9 @@ export async function automaticNoticeCycle(input: Input, ports: Ports = {}): Pro
     if (input.replayFence && (!observed || !("occurrenceIdentity" in observed) || typeof observed.occurrenceIdentity !== "string"))
       return { state: "blocked", reason: "replay_identity_unavailable", workId, authorizationId: auth.id };
     const priorAttempt = input.replayFence && observed && "occurrenceIdentity" in observed
-      ? input.replayFence.priorAttempt(observed.occurrenceIdentity!, nowMs) : null;
+      ? input.replayFence.priorAttempt(observed.occurrenceIdentity!, nowMs,
+        "retry" in observed && observed.retry?.state === "ready" && observed.attempt
+          ? { workId, attemptId: observed.attempt.attemptId } : undefined) : null;
     if (priorAttempt) {
       if (priorAttempt === "prior_lifetime_attempt" && observed && "occurrenceIdentity" in observed) {
         const storage = await readStorageConfiguration(input.durableRoot);

@@ -5,7 +5,8 @@ import { FAILURE_CATEGORIES } from "../contract/failure-summary.ts";
 import { EVIDENCE_REQUIREMENTS } from "./evidence-contract.ts";
 
 export const NOTIFICATION_DELIVERY_POLICY = Object.freeze({ maxBytes: 8192, budgetWindowMs: 86_400_000,
-  maxAttempts: 4096, bindingFreshMs: 5000, deliveryTimeoutMs: 10_000 });
+  maxAttempts: 4096, maxAttemptsPerWork: 3, retryDelaysMs: Object.freeze([30_000, 120_000]),
+  bindingFreshMs: 5000, deliveryTimeoutMs: 10_000 });
 const uuid = (v: unknown): v is string => typeof v === "string" && /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(v);
 const hash = (v: unknown): v is string => typeof v === "string" && /^[a-f0-9]{64}$/.test(v);
 const positive = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v > 0;
@@ -103,7 +104,7 @@ function testNotice(value: unknown): BotTestNotice {
 }
 export type FrozenNotification = { schemaVersion: 1; scope: NotificationScope; target: NotificationTarget; binding: NotificationBinding;
   bindingDigest: string; envelopeDigest: string; envelopeBytes: number; workId: string; attemptId: string;
-  incidentId: string | null; evidenceRevision: number | null; expiresAtMs: number };
+  incidentId: string | null; evidenceRevision: number | null; expiresAtMs: number; retryOf?: string };
 export type NotificationReservation = { state: "reserved"; frozen: FrozenNotification; envelope: NotificationEnvelope }
   | { state: "blocked"; reason: string } | { state: "already_attempted"; attemptState: string };
 export type NativeNotificationResult = { state: "native-accepted"; receiptId?: string }

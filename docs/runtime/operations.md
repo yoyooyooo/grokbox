@@ -52,7 +52,7 @@ blueprint 提供固定 disabled 提醒定义，verify 只读预检。实际自�
 
 work 的准备/ready/完成/过期/替代/阻断，attempt 的 reserved/attempting/native-accepted/definitely-not-accepted/unknown，Bot report 的 observed/not-observed 和 incident 的 open/resolved/ack/snooze 分开。HTTP accepted 不证明 Bot 完成或用户已读；用户接收声明与程序证据也分开。
 
-发送前短事务预留 attempt 和费用，最终 policy/binding 检查沿既有配置锁完成，网络在所有本地锁之外。当前每 work 最多一次 attempt，unknown 不重投；“未来可有限重试明确未接收”不能写成当前已启用。持久 attempting 崩溃后先 unknown，对账不能换目标广播。费用按安装/真实接收 Bot/发生周期共同计数，多 alias 不扩额度；原生 token 花费不是本地请求数硬限。
+发送前短事务预留 attempt 和费用，最终 policy/binding 检查沿既有配置锁完成，网络在所有本地锁之外。原自动授权链仅对 `definitely-not-accepted/native_rejected` 开放有限重试：同一 work 最多三次，前两次明确拒绝后的间隔分别为 30 秒、120 秒，不延长原到期。绑定/模型/策略身份须与第一次完全一致；显式 send、独立 test、撤销/过期/策略拒绝及 unknown 均不自动重开。只读回执提供 `retry` 和有限 `attemptHistory`，单次程序本身不循环发送。持久 attempting 崩溃后先 unknown，对账不能换目标广播。费用按安装/真实接收 Bot/发生周期共同计数，多 alias 不扩额度；原生 token 花费不是本地请求数硬限。
 
 精确配额、TTL、backoff 和状态 schema 由 source policy 拥有。无变化不产生周期 LLM 摘要。过期积压不逐条补送，有限合并必须保存 supersedes/未知投递和原发生周期限制。sender 故障形成有界本地健康状态，不递归制造无限通知。
 

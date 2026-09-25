@@ -79,6 +79,8 @@ async function deliveryView(domain: NotificationDomain, databaseId: string, work
     attempt: attempt ? { attemptId: attempt.attemptId, state: attempt.state as NonNullable<NotificationView["attempt"]>["state"],
       targetAgentId: attempt.targetAgentId, bindingRevision: attempt.bindingRevision, envelopeDigest: attempt.envelopeDigest, envelopeBytes: attempt.envelopeBytes,
       reservedAtMs: attempt.reservedAtMs, settledAtMs: attempt.settledAtMs } : null,
+    retry: row.retry,
+    attemptHistory: row.attemptHistory?.map(({ attemptId, state, reservedAtMs, settledAtMs }) => ({ attemptId, state, reservedAtMs, settledAtMs })),
     automaticRetry: false, botReport: "not_observed", userRead: "not_observed" };
 }
 async function testOperation(domain: NotificationDomain, principalId: string, databaseId: string, requestId: string): Promise<NotificationTestOperation> {

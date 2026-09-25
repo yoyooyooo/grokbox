@@ -52,6 +52,23 @@ test("delayed credential resolution cannot change a receiver request or its reco
   expect(body).toEqual(original);
 });
 
+test("retry views bind bounded history to the exact latest attempt and reject unknown-to-retry promotion", async () => {
+  const value: NotificationView = { notificationRef: `notification:${I}:${D}:${B}`, databaseId: D, workId: B, purpose: "incident",
+    incidentRef: `incident:${I}:${D}:${B}`, evidenceRevision: 1, state: "blocked", createdAtMs: 1, expiresAtMs: 100000,
+    attempt: { attemptId: B, state: "definitely-not-accepted", targetAgentId: B, bindingRevision: 1, envelopeDigest: hash,
+      envelopeBytes: 100, reservedAtMs: 2, settledAtMs: 3 }, automaticRetry: false, botReport: "not_observed", userRead: "not_observed",
+    retry: { state: "ready", reason: "definite_rejection", attempts: 1, notBeforeMs: 30003 },
+    attemptHistory: [{ attemptId: B, state: "definitely-not-accepted", reservedAtMs: 2, settledAtMs: 3 }] };
+  expect((await client(() => value).api.notification(value.notificationRef)).data).toEqual(value);
+  for (const patch of [
+    { retry: { ...value.retry, attempts: 4 } }, { retry: { ...value.retry, notBeforeMs: 100001 } },
+    { attemptHistory: [{ ...value.attemptHistory![0], state: "unknown" }] },
+    { attemptHistory: [{ ...value.attemptHistory![0], body: "private" }] },
+    { attemptHistory: [{ ...value.attemptHistory![0], attemptId: I }] },
+    { purpose: "test", incidentRef: null, evidenceRevision: null },
+  ]) await expect(client(() => ({ ...value, ...patch })).api.notification(value.notificationRef)).rejects.toMatchObject({ code: "protocol_error" });
+});
+
 test("test delivery DTOs reject fake incidents, false receipt claims, payload leakage and malformed cursor continuation", async () => {
   const value: NotificationView = { notificationRef: `notification:${I}:${D}:${B}`, databaseId: D, workId: B, purpose: "test", incidentRef: null,
     evidenceRevision: null, state: "unknown", createdAtMs: 1, expiresAtMs: 10, attempt: { attemptId: B, state: "unknown", targetAgentId: B,

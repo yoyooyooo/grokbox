@@ -4,13 +4,13 @@
 
 [Agent-first Spec](../roadmap/agent-first-cli/spec.md#管理异常与通知)已替代旧的强制测试激活规则：完成必要配置/授权即可显式启用；test 独立、显式、可选，产生真实测试 work/attempt 而不伪造 incident；verify/enable 不暗中投递。启用、测试、上游受理、实际投递和用户已看分别记录。后台持续投递、有限重试与 unknown 先对账仍为必需。
 
-A22 已落实到[启用程序](../../packages/box-runtime/src/internal/roots/ops-activation.runtime.ts)、[共享管理用例](../../packages/server/src/notification-management.ts)和真实浏览器：已准备的接收者可在无历史 incident、无测试投递时显式启用；测试失败或 unknown 不成为启用前置。已退出 `ops targets activate/disable/unbind` 旧直写入口，不恢复 seed/人工已读门槛。首次目标配置/Routine/配对已按下文迁入；仍需完成确定未受理后的有限重试、真实原生对账、长期回执维护与集中 [OBSERVER-LIFETIME](LIVE-integration-validation.md#live-ops-observer-lifetime) 验收；不要求开发期间持续服务。
+A22 已落实到[启用程序](../../packages/box-runtime/src/internal/roots/ops-activation.runtime.ts)、[共享管理用例](../../packages/server/src/notification-management.ts)和真实浏览器：已准备的接收者可在无历史 incident、无测试投递时显式启用；测试失败或 unknown 不成为启用前置。已退出 `ops targets activate/disable/unbind` 旧直写入口，不恢复 seed/人工已读门槛。首次目标配置/Routine/配对已按下文迁入；确定未受理后的有限重试已按下述 AH-143 切片实现；仍需真实原生对账、长期回执维护与集中 [OBSERVER-LIFETIME](LIVE-integration-validation.md#live-ops-observer-lifetime) 验收；不要求开发期间持续服务。
 
 ## 当前显式投递管理链（2026-09-21）
 
 `notification send <notification-ref> --receiver <receiver-ref> --request-id <uuid> --expect-revision <n> --expect-model-revision <sha256> --confirm` 和 Web 共用管理 Server；独立 `notifications.send` 权限不由 read/test/enable 代授。原 OBS schema 5 的 `notification_sends` 将安装/主体/原数据库/request 与既有 incident work、实际 attempt 事务关联，不另建通用操作库。`operation get --domain notification --database-id <uuid> --request-id <uuid>` 只读原请求。丢 claim ACK、并发、Server 硬崩/重启和自动 worker 竞争都不授权第二次 POST；历史成功不恢复授权，也不要求当前配置或原生可用。旧 `ops notifications send/list/show` 注册、CLI writer 及单独查询/发送 facade 已退出，没有兼容转发。
 
-浏览器审阅绑定/模型并单独确认费用，只存原 work/request 定位；unknown 刷新后只查询，不重发。原发送程序、私有凭据出口、预算与 HTTP 结算继续复用。当前观测库只接受 schema 5，不自动升级旧库；CONT/Routine 不变。实现/失败复现与固定验证见[显式通知管理工作包](../reports/2026-09-21-notification-send-management.md)。这只关闭入口迁移，不关闭有限重试、上游对账、长期安全退役或独立告警出口。
+浏览器审阅绑定/模型并单独确认费用，只存原 work/request 定位；unknown 刷新后只查询，不重发。原发送程序、私有凭据出口、预算与 HTTP 结算继续复用。当前观测库只接受 schema 5，不自动升级旧库；CONT/Routine 不变。实现/失败复现与固定验证见[显式通知管理工作包](../reports/2026-09-21-notification-send-management.md)。这只关闭入口迁移；有限重试见下节，上游对账、长期安全退役与独立告警出口仍需分别验收。
 
 ## Status / Goal
 
@@ -32,6 +32,14 @@ kernel `internal/commands/ops-notification.ts`及policy/routing；box-runtime原
 
 bridge receipts明确`transport=unavailable/automaticRetry=false`，本地export/已有attempt未知时可查unknown；没有POST、绑定、网络去重或接收者模型资格。14项J1合同测试覆盖真实SQLite重复/重启、提交前后故障、窗口/序号gap与关闭通知不结束CONToperation，真实网络unknown仍待下文T45验收。接口唯一归[Spec J1](../roadmap/template-ops-automation-spec.md#obs-continuity-interface)，不把J1算作原生Bot送达。
 
+## AH-143：原 outbox 内的有限拒绝重试（2026-09-25）
+
+已启用的自动接收者可在原 `workId` 内最多尝试三次，间隔 30 秒/120 秒；仅 `definitely-not-accepted/native_rejected` 可进入下一次，原到期不延长。首次冻结的目标、binding、模型和策略不能变；旧 attempt 不覆盖，安装及实际 Bot 额度按每次 reservation 计数。显式 send 和独立 test 仍单次，unknown、撤销与策略变化没有重投权限。`notification get/list` 的 `retry` / `attemptHistory` 展示有限状态，不推造 Bot 接收或用户展示。
+
+单轮程序没有网络循环。工作进程沿原调度取到期项，原 SQLite 原子预留；进程内 restore fence 保留最新 attempt 身份，只有该 attempt 的明确拒绝完成持久结算后，才允许引用它的下一次尝试。恢复更旧的拒绝快照不能绕过后来 unknown 的效果。当前进程启动前 backlog 仍不自动接续，这与真实 Bot 对账、用户默认出口一样尚未完成，不能以此切片代签整票验收。
+
+定向证据：`ops-notification-outbox.test.ts`（29 项，含真实 SQLite/强杀/回滚）、`notification-restore-fence.test.ts`、`ops-automatic-notification.test.ts`、`ops-native-notification.test.ts`、管理 Node/HTTP/Client 严格响应检查。均使用自有配置根及接收端，不是现役 Bot 或 App 展示证明。
+
 ## 单次可靠投递切片（2026-09-18）
 
 `notification-contract.ts`从已校验effective ops选取唯一default目标；`ops-notification.ts`经OpsNotification port执行一次程序。原monitor SQLite的`notification_work/notification_attempts`承载预留、启动和结算，不另建router/queue数据库；本节是早期单次发送切片，当前管理请求与 schema 边界以上节为准。存储方法是`notificationScope/notificationDelivery/reserveNotification/beginNotification/settleNotification`。
@@ -40,7 +48,7 @@ bridge receipts明确`transport=unavailable/automaticRetry=false`，本地export
 
 `runOpsNotificationDelivery`默认无driver；有明确信任的`PairedNotificationDriver`时才检查配对。inspect不能返回secret/endpoint，发送前再检查身份，并在现有config锁内对照最新policy后提交启动。网络在所有本地事务/锁之外，真正返回后才结算；取消不会遗留detached writer。callback异常/本地提交回执丢失保留unknown，既有attempt不重发；native-accepted不表示Bot完成或用户已读。T46已有私有binding/capsule，显式发送driver复用它；持续授权必须走下述显式激活程序，不能把测试注入对象写成config来启用。
 
-当前只读 `notification list/get` 经管理 Server 返回原数据库的有限历史，不建库、配对或发送；旧本地查询已退出，配置或 Server 不可用不授予绕过路径。明确未接收的有限重试、native unknown对账、备份恢复fence和自动worker安装仍在下文未完成范围。J1 bridge接口与CONT生命周期边界不变。
+当前只读 `notification list/get` 经管理 Server 返回原数据库的有限历史，不建库、配对或发送；旧本地查询已退出，配置或 Server 不可用不授予绕过路径。明确未接收的有限重试以本页 AH-143 切片为准；native unknown 对账、跨重启接续与实际常驻安装仍未完成。J1 bridge接口与CONT生命周期边界不变。
 
 ## 显式原生发送出口（2026-09-18）
 
@@ -72,7 +80,7 @@ collector组合反例已修复：自动选择和直接自动发送同时检查in
 
 ## 新管理宿主与安全读面
 
-[管理 Server](../../packages/server/src/server.ts)先获得 sender，再获得 collector；关闭结算生产者后终止 sender 的原生读取/HTTP 并等待 outbox 结算。未配置或没有原有持久授权时不创建数据库、领取凭据或调用原生；开启管理服务不是自动授权。竞争进程仍经原 outbox 预留锁保证同 work 单次尝试。
+[管理 Server](../../packages/server/src/server.ts)先获得 sender，再获得 collector；关闭结算生产者后终止 sender 的原生读取/HTTP 并等待 outbox 结算。未配置或没有原有持久授权时不创建数据库、领取凭据或调用原生；开启管理服务不是自动授权。竞争进程仍经原 outbox 预留锁保证同 work 只有一个在途尝试；后续尝试须满足上文的明确拒绝重试条件。
 
 [共享接收者适配](../../packages/box-runtime/src/internal/io/notification-receiver.node.ts)同时供安装 Server 和剩余 CLI 使用，保留已持久配对的 generation 算法，Routine、Host/model 同帧与独立所有权读取都有明确期限。换代、profile变化、重定向、超大/慢响应和取消不给成功资格。`notification status`、安全 HTTP DTO 与 Web 通知状态页只展示有限状态，不输出私有 work/授权引用或诊断正文。
 
@@ -94,7 +102,7 @@ collector组合反例已修复：自动选择和直接自动发送同时检查in
 
 新 `notifications.bind` / `routines.read` / `routines.write` 能力分别控制凭据领取与原生定义。旧 `agents routines ...`、`ops targets ...`、`ops notifications ...` 普通命令和 daemon Routine RPC 已退出；CONT/保护继续复用其必要本地原生 primitive，不恢复旁路管理入口，也不因此宣称全仓旧入口全部退出。具体输入、恢复和限定见 [T53](T53-agent-routines-cli.md) / [T46](T46-template-ops-pairing.md)。
 
-实际合成 Gateway、Node 服务/CLI、真实浏览器的首次接入及丢回执场景由 [setup Node](../../test/notification-setup.test.ts) / [setup browser](../../apps/web/test/setup-browser.node.ts)验证。现阶段不签原生产品已投递、通知重试/上游对账或长期安全记录维护完成。
+实际合成 Gateway、Node 服务/CLI、真实浏览器的首次接入及丢回执场景由 [setup Node](../../test/notification-setup.test.ts) / [setup browser](../../apps/web/test/setup-browser.node.ts)验证。本段不签原生产品已投递、上游对账或长期安全记录维护完成；有限重试的本地证明见本页 AH-143 切片。
 
 ## Work
 

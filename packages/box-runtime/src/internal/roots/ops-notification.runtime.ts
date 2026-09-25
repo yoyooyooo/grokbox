@@ -21,7 +21,8 @@ export type PairedNotificationDriver = {
   send: (input: { binding: NotificationBinding; body: string; envelopeDigest: string; signal: AbortSignal }) => Promise<unknown>;
 };
 export type OpsNotificationInput = { durableRoot: string; workId: string; driver?: PairedNotificationDriver;
-  signal?: AbortSignal; now?: () => number; storeOptions?: MonitorStoreOptions; replayFence?: NoticeReplayFence; managementOperationId?: string };
+  signal?: AbortSignal; now?: () => number; storeOptions?: MonitorStoreOptions; replayFence?: NoticeReplayFence; managementOperationId?: string;
+  automaticRetry?: true };
 const io = <A>(run: () => Promise<A>) => Effect.tryPromise({ try: run, catch: () => new NotificationError("source_unavailable") });
 
 /** One explicit iteration. No service/autostart installation, pairing or retry.
@@ -38,9 +39,10 @@ export async function runOpsNotificationDelivery(input: OpsNotificationInput) {
   };
   const program = runOpsNotification(input.workId).pipe(Effect.provideService(OpsNotification, {
     attempted: workId => io(async () => {
-      const observed = await observedStore.notificationDelivery(workId);
+      const observed = await observedStore.notificationDelivery(workId, undefined, now());
       if (observed.state === "not_found") throw new NotificationError("work_not_found");
-      return "attempt" in observed && observed.attempt !== null;
+      return "attempt" in observed && observed.attempt !== null
+        && !(input.automaticRetry === true && "retry" in observed && observed.retry?.state === "ready");
     }),
     route: () => io(policy),
     scope: () => io(() => observedStore.notificationScope()),
@@ -52,6 +54,7 @@ export async function runOpsNotificationDelivery(input: OpsNotificationInput) {
     reserve: (workId, target, binding) => io(async () => {
       if (input.signal?.aborted) return { state: "blocked", reason: "cancelled_before_reservation" } as const;
       return (await writeStore()).reserveNotification({ workId, target, binding, nowMs: now(),
+        ...(input.automaticRetry === true ? { automaticRetry: true as const } : {}),
         ...(input.managementOperationId ? { managementOperationId: input.managementOperationId } : {}) });
     }),
     begin: frozen => io(async () => {
@@ -76,7 +79,8 @@ export async function runOpsNotificationDelivery(input: OpsNotificationInput) {
       if (input.replayFence) {
         const work = await observedStore.notificationDelivery(frozen.workId);
         if (!("createdAtMs" in work) || typeof work.incidentFirstSeenAtMs !== "number" || typeof work.occurrenceIdentity !== "string"
-          || input.replayFence.claim({ workId: frozen.workId, occurrenceIdentity: work.occurrenceIdentity, createdAtMs: work.createdAtMs,
+          || input.replayFence.claim({ workId: frozen.workId, attemptId: frozen.attemptId, retryOf: frozen.retryOf,
+            occurrenceIdentity: work.occurrenceIdentity, createdAtMs: work.createdAtMs,
             occurrenceAtMs: work.incidentFirstSeenAtMs, expiresAtMs: work.expiresAtMs, nowMs: now() }) !== null)
           throw new NotificationError("replay_fence_blocked");
       }
@@ -89,8 +93,16 @@ export async function runOpsNotificationDelivery(input: OpsNotificationInput) {
           envelopeDigest: frozen.envelopeDigest, signal }));
       } finally { clearTimeout(timer); }
     }),
-    settle: (frozen, result) => io(async () => (await writeStore()).settleNotification({ workId: frozen.workId,
-      attemptId: frozen.attemptId, result, nowMs: now() })),
+    settle: (frozen, result) => io(async () => {
+      const settled = await (await writeStore()).settleNotification({ workId: frozen.workId, attemptId: frozen.attemptId, result, nowMs: now() });
+      if (input.replayFence && result.state === "definitely-not-accepted" && result.reason === "native_rejected") {
+        const work = await observedStore.notificationDelivery(frozen.workId);
+        if ("occurrenceIdentity" in work && typeof work.occurrenceIdentity === "string")
+          input.replayFence.definitelyRejected({ occurrenceIdentity: work.occurrenceIdentity, workId: frozen.workId,
+            attemptId: frozen.attemptId, nowMs: now() });
+      }
+      return settled;
+    }),
   }));
   return Effect.runPromise(program, { signal: input.signal });
 }
