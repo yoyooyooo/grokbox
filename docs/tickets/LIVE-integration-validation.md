@@ -4,7 +4,9 @@
 
 ### 2026-09-24 受控迁移与双 Bot 窗口
 
-[固定报告](../reports/2026-09-24-controlled-dual-bot.md)记录同一授权窗口的历史与当前状态。2026-09-25，原失败操作已完成同 ID 物理恢复，后续 `e5979b98` 固定安装在 10:55 UTC 的受控接管及 loaded/committed 对齐实际成功。随后官方磁盘来源从 `83be8f81` 变为 `99eb6cd3`，原进程消失、现役 Host 无 preload，相关运行条件已失效；不能据此重开已完成的旧恢复，也不能把旧时点成功当当前采用许可。创建全局围栏已在 e597 收窄为相同声明/精确目标，独立 B/C 并未被原 A unknown 全局禁止。**双 Bot 验收仍未完成：第一只 Temporal Bot 创建进入 `effect_unknown`，未取得可验证的原生身份回执；没有重发或另换 ID，B/C 未提交，模型/DM/tool/compact/follow-up 未执行。** 当前现场已回官方 Host、desired disabled，实验 modeld 正式停止；49 个原有本机 Bot 身份/harness、模型字节和原 controller 行保留。controller 有 7 条 unknown，产品创建台账另有一条 unknown，均未清除。最新父会话修复未追加独立审查；历史审查仍绑定原范围。原生 40 项及有限静态/模型链资格不扩成完整 E2E、J3/J4、模型矩阵或持久运行通过。
+[历史窗口](../reports/2026-09-24-controlled-dual-bot.md)中的原失败操作已完成同 ID 物理恢复；`e5979b98` 在 10:55 UTC 曾实际接管，随后官方换代使其运行条件失效。当前后续见[实施与现场回执](../reports/2026-09-25-host-intake-recovery.md)：`433184fb` 已在 `8aeda5f9/0378b9f4` 重新实际采用，完整 61 切片与 loaded/committed 对齐 verified；最后读回 Host/runtime intake committed，运行代与 witness current，modeld ready 且 accepted/completed/active 为零。当前 desired 为 route，不再沿用此前“已回官方/停止 modeld”的旧状态。
+
+**双 Bot 验收仍未完成。** A 原创建保持 effect_unknown/result null，未重发。B 在首次提交前正式纠正为 Box/deferStart，取得明确原生 ID，但返回 Temporal/mismatch；这是已结算的目标不符，不是 unknown，不再提交原 B。C 未提交；模型、DM、工具、compact 与 follow-up 未执行。新增显式 Box 意图切片及 `native-creation` 能力追加入口已实施/固定安装，最后服务切换被工具层拦截，切换脚本尚无 admitted 记录，现役仍是 433 的 61 切片，不把未加载的新修复当通过。原 49 个 Bot ID/harness 和模型字节保留，原 7 条 controller unknown 逐行未变；新增 B 当前空闲但尚未清理。全局 CLI shim 仍 e597，使用本窗口的固定安装入口，不借越过工具文件范围改 shim。按用户指令未派发 subagent；所有隔离/来源检查不代签真实 Box 创建、完整 E2E、J3/J4 或长期运行。
 
 ### 安装级观察恢复（2026-09-25）
 
@@ -12,7 +14,7 @@
 
 ### AH-188 Host 更新分级待验窗口（2026-09-25）
 
-**`source-integration-verified / not-run`；没有新增现场通过。** [T44 更新事件合同](T44-host-ops-continuous-sensing.md#source-change-events)与 AH-143 公共观察配置、任务投递已在同一候选通过自有来源 → 原 producer → 固定 provenance → OBS/outbox → 自有 HTTP 接收/回执的隔离纵切。准确范围见[联合集成回执](../reports/2026-09-25-host-notification-integration.md)；实际合入提交由原票记录。合入与源码测试不更换 AH-124 固定候选，不授权部署或修复/采用。
+**`partial`；来源集成与安装级实际观察已取得证据，完整四类更新/真实通知仍未验收。** [T44 更新事件合同](T44-host-ops-continuous-sensing.md#source-change-events)与 AH-143 公共观察配置、任务投递已在同一候选通过自有来源 → 原 producer → 固定 provenance → OBS/outbox → 自有 HTTP 接收/回执的隔离纵切。准确范围见[联合集成回执](../reports/2026-09-25-host-notification-integration.md)；实际合入提交由原票记录。合入与源码测试不更换 AH-124 固定候选，不授权部署或修复/采用。
 
 同一候选完成 Q 合流与必要复核后，仅沿原 [采集寿命](#live-monitor-persistence)、[通知寿命](#live-ops-observer-lifetime)、[证据](#live-obs-evidence)、[隐私](#live-alert-privacy)及[容量](#live-obs-storage)补验：实际官方来源的窗口外更新零唤醒；相关同形/结构变化/无法判断分别形成可消费事件；连续来源与同 episode 风险升级不被旧 open incident 吞掉；前后固定私有引用可读回且公共面无源码/路径；新磁盘、已验证候选、实际运行代与用户影响不混。核验公共 observation 开关与 execution/notification 开关独立生效，以及真实消费者接收和原 outbox 证据保全。不能以自有 fixture、HTTP 受理或未返回结论的审查代签这些判据。
 

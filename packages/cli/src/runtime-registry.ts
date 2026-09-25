@@ -261,13 +261,13 @@ export const RUNTIME_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["runtime", "profile", "analyze"],
-    usage: "grokbox runtime profile analyze --sha <sha> --out <abs> [--capability ownership-local|current-state]",
+    usage: "grokbox runtime profile analyze --sha <sha> --out <abs> [--capability ownership-local|current-state|native-creation]",
     summary: "Triage retained snapshot; missing runner still emits envelope reject ids and write next.",
     arguments: [],
     options: options([
       { flags: "--sha <sha>", description: "Retained source SHA", required: true },
       { flags: "--out <abs>", description: "Protected analysis artifact path", required: true },
-      { flags: "--capability <name>", description: "Inspect a maintained ownership-local or qualified current-state upgrade against the same-source reviewed baseline" },
+      { flags: "--capability <name>", description: "Inspect ownership-local, current-state or native-creation against the same-source reviewed baseline" },
     ]),
     stdin: "none",
     table: false,
@@ -387,7 +387,7 @@ export const RUNTIME_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["runtime", "profile", "write"],
-    usage: "grokbox runtime profile write (--sha <retainedSourceSha> | --from <host-bundle> --allow-unretained --confirm) [--slice-review <id...>] [--capability ownership-local|current-state | --refresh-reviewed] [--expected-reviewed-sha <sha>]",
+    usage: "grokbox runtime profile write (--sha <retainedSourceSha> | --from <host-bundle> --allow-unretained --confirm) [--slice-review <id...>] [--capability ownership-local|current-state|native-creation | --refresh-reviewed] [--expected-reviewed-sha <sha>]",
 
     summary: "Atomically author a durable PatchProfile from a retained Host generation; envelope reject-on-drift. No live inject.",
     arguments: [],
@@ -397,7 +397,7 @@ export const RUNTIME_COMMANDS: readonly LeafCommand[] = [
       { flags: "--allow-unretained", description: "Waive retain-dir bind only; never skips envelope reject-on-drift" },
       { flags: "--confirm", description: "Required with --from --allow-unretained" },
       { flags: "--slice-review <id...>", description: "Exact rejecting envelope slice ids (windowSha/count/find.inWindow)" },
-      { flags: "--capability <name>", description: "Upgrade the selected ownership-local or current-state capability and dependencies; requires --sha and an applicable baseline" },
+      { flags: "--capability <name>", description: "Upgrade ownership-local, current-state or native-creation without replacing unrelated slices; requires --sha and an applicable baseline" },
       { flags: "--refresh-reviewed", description: "Preserve reviewed capabilities and refresh only declared source-identity slots in one retained-source publication" },
       { flags: "--expected-reviewed-sha <sha>", description: "Required with --capability or --refresh-reviewed: exact prior reviewed file digest; rejects intervening changes" },
     ]),

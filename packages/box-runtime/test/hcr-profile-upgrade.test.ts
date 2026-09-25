@@ -30,6 +30,23 @@ async function fixture(source = LIVE_SHAPED_HOST, slices = legacySlices()) {
   return { root, sha, source, slices, input: { ...input, expectedReviewedSha: sha256Text(before) }, path, before };
 }
 
+linuxTest("native creation can be added through the original writer without replacing other reviewed capabilities", async () => {
+  const f = await fixture(LIVE_SHAPED_HOST, legacySlices().filter(slice => slice.id !== "native-create-box-harness"));
+  const inspected = await inspectRetainedWriteEnvelope(f.root, f.sha, undefined, "native-creation");
+  expect(inspected.capabilityUpgrade?.addedIds).toEqual(["native-create-box-harness"]);
+  expect(inspected.capabilityUpgrade?.updatedIds).toEqual([]);
+  expect(inspected.requiredIds).toEqual(["native-create-box-harness"]);
+  expect(inspected.next).toContain("--capability native-creation");
+  await expect(writeReviewedProfileFromCopy({ ...f.input, capability: "native-creation" })).rejects.toMatchObject({ refusal: "envelope_drift" });
+  expect(await fs.readFile(f.path, "utf8")).toBe(f.before);
+  const written = await writeReviewedProfileFromCopy({ ...f.input, capability: "native-creation",
+    lineage: { ...f.input.lineage, sliceReview: inspected.requiredIds } });
+  expect(written.profile.slices.slice(0, f.slices.length)).toEqual(f.slices);
+  expect(written.profile.slices.at(-1)).toEqual(LIVE_SLICE_PATCHES.find(slice => slice.id === "native-create-box-harness"));
+  expect(written.profile.slices).toHaveLength(f.slices.length + 1);
+  expect(written.capabilityUpgrade?.capability).toBe("native-creation");
+});
+
 linuxTest("bounded capability upgrade bypasses no required dependency and preserves all non-target slices", async () => {
   const alert = LIVE_SLICE_PATCHES.find(slice => slice.id === "alert-main-decision")!;
   const f = await fixture(LIVE_SHAPED_HOST.replace(alert.find, "/* unrelated changed alert implementation */"));

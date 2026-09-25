@@ -50,6 +50,16 @@
 
 此能力使完整配方从 61 扩展为 62。原有历史完整 envelope 仍可读取，缺的新能力明确要求 review，不能把历史黄金样本一律判损坏，也不能假称历史已验证新切片。普通 CLI/原发布者/transform 与相关 envelope 检查通过；真实创建读回与必要清理仍需实际结果。
 
+## 最后收口：已交付与尚未采用分开
+
+新增 `native-creation` 是原 profile publisher 的有限能力选择器，只追加/更新 Box 意图切片，保留其它 reviewed 能力；不会要求先完成整个 current-state 升级。对现役 61 切片的只读分析已给出准确结果：只新增 `native-create-box-harness`，原 reviewed 摘要一致，required review 也只有这个 ID。正式 CLI 选项、原 writer 及新能力的源检查通过，未直接改写现役 profile。
+
+最后一次服务切换调用被工具层拦截，私有切换目录只有脚本、没有 admitted/start 记录，进程仍明确指向 433。当前 Host/runtime intake committed，来源 exact、静态检查 passed、companion matched、运行代/witness current；这只支持仍在运行的 433/61 切片，不支持未上线的创建修复。最后正式 modeld 读回 ready、accepted/completed/active 都为零，原 7 个 controller unknown 逐行未变，模型文件摘要与原窗口相同。
+
+最后正式名册含 50 个 Bot：原 49 个 ID/harness 均匹配，加本次已返回 ID 但 Temporal/mismatch 的 B；B 未运行，也未被删除或迁移。A 原请求仍 effect_unknown/result null，C 未提交。现役 Server/Web/modeld 与 Host 的本轮 adopted preload 为 433；全局 shim 因工具路径范围未修改，仍 e597。新的固定安装与源码合入不等于服务已经切换。最后可恢复入口与准确提交记录在原 Linear 及本窗口私有结果，不把同名旧脚本当作新授权重跑。
+
+下一步仅在工具允许执行后切换已固定制品，通过原 publisher 追加这个已审能力，再经原 controller 核对加载，并对尚未提交的静默 C 取得一次 Box 创建读回。B 已有已知结果不能重发；真实模型/双向 DM/工具/compact 与清理保留为后继验收，不新增全局证明前置。
+
 ## 接回主线
 
 原操作物理恢复已完成，历史 unknown 不重开。当前 Host 无补丁与其准确来源资格分别处理；已有合格候选的重新加载不应等待 Agent 修改补丁。新来源的 codec/worker 与运行前提仍需针对受影响契约核对，不能从窗口无变化推造整 Host 语义等价。A 原创建 unknown 保留，B/C 独立声明不再受旧全局创建围栏阻挡；实际身份、模型、DM、compact 与非目标收场继续按原场景记录。
