@@ -7,7 +7,9 @@ import { build } from "esbuild";
 import { createContext, runInContext } from "node:vm";
 import { describeHostSourceChange, projectHostSourceChange, projectHostSourceWindow, type HostSourceWindow } from "../packages/runtime-kernel/src/host-source-change.ts";
 import { canonicalJson, sha256Text } from "../packages/runtime-kernel/src/hash.ts";
-import { captureHostSourceWindow, retainedHostSourceWindow } from "../packages/box-runtime/src/internal/io/host-source-change.node.ts";
+import { captureHostSourceWindow, retainedHostSourceWindow, readHostSourceEvidencePins } from "../packages/box-runtime/src/internal/io/host-source-change.node.ts";
+import { openMonitorStore } from "../packages/box-runtime/src/internal/io/monitor-store.node.ts";
+import { openMonitorSqlite } from "../packages/box-runtime/src/internal/io/monitor-sqlite.node.ts";
 import { readHostArtifacts } from "../packages/box-runtime/src/internal/io/host-artifact-source.node.ts";
 import { readHostSourceEvidence, hostSourceEpisodeId, retainHostSourceEvidence, pruneHostSourceEvidence, hostSourceEvidenceBytes, HOST_SOURCE_EVIDENCE_MAX_BYTES } from "../packages/box-runtime/src/internal/io/provenance.node.ts";
 import { profileFromSource, type SlicePatch } from "../packages/box-runtime/src/internal/host/profile.ts";
@@ -99,6 +101,26 @@ test("private retirement preserves original work pins and refuses deletion on an
     expect(await readHostSourceEvidence(f.root, b.evidenceRef!)).toBeNull();
   } finally { await f.close(); }
 });
+test("expired notification history cannot permanently saturate source pins, but an active evidence lease still protects missing evidence", async () => {
+  const f = await fixture(); try {
+    const store = openMonitorStore(f.root); await store.initialize();
+    const db = await openMonitorSqlite(store.path, "write"), now = Date.now(), leasedIncident = randomUUID();
+    try {
+      await db.run("BEGIN IMMEDIATE");
+      for (let n = 0; n < 200; n++) await db.run("INSERT INTO notification_work(id,incident_id,evidence_revision,state,created_at,expires_at) VALUES(?,?,1,'completed',?,?)",
+        [randomUUID(), n === 0 ? leasedIncident : randomUUID(), now - 10000 - n, now - 1]);
+      await db.run("COMMIT");
+      expect(await store.notificationWork(200)).toHaveLength(200);
+      expect(await readHostSourceEvidencePins(f.root)).toEqual([]);
+      await db.run("INSERT INTO evidence_leases(id,incident_id,revision,created_at,expires_at,reserved_bytes) VALUES(?,?,1,?,?,1)",
+        [randomUUID(), leasedIncident, now, now + 60000]);
+      // A current lease with unavailable detail cannot authorize retirement,
+      // even though its transport work has completed and expired.
+      expect(await readHostSourceEvidencePins(f.root)).toBeNull();
+    } finally { await db.close(); }
+  } finally { await f.close(); }
+});
+
 test("missing, replaced, symlinked and oversize evidence remains unknown rather than resolving to live input", async () => {
   const f = await fixture(); try {
     const a = await f.capture(), path = join(f.root, "host-bundles/source-evidence", `${a.evidenceRef}.json`);

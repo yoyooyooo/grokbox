@@ -278,9 +278,11 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
     return {leaseId,incidentId:input.incidentId,evidenceRevision:input.revision,reservedUntil:expiresAtMs,reservedBytes:bytes};
    });
   },
-  async notificationWork(limit=100){
+  async notificationWork(limit=100,activeEvidenceAtMs?:number){
    if(!Number.isSafeInteger(limit)||limit<1||limit>200)throw error("monitor_invalid_limit");
-   return read(db=>db.all("SELECT id,incident_id AS incidentId,evidence_revision AS evidenceRevision,state,created_at AS createdAtMs,expires_at AS expiresAtMs,last_reason AS lastReason FROM notification_work ORDER BY created_at DESC LIMIT ?",[limit]));
+   if(activeEvidenceAtMs!==undefined&&(!Number.isSafeInteger(activeEvidenceAtMs)||activeEvidenceAtMs<1))throw error("monitor_invalid_window");
+   const active=activeEvidenceAtMs===undefined?"":" WHERE (w.expires_at>? AND w.state NOT IN ('expired','superseded')) OR EXISTS (SELECT 1 FROM evidence_leases l WHERE l.incident_id=w.incident_id AND l.revision=w.evidence_revision AND l.expires_at>?)";
+   return read(db=>db.all(`SELECT w.id,w.incident_id AS incidentId,w.evidence_revision AS evidenceRevision,w.state,w.created_at AS createdAtMs,w.expires_at AS expiresAtMs,w.last_reason AS lastReason FROM notification_work w${active} ORDER BY w.created_at DESC LIMIT ?`,activeEvidenceAtMs===undefined?[limit]:[activeEvidenceAtMs,activeEvidenceAtMs,limit]));
   },
   async notificationNotice(workId:string){if(!monitorUuid(workId))throw error("notification_invalid_work");return read(db=>noticeForWork(db,workId));},
   async linkedEvidenceIncidents(refs:readonly string[]){

@@ -67,6 +67,7 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
   let observationController=new AbortController();
   let gate:AdvisoryGate|null=null, watchers:FSWatcher[]=[], dirty=true, lastHashAt=0, closed=false, enabled=false;
   let generation=0, currentKey:string|null=null, analyzedKey:string|null=null, retryAt=0, failures=0;
+  let retirementUnavailable=false;
   type Pending={artifacts:HostArtifacts;generation:number;key:string;buildId:string|null;reference:NativeSourceIdentity;change:HostSourceChange;controller:AbortController};
   let pending:Pending|null=null, active:Pending|null=null;
   const cache=new Map<string,StaticAnalysis>();
@@ -117,6 +118,13 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
     } catch {status={...status,intake:"unavailable"};}
   }
   async function replay(){await serial(async()=>intake(await readHostHealthJournal(input.root,input.installationId)));}
+  async function retireEvidence(journal:HostHealthJournal) {
+    try {
+      await pruneHostSourceEvidence(input.root,journal,[active?.change.before?.evidenceRef,active?.change.after?.evidenceRef,
+        pending?.change.before?.evidenceRef,pending?.change.after?.evidenceRef],()=>readHostSourceEvidencePins(input.root));
+      retirementUnavailable=false;
+    } catch { retirementUnavailable=true; }
+  }
   function publish(a:HostArtifacts|null, analysis:StaticAnalysis|null, code:string|null, phase:HostHealthEvidence["analysis"], expectedGeneration:number,reference:NativeSourceIdentity=NATIVE_CHECKPOINT_PAIR, change?:HostSourceChange) {
     return serial(async()=>{
       if(closed||!enabled)return false;
@@ -126,6 +134,9 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
       if(!current&&(!a||!analysis))return false;
       if(!current)dirty=true;
       const journal=await readHostHealthJournal(input.root,input.installationId), sequence=journal?.nextSequence??0;
+      // A previous commit may have outlived an intake/cleanup failure. Replay it
+      // before needing another journal slot; never strand committed evidence.
+      await intake(journal);
       const covered=new Set<string>(HOST_CHECK_REQUIREMENTS.flatMap(c=>[...c.slices]));
       let transition = change;
       if (!transition) {
@@ -142,6 +153,14 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
           const after = a ? await captureHostSourceWindow(input.root, a, orderedRecipe) : null;
           transition = describeHostSourceChange({ episodeId: hostSourceEpisodeId(input.installationId, sequence, before, after), before, after });
         }
+      }
+      // Retry only the current AFTER side, with every immutable digest/window
+      // checked. This adds a new observation; it never edits earlier evidence or
+      // substitutes changed current bytes for an unavailable historical source.
+      if(a&&transition.after&&!transition.after.evidenceRef&&transition.after.sourceSet===a.sourceSet) {
+        const recovered=await captureHostSourceWindow(input.root,a,orderedRecipe);
+        if(canonicalJson({...recovered,evidenceRef:null})===canonicalJson({...transition.after,evidenceRef:null}))
+          transition={...transition,after:recovered};
       }
       // Private attachment I/O may span another disk update or policy change.
       // Recheck the original immutable window before publishing it as current.
@@ -160,10 +179,10 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
         loaded:"not-observed",attachment:"not-observed",exercised:"not-exercised",notificationCoverage:"local-only",detectorCode:code,qualified:false,
         ...(a?{recipeSha,sourceEvolution:evolution(a,analysis,reference)}:{}), sourceChange};
       const next=await retainHostHealthEvidence(input.root,input.installationId,sequence,{event,analysis});
-      await pruneHostSourceEvidence(input.root, next, [active?.change.before?.evidenceRef, active?.change.after?.evidenceRef,
-        pending?.change.before?.evidenceRef, pending?.change.after?.evidenceRef], () => readHostSourceEvidencePins(input.root));
       if(current)status={...status,latest:event,assessment:hostHealthSummary(event),intake:"not-observed"};
-      await ports.afterRetain?.(); await intake(next); return true;
+      await ports.afterRetain?.(); await intake(next);
+      // Housekeeping cannot withhold an already committed observation from OBS.
+      await retireEvidence(next); return true;
     });
   }
   const runtimeSource=sha256Text(canonicalJson(["host-runtime",input.installationId]));
@@ -293,7 +312,11 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
     try {buildId=(await runtime.runPromise(Effect.gen(function*(){const verifier=yield* HostVerifier;return yield* verifier.identity();}),{signal:controller.signal})).buildId;} catch {}
     const key=analysisKey(a.sourceSet,buildId);
     if(currentKey!==key){currentKey=key;generation++;analyzedKey=null;}
-    if(analyzedKey===key){status={...status,state:"running",reason:"observed"};await replay();return;}
+    if(analyzedKey===key){
+      await replay();
+      if(retirementUnavailable)await serial(async()=>{const journal=await readHostHealthJournal(input.root,input.installationId);if(journal)await retireEvidence(journal);});
+      status={...status,state:"running",reason:retirementUnavailable?"evidence-retirement-unavailable":"observed"};return;
+    }
     if(active?.key===key){pending=null;return;}
     if(pending?.key===key)return;
     // Exact failure is retained and indexed BEFORE slow parsing or a failed
@@ -323,9 +346,11 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
     try { if(!await publish(a,analysis,code,phase,job.generation,job.reference,job.change)){dirty=true;return;} }
     finally { active=null; }
     if(job.generation!==generation||!await a.current()){dirty=true;return;}
-    if(analysis){analyzedKey=job.key;retryAt=0;failures=0;}
+    const attachmentReady=!!status.latest?.sourceChange?.after?.evidenceRef;
+    if(analysis&&attachmentReady){analyzedKey=job.key;retryAt=0;failures=0;}
     else {dirty=true;retryAt=Date.now()+Math.min(30000,Math.max(pollMs,250)*2**Math.min(failures++,6));}
-    status={...status,state:"running",reason:a.applicability==="mismatch"?"recipe-mismatch":analysis?"observed":"analysis-unavailable"};
+    status={...status,state:"running",reason:retirementUnavailable?"evidence-retirement-unavailable":!attachmentReady?"evidence-unavailable"
+      :a.applicability==="mismatch"?"recipe-mismatch":analysis?"observed":"analysis-unavailable"};
   }
   const lane=(work:()=>Promise<void>, interval=pollMs)=>Effect.forever(Effect.gen(function*(){
     yield* local(work).pipe(Effect.catch(()=>Effect.sync(()=>{status={...status,state:"blocked",reason:"source-or-provenance-unavailable"};retryAt=Date.now()+Math.max(pollMs,1000);dirty=true;})));

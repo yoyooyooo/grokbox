@@ -36,12 +36,14 @@ export async function captureHostSourceWindow(root: string, artifacts: HostArtif
  * database. Lack of a complete read is conservative storage pressure, not GC. */
 export async function readHostSourceEvidencePins(root: string): Promise<string[] | null> {
   try {
-    const store = openMonitorStore(root), work = await store.notificationWork(200);
+    // Apply lifetime/lease selection BEFORE the bound: old completed history
+    // must not turn an otherwise complete active-pin read into permanent null.
+    const store = openMonitorStore(root), work = await store.notificationWork(200, Date.now());
     if (work.length >= 200) return null;
     const pins = new Set<string>();
     for (const row of work) {
       const evidence = await store.incidentEvidence(String(row.incidentId), Number(row.evidenceRevision));
-      if (evidence.state !== "available" && !["completed", "expired", "superseded"].includes(String(row.state))) return null;
+      if (evidence.state !== "available") return null;
       for (const fact of evidence.facts) {
         const change = "value" in fact ? projectHostHealth(fact.value)?.sourceChange : undefined;
         for (const ref of [change?.before?.evidenceRef, change?.after?.evidenceRef]) if (ref) pins.add(ref);

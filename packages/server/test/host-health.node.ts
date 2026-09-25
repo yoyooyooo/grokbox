@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFile, writeFile, unlink, lstat, readdir } from "node:fs/promises";
+import { readFile, writeFile, unlink, lstat, readdir, chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { once } from "node:events";
 import { spawn } from "node:child_process";
@@ -19,6 +19,55 @@ const health=(f:Awaited<ReturnType<typeof hostHealthFixture>>)=>f.client().hostH
 // distinct lifetimes. Preserve the original fault/recovery assertions below.
 const incidents=async(f:Awaited<ReturnType<typeof hostHealthFixture>>)=>(await f.observations.incidents()).filter(r=>r.rule==="host_patch_health"&&r.category==="condition");
 const changes=async(f:Awaited<ReturnType<typeof hostHealthFixture>>)=>(await f.observations.incidents()).filter(r=>r.rule==="host_patch_health"&&r.category==="occurrence");
+
+test("temporary attachment capacity recovers the same immutable episode without editing its earlier missing evidence",async()=>{
+ let firstMissing:string|null=null,root="",changedWorker:string|null=null;
+ const f=await hostHealthFixture(origin,{ports:{afterRetain:async()=>{
+  if(!root||!changedWorker)return;
+  const event=(await readHostHealthJournal(root,H_INSTALL))?.receipts.at(-1)?.event;
+  if(event?.workerSha===changedWorker&&event.sourceChange?.after?.evidenceRef===null)firstMissing??=event.sourceChange.episodeId;
+ }}});root=f.root;
+ try{
+  await until(()=>health(f),v=>v.data.latest?.analysis==="passed"&&v.data.intake==="committed");
+  const path=join(f.root,"config.json"),config=JSON.parse(await readFile(path,"utf8"));
+  await publishConfigFile(path,{...config,ops:{...config.ops,observation:{enabled:false}}});
+  await until(()=>health(f),v=>v.data.state==="disabled");
+  const dir=join(f.root,"host-bundles/source-evidence"),count=(await readdir(dir)).length;
+  for(let n=count;n<68;n++)await writeFile(join(dir,`${"f".repeat(48)}${n.toString(16).padStart(16,"0")}.json`),"{}",{mode:0o600,flag:"wx"});
+  const worker="module.exports = { changedAfterCapacity: true };\n";
+  changedWorker=(await import("@grokbox/runtime-kernel/hash")).sha256Text(worker);
+  await writeFile(f.paths.worker,worker,{mode:0o600});
+  await publishConfigFile(path,{...config,ops:{...config.ops,observation:{enabled:true}}});
+  const settled=await until(()=>health(f),v=>v.data.latest?.workerSha===changedWorker&&v.data.latest.analysis==="passed"
+    &&!!v.data.latest.sourceChange?.after?.evidenceRef&&v.data.intake==="committed");
+  assert.ok(firstMissing);
+  assert.equal(settled.data.latest!.sourceChange!.episodeId,firstMissing);
+  assert.equal(settled.data.latest!.sourceChange!.classification,"related-same-shape");
+  const journal=(await readHostHealthJournal(f.root,H_INSTALL))!;
+  assert.ok(journal.receipts.some(r=>r.event.sourceChange?.episodeId===firstMissing&&r.event.sourceChange.after?.evidenceRef===null));
+  assert.equal((await readHostSourceEvidence(f.root,settled.data.latest!.sourceChange!.after!.evidenceRef!))!.worker,worker);
+ }finally{await f.close();}
+});
+
+test("unsafe orphan cleanup cannot strand committed observations or fill the journal, and later cleanup recovers",async()=>{
+ const f=await hostHealthFixture(origin);try{
+  await until(()=>health(f),v=>v.data.latest?.analysis==="passed"&&v.data.intake==="committed");
+  const orphan=join(f.root,"host-bundles/source-evidence",`${"f".repeat(64)}.json`);
+  await writeFile(orphan,"{}",{mode:0o600});await chmod(orphan,0o644);
+  const previous=(await health(f)).data.latest!.workerSha;
+  await writeFile(f.paths.worker,"module.exports = { orphanIsolation: true };\n",{mode:0o600});
+  await until(()=>health(f),v=>v.data.latest?.workerSha!==previous&&v.data.latest?.analysis==="passed"
+    &&v.data.intake==="committed"&&v.data.reason==="evidence-retirement-unavailable");
+  const journal=(await readHostHealthJournal(f.root,H_INSTALL))!;
+  assert.equal(journal.acknowledgedThrough,journal.nextSequence-1);
+  await delay(1100);
+  assert.equal((await readHostHealthJournal(f.root,H_INSTALL))!.nextSequence,journal.nextSequence);
+  assert.ok(await lstat(orphan));
+  await chmod(orphan,0o600);
+  await until(()=>health(f),v=>v.data.reason==="observed"&&v.data.intake==="committed");
+  await assert.rejects(lstat(orphan),{code:"ENOENT"});
+ }finally{await f.close();}
+});
 
 test("actual TS candidate passes four Rust checks through the management owner with no Bot roster or native RPC",async()=>{
  const f=await hostHealthFixture(origin);try{
