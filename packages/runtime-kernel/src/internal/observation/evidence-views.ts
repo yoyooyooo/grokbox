@@ -102,6 +102,7 @@ export type BotIncidentNotice = {
   automaticDiagnosis: false; automaticIssue: false; replayAuthorized: false;
 };
 export const BOT_NOTICE_SUMMARIES: Readonly<Record<string, string>> = Object.freeze({
+    host_patch_health: "观察到 Host 补丁相关变化或健康异常；具体影响待分析，前后证据已保存。",
     continuity_attention: "观察到受保护 Bot 的归属、恢复或未结操作异常；交接完成和安全退役须由业务证据另行判断。",
     native_alert: "观察到原生 Bot 告警，原因尚需结合现场判断。",
     native_run_failure: "观察到原生 Bot 任务失败；这不证明整个用户任务或所有子任务均已结束。",

@@ -134,7 +134,7 @@ function deliveryNotice(v: BotIncidentNotice): BotIncidentNotice {
   if (!v || v.schemaVersion !== 1 || v.kind !== "grokbox.ops.notification" || v.intent !== "brief-notice"
     || !uuid(v.incidentId) || !positive(v.evidenceRevision) || !positive(v.capturedAtMs)
     || ![...Object.values(BOT_NOTICE_SUMMARIES), generic].includes(v.summary)
-    || ![...FAILURE_CATEGORIES, "native_failure", "suspected_stall", "observation_gap", "continuity_impact"].includes(v.classification)
+    || ![...FAILURE_CATEGORIES, "host_compatibility", "native_failure", "suspected_stall", "observation_gap", "continuity_impact"].includes(v.classification)
     || v.rootCause !== "not_proven" || v.behavior !== "notify_then_end" || v.automaticDiagnosis !== false
     || v.automaticIssue !== false || v.replayAuthorized !== false || v.evidence?.tier !== "detail" || !positive(v.evidence.expiresAtMs)
     || !Array.isArray(v.evidence.missingRequirements) || v.evidence.missingRequirements.length > 8

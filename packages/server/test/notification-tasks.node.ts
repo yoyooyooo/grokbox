@@ -1,11 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { CAPABILITIES, ManagementClient } from "@grokbox/client";
 import { effectiveOps } from "@grokbox/runtime-kernel/config";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { freezeNotification, maintenanceTask, selectNotificationTarget, maintenanceReceiverPrincipal, projectNativeNotificationResult } from "@grokbox/runtime-kernel/observation";
-import { openRuntimeStore, createPreparedNoticeDriver, openMonitorStore, activateOpsNotifications } from "@grokbox/box-runtime/runtime";
+import { openRuntimeStore, createPreparedNoticeDriver, openMonitorStore, activateOpsNotifications, type HostHealthTestPorts } from "@grokbox/box-runtime/runtime";
+import { LIVE_SLICE_PATCHES } from "../../box-runtime/src/internal/host/live-slices.ts";
+import { profileFromSource } from "../../box-runtime/src/internal/host/profile.ts";
 import { openMonitorSqlite } from "../../box-runtime/src/internal/io/monitor-sqlite.node.ts";
 import { noticeForWork } from "../../box-runtime/src/internal/io/incident-evidence.node.ts";
 import { automaticFixture, MODEL } from "../../box-runtime/test/fixtures/automatic-notice.ts";
@@ -20,11 +24,11 @@ async function fixture() {
     { principalId: maintenanceReceiverPrincipal(randomUUID()), tokenSha256: sha256Text(OTHER), capabilities: ["notifications.tasks"] },
   ] as AccessGrant[] };
   let server: ManagementServer;
-  async function start() {
+  async function start(hostHealth: HostHealthTestPorts = { enabled: false }) {
     server = await startManagementServer({ store: openRuntimeStore(f.root, {}), installationId: I, observations: f.store, env: {},
       readGrants: async () => structuredClone(state.grants), native: { listBots: async () => { throw Error("no_catalog"); },
         ownershipRead: async () => { throw Error("no_collector"); }, readNotificationReceiver: f.readNative } },
-      { hostHealth: { enabled: false }, notification: { request: f.request, idleMs: 50, blockedMs: 50 } });
+      { hostHealth, notification: { request: f.request, idleMs: 50, blockedMs: 50 } });
     servers.push(server); return server;
   }
   async function api(path: string, input?: object, token = RECEIVER) {
@@ -145,6 +149,77 @@ test("task writes require the actual delegated principal, current binding and ex
     assert.equal(stored.taskReceipt!.result, null); assert.equal(f.requests.length, 0);
   } finally { await f.close(); }
 });
+test("actual source producer feeds the original outbox and delegated HTTP task receipts; unrelated updates stay quiet", async () => {
+  const f = await fixture(), deliveries: Array<{ task: any; claim: any }> = [];
+  let callbackError: unknown;
+  const until = async (condition: () => Promise<boolean>) => {
+    const end = Date.now() + 10000;
+    do {
+      if (callbackError) throw callbackError;
+      if (await condition()) return;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    } while (Date.now() < end);
+    const health = (await f.client().hostHealth()).data;
+    throw Error(`source_task_deadline:${JSON.stringify({ deliveries: deliveries.length, requests: f.requests.length,
+      worker: f.server.status().notifications, health: { state: health.state, reason: health.reason, intake: health.intake,
+        classification: health.latest?.sourceChange?.classification }, work: await f.store.notificationWork() })}`);
+  };
+  try {
+    const input = join(f.root, "owned-source"); await mkdir(input, { mode: 0o700 });
+    const source = await readFile(join(process.env.GROKBOX_TEST_FIXTURES!, "host-verifier/sources/contracts.cjs"), "utf8");
+    const paths = { source: join(input, "host.cjs"), worker: join(input, "worker.cjs"), profile: join(input, "profile.json") };
+    const slices = LIVE_SLICE_PATCHES.filter(slice => ["create-session", "agent-id", "managed-turn-retry-gate", "compact-register"].includes(slice.id));
+    await writeFile(paths.source, source, { mode: 0o600 });
+    await writeFile(paths.worker, "module.exports = {};\n", { mode: 0o600 });
+    await writeFile(paths.profile, JSON.stringify(profileFromSource(source, slices, "public-task-fixture")), { mode: 0o600 });
+    assert.equal((await f.activate()).state, "authorized");
+    f.reply(response => {
+      void (async () => {
+        const envelope = JSON.parse(f.requests.at(-1)!);
+        assert.equal(envelope.intent, "diagnose-or-report");
+        assert.equal(envelope.task.mutationAuthority, false);
+        const claim = { databaseId: envelope.task.databaseId, workId: envelope.workId, attemptId: envelope.deliveryId,
+          taskDigest: envelope.task.digest, requestId: randomUUID() };
+        const accepted = await f.api("/v1/notification-task-claims", claim);
+        assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
+        const report = await f.api("/v1/notification-task-results", { ...claim, requestId: randomUUID(),
+          claimId: accepted.body.data.receipt.claim.claimId, conclusion: "inconclusive", reportDigest: null });
+        assert.equal(report.status, 200, JSON.stringify(report.body));
+        deliveries.push({ task: envelope.task, claim });
+      })().catch(error => { callbackError = error; }).finally(() => response.end("accepted"));
+    });
+    await f.start({ paths, runtime: { runRoot: join(f.root, "owned-run") },
+      binaryDirectory: join(dirname(process.env.GROKBOX_TEST_CLI_ENTRY!), "native/x86_64-unknown-linux-gnu"), pollMs: 25, backstopMs: 100 });
+    await until(async () => deliveries.length === 1);
+    assert.equal(deliveries[0]!.task.source.classification, "unknown");
+    await until(async () => (await f.client().hostHealth()).data.latest?.analysis === "passed");
+    const unrelated = source + "\n// unrelated public fixture metadata\n";
+    await writeFile(paths.source, unrelated, { mode: 0o600 });
+    await until(async () => {
+      const health = (await f.client().hostHealth()).data;
+      return health.latest?.sourceSha === sha256Text(unrelated) && health.latest.analysis !== "pending" && health.intake === "committed";
+    });
+    assert.equal((await f.client().hostHealth()).data.latest!.sourceChange!.classification, "no-intersection");
+    await new Promise(resolve => setTimeout(resolve, 250)); assert.equal(deliveries.length, 1);
+    await writeFile(paths.worker, "module.exports = { changed: true };\n", { mode: 0o600 });
+    await until(async () => deliveries.length === 2);
+    assert.equal(deliveries[1]!.task.source.classification, "related-same-shape");
+    await writeFile(paths.source, "module.exports = {};\n", { mode: 0o600 });
+    await until(async () => deliveries.length === 3);
+    assert.equal(deliveries[2]!.task.source.classification, "structural-change");
+    for (const delivery of deliveries) {
+      await until(async () => {
+        const value = await f.store.notificationTask({ databaseId: delivery.task.databaseId, workId: delivery.task.taskId,
+          principalId: maintenanceReceiverPrincipal(f.pairing.bindingId) });
+        return value.transport.state === "native-accepted" && value.receipt?.result?.conclusion === "inconclusive";
+      });
+    }
+    assert.equal(f.requests.length, 3);
+    assert.ok(f.requests.every(body => !body.includes("module.exports") && !body.includes(f.root)));
+    assert.equal(callbackError, undefined);
+  } finally { await f.close(); }
+});
+
 function stateRevoke(f: Awaited<ReturnType<typeof fixture>>) {
   f.state.grants = f.state.grants.filter(grant => grant.tokenSha256 !== sha256Text(RECEIVER));
 }
