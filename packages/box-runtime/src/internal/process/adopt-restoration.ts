@@ -80,9 +80,12 @@ export function prepareOriginalRestoration(input: {
     || !identity(diagnostic.child) || !same(diagnostic.child, creation.host)
     || journal.tempSupervisor && !same(journal.tempSupervisor, creation.tempSupervisor)
     || journal.host && !same(journal.host, creation.host))) throw Error("restoration-creation-provenance-unavailable");
+  const rootDigest = sha256Text(resolve(dirname(dirname(input.storePath))));
+  const retainedLaunch = creation && Object.hasOwn(creation, "launch") ? parseAdoptLaunch(creation.launch) : undefined;
+  if (retainedLaunch && (retainedLaunch.rootDigest !== rootDigest || retainedLaunch.uid !== original.leaseOwner?.uid
+    || qualification && !isDeepStrictEqual(retainedLaunch, qualification.launch))) throw Error("restoration-launch-provenance-conflict");
   if (Object.hasOwn(marker, "compilationObservation")) {
-    const launch = parseAdoptLaunch(creation ? creation.launch : qualification?.launch);
-    const rootDigest = sha256Text(resolve(dirname(dirname(input.storePath))));
+    const launch = parseAdoptLaunch(retainedLaunch ?? qualification?.launch);
     if (launch.rootDigest !== rootDigest || launch.uid !== original.leaseOwner?.uid) throw Error("restoration-launch-provenance-conflict");
     const observation = reconcileMarkerCompilation(marker, { rootDigest, targetDigest: launch.targetDigest, uid: launch.uid, now: Date.now() });
     if (!observation || observation.pid !== marker.pid || observation.start !== marker.start

@@ -121,7 +121,7 @@ test("current observation cancellation joins work before releasing recovery gate
   expect((await recoverControllerOperationState(f.input, f.ports)).outcome).toBe("restored");
 });
 
-test("recorded modern Host lifetime can be retired by qualified replacement without relabelling it absent", async () => {
+for (const contradictoryLaunch of [false, true]) test(`recorded modern Host replacement reconciles retained launch: ${contradictoryLaunch ? "conflict" : "matching"}`, async () => {
   const f = await fixture(true), journal = JSON.parse(await readFile(f.files[1]!, "utf8")), marker = JSON.parse(await readFile(f.files[2]!, "utf8"));
   const store = JSON.parse(await readFile(f.files[0]!, "utf8"));
   const lifetime = { pid: f.candidate.pid, start: f.candidate.start };
@@ -129,12 +129,15 @@ test("recorded modern Host lifetime can be retired by qualified replacement with
   Object.assign(marker, lifetime);
   journal.failure = diagnostic;
   journal.creation = { version: 1, operationId: "original", host: lifetime, tempSupervisor: { pid: journal.tempSupervisor.pid, start: journal.tempSupervisor.start },
-    guardian: { pid: 90001, start: 1 }, holder: { pid: 90002, start: 2 }, compile: marker.compile, preloadSha256: marker.preloadSha256 };
+    guardian: { pid: 90001, start: 1 }, holder: { pid: 90002, start: 2 }, compile: marker.compile, preloadSha256: marker.preloadSha256, launch: structuredClone(f.q.launch) };
   store.original.prefix.diagnostic = diagnostic;
   for (const [i, row] of [store, journal, marker].entries()) await writeFile(f.files[i]!, JSON.stringify(row));
   f.q.original.operations = restorationSnapshot(f.files[0]!).sha256!; f.q.original.journal = restorationSnapshot(f.files[1]!).sha256!; f.q.original.marker = restorationSnapshot(f.files[2]!).sha256!;
+  if (contradictoryLaunch) f.q.launch.argvDigest = "b".repeat(64);
   await f.save();
-  expect((await recoverControllerOperationState(f.input, f.ports)).outcome).toBe("restored");
+  const result = await recoverControllerOperationState(f.input, f.ports);
+  expect(result.outcome).toBe(contradictoryLaunch ? "blocked" : "restored");
+  if (contradictoryLaunch) { expect(result.reason).toBe("restoration-evidence-unproven"); expect(f.reads()).toBe(0); }
   expect(f.ports.processes.inspect(f.candidate.pid)?.start).toBe(f.candidate.start);
 });
 
