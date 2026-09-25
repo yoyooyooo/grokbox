@@ -1,3 +1,4 @@
+import { prepareInterruptedObservedCommit } from "../process/interrupted-adopt.node.ts";
 import { acquireCurrentRestorationPorts } from "../process/current-restoration-ports.node.ts";
 import { unresolvedAdoption, writeAdoptionOwner } from "../process/adopt-evidence.ts";
 import { randomUUID } from "node:crypto";
@@ -456,6 +457,7 @@ export async function commitObservedAdopt(input: {
   operationId: string; ephemeralRoot: string;
   observe: () => ObservedAdoptState | null;
   modeldReady: () => Promise<boolean>;
+  prepareInterrupted?: (snapshot: ObservedAdoptState) => Promise<(() => void) | null>;
   signal?: AbortSignal;
 }): Promise<IdentityOpResult | null> {
   const lock = await acquireOperationLease(operationLockPath(input.ephemeralRoot), input.operationId);
@@ -467,10 +469,12 @@ export async function commitObservedAdopt(input: {
     ...(committedAttestation ? { committedAttestation } : {}) });
   try {
     if (input.signal?.aborted) return fail("operation-cancelled");
-    if (unresolvedAdoption(input.ephemeralRoot)) return fail("unresolved-adoption-owner");
+    const unresolved = unresolvedAdoption(input.ephemeralRoot);
     const snapshot = input.observe();
-    if (!snapshot || !observedAdoptCommitEligible(snapshot)) return null;
+    if (!snapshot || !observedAdoptCommitEligible(snapshot)) return unresolved ? fail("unresolved-adoption-owner") : null;
     const captured = structuredClone(snapshot);
+    const preserveInterrupted = unresolved === captured.marker.operationId ? await input.prepareInterrupted?.(captured) : null;
+    if (unresolved && !preserveInterrupted) return fail("unresolved-adoption-owner");
     const compile = captured.marker.compile!;
     if (captured.diskSha256 !== compile.sourceSha256 || captured.gatewayPid !== captured.host.pid
       || captured.supervisorPreloaded) return fail("observed-generation-mismatch");
@@ -484,6 +488,8 @@ export async function commitObservedAdopt(input: {
       return current && isDeepStrictEqual(current, captured) ? null : "observed-generation-changed";
     };
     const before = await recheck(); if (before) return fail(before);
+    preserveInterrupted?.();
+    publicationGuard();
     const proposed: CoverageAttestation = {
       coverage: "attested", diskSha: compile.sourceSha256, pid: captured.host.pid,
       start: captured.host.start, identity: captured.host, at: new Date().toISOString(),
@@ -551,6 +557,8 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand, signal
 
   const tryCommitObserved = () => commitObservedAdopt({
     operationId: command.operationId, ephemeralRoot, signal,
+    prepareInterrupted: snapshot => prepareInterruptedObservedCommit({ boxRoot: command.boxRoot, runRoot: ephemeralRoot,
+      snapshot, processes: ports.processes, classify: ports.classify }),
     observe: () => {
       const identities = uniqueObservedAdoptIdentities(ports.processes, ports.classify);
       const currentProfile = loadDurableReviewedProfile(command.boxRoot);

@@ -184,7 +184,12 @@ describe("observed adopt commit eligibility", () => {
 
 // Actual file writers and Linux identity lease; only native observations are
 // synthetic. This remains in the original controller-generation test entry.
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { sha256Text } from "@grokbox/runtime-kernel/hash";
+import { prepareInterruptedObservedCommit } from "../src/internal/process/interrupted-adopt.node.ts";
+import { writeAdoptionOwner } from "../src/internal/process/adopt-evidence.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as authority from "../src/internal/io/authority.node.ts";
@@ -204,7 +209,75 @@ async function observedFixture() {
     observe: () => { reads++; return structuredClone(view); }, modeldReady: async () => true };
   return { root, view, input, reads: () => reads };
 }
+async function interruptedFixture(fault?: string) {
+  const f = await observedFixture(), id = marker.operationId;
+  const storePath = join(f.root, "state/controller-operations.json"), childPath = join(f.root, "state/launch-env.json.child.json");
+  const parent = { ...ident(17, 1, "supervisor"), start: 101 };
+  await mkdir(join(f.root, "state"), { recursive: true, mode: 0o700 });
+  const original: { state: string; fingerprint: string; leaseOwner: lease.OperationLeaseOwner } = { state: "unknown", fingerprint: "a".repeat(64), leaseOwner: {
+    version: 1, operationId: id, pid: 2147483646, start: "1", uid: process.getuid!(),
+    bootId: readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim(), nonce: randomUUID(),
+  } };
+  if (fault === "live-controller") {
+    const held = await lease.acquireOperationLease(join(f.root, "source-controller.lock"), id);
+    if (!held.ok) throw Error("fixture lease unavailable");
+    original.leaseOwner = held.lock.owner; await held.lock.release();
+  }
+  await writeFile(storePath, JSON.stringify({ [id]: original }), { mode: 0o600 });
+  await adopt.writeAdoptOpState(f.root, { launchMode: "transient-adopt", phase: "spawn-temp", operationId: id,
+    tempSupervisor: parent, adoptingSupervisor: null, host: null });
+  await writeAdoptionOwner(f.root, id, "unresolved");
+  const launch = { rootDigest: sha256Text(f.root), targetDigest: "b".repeat(64), uid: f.view.host.uid,
+    mode: "route", exeDigest: sha256Text(f.view.host.exe), argvDigest: sha256Text(JSON.stringify(f.view.host.cmdline)) };
+  const currentMarker = { ...f.view.marker, compilationObservation: {
+    version: 1, observationId: randomUUID(), at: new Date().toISOString(), pid: f.view.host.pid, start: f.view.host.start,
+    operationDigest: sha256Text(id), ...launch, patch: "applied", nativeCompilation: "returned", code: "compiled",
+    sourceSha: marker.compile!.sourceSha256, candidateSha: marker.compile!.transformedSha256,
+    profileDigest: marker.compile!.profileSha256, preloadDigest: preloadSha256,
+  } };
+  f.view.marker = currentMarker;
+  await writeFile(join(f.root, "state/preload-marker.json"), JSON.stringify(currentMarker), { mode: 0o600 });
+  const child = { operationId: id, pid: fault === "wrong-child" ? 99 : f.view.host.pid, start: f.view.host.start,
+    supervisor: { pid: fault === "wrong-parent" ? 98 : parent.pid, start: parent.start },
+    launch: fault === "wrong-launch" ? { ...launch, rootDigest: "0".repeat(64) } : launch, exitCode: null, signal: null };
+  await writeFile(childPath, JSON.stringify(child), { mode: 0o600 });
+  if (fault === "archive-drift") await writeFile(join(f.root, "state/adoptions", id, "journal.json"), "{}", { mode: 0o600 });
+  const wrapper = ident(11, 1, "wrapper"), rows = [wrapper, f.view.supervisor, f.view.host];
+  if (fault === "live-parent") rows.push(parent);
+  if (fault === "live-holder") rows.push({ ...parent, pid: 18, cmdline: ["node", "/tmp/injector-hold.cjs"] });
+  const processes = { list: () => rows, inspect: (pid: number) => rows.find(row => row.pid === pid) ?? null,
+    signal: () => { throw Error("observed commit must not signal"); } };
+  const classify = (row: ProcessIdentity) => row.pid === 11 ? "wrapper" as const : row.pid === 12 ? "supervisor" as const
+    : row.pid === 13 ? "host" as const : null;
+  return { ...f, storePath, childPath, input: { ...f.input, prepareInterrupted: (snapshot: ObservedAdoptState) =>
+    prepareInterruptedObservedCommit({ boxRoot: f.root, runRoot: f.root, snapshot, processes, classify }) } };
+}
 (process.platform === "linux" ? describe : describe.skip)("observed adoption shares the original identity lease", () => {
+  test("interrupted exact child can finish current adoption without changing the original unknown", async () => {
+    const f = await interruptedFixture();
+    const original = await readFile(f.storePath, "utf8");
+    expect(await commitObservedAdopt(f.input)).toMatchObject({ ok: true, signaled: false });
+    expect(await readFile(f.storePath, "utf8")).toBe(original);
+    const preserved = JSON.parse(await readFile(join(f.root, "state/adoptions", marker.operationId, "interrupted-before-commit.json"), "utf8"));
+    expect(preserved.original.state).toBe("unknown"); expect(preserved.journal.phase).toBe("spawn-temp");
+    expect(await adopt.readAdoptOpState(f.root)).toMatchObject({ phase: "attested", operationId: marker.operationId });
+  });
+  for (const fault of ["wrong-child", "wrong-parent", "live-parent", "live-holder", "live-controller", "wrong-launch", "archive-drift"] as const) {
+    test(`interrupted adoption refuses ${fault} without a success artifact`, async () => {
+      const f = await interruptedFixture(fault);
+      expect(await commitObservedAdopt(f.input)).toMatchObject({ ok: false, code: "unresolved-adoption-owner", signaled: false });
+      expect(await authority.readAttestation(f.root)).toBeNull();
+      expect(await adopt.readAdoptOpState(f.root)).toMatchObject({ phase: "spawn-temp" });
+    });
+  }
+  test("interrupted evidence changed during readiness remains unknown and uncommitted", async () => {
+    const f = await interruptedFixture();
+    expect(await commitObservedAdopt({ ...f.input, modeldReady: async () => {
+      await writeFile(f.childPath, "{}", { mode: 0o600 }); return true;
+    } })).toMatchObject({ ok: false, signaled: false });
+    expect(await authority.readAttestation(f.root)).toBeNull();
+    expect(await adopt.readAdoptOpState(f.root)).toMatchObject({ phase: "spawn-temp" });
+  });
   test("held identity lease blocks all observation, attestation and journal writes", async () => {
     const f = await observedFixture();
     const other = await lease.acquireOperationLease(lease.operationLockPath(f.root), "other-owner");
