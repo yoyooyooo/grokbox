@@ -42,8 +42,13 @@ export function acquireRetirementObserver() {
             } else {
               if (!pending) throw Error();
               const current = pending; pending = undefined;
-              if (row.ok !== true) current.reject(Error("restoration-observation-unproved"));
-              else current.resolve(row.observation);
+              if (row.ok !== true) {
+                const d = row.diagnostic;
+                const stages = ["unknown", "context", "census", "image", "descriptors", "observe", "modeld_absent", "exited_fd_table", "process_gone", "address", "relevant_preload", "opened", "file_stamp", "regions", "main"];
+                const safe = d && stages.includes(d.stage) && [d.line, d.errno, d.pid].every(value => Number.isSafeInteger(value) && value >= 0);
+                const detail = safe ? `-at-${d.stage.replaceAll("_", "-")}-line-${d.line}-errno-${d.errno}-pid-${d.pid}` : "";
+                current.reject(Error(`restoration-observation-unproved${detail}`));
+              } else current.resolve(row.observation);
             }
           } catch { fail(); }
         }

@@ -117,7 +117,7 @@ for (const conflict of [false, true]) test(`prepared current recovery ${conflict
   expect(await readFile(path)).toEqual(prepared);
 });
 
-for (const message of ["restoration-observation-unproved", "private-input-value-must-not-escape"]) test(`recovery exposes only a fixed diagnostic code: ${message.startsWith("restoration-")}`, async () => {
+for (const message of ["restoration-observation-unproved", "restoration-observation-unproved-at-observe-line-369-errno-13-pid-1", "private-input-value-must-not-escape"]) test(`recovery exposes only a fixed diagnostic code: ${message.startsWith("restoration-")}`, async () => {
   const f = await fixture();
   f.ports.current!.observe = async () => { throw Error(message); };
   const error = await recoverControllerOperationState(f.input, f.ports).catch(error => error);

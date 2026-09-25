@@ -377,9 +377,20 @@ def main():
             encoded = json.dumps({'ok': True, 'observation': result}, separators=(',', ':'))
             require(len(encoded) <= LIMIT)
             print(encoded, flush=True)
-        except Exception:
-            # Errors never echo private paths, process data or exception bodies.
-            print('{"ok":false,"code":"restoration-observation-unproved"}', flush=True)
+        except Exception as error:
+            # Only public helper locations and numeric process/error identifiers
+            # leave this boundary. Never echo exception text or inspected data.
+            import traceback
+            frames = [frame for frame in traceback.extract_tb(error.__traceback__) if frame.filename == __file__]
+            frame = next((frame for frame in reversed(frames) if frame.name not in ('require', 'read', 'lifetime')), frames[-1] if frames else None)
+            diagnostic = {'stage': frame.name if frame else 'unknown', 'line': frame.lineno if frame else 0,
+                          'errno': getattr(error, 'errno', None) or 0, 'pid': 0}
+            filename = getattr(error, 'filename', None)
+            if isinstance(filename, str) and filename.startswith('/proc/'):
+                part = filename.split('/')[2]
+                if part.isdigit():
+                    diagnostic['pid'] = int(part)
+            print(json.dumps({'ok': False, 'code': 'restoration-observation-unproved', 'diagnostic': diagnostic}), flush=True)
 
 
 if __name__ == '__main__':

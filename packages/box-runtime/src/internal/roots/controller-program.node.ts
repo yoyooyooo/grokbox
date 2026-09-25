@@ -903,7 +903,7 @@ export async function recoverControllerOperationState(input: { boxRoot: string; 
     let reason: string | undefined, cause: unknown = error;
     for (let depth = 0; depth < 8 && cause && typeof cause === "object"; depth++) {
       const value = cause as { message?: unknown; cause?: unknown };
-      if (typeof value.message === "string" && /^(?:restoration-[a-z-]+|advisory_gate_[a-z_]+|daemon_socket_[a-z_]+)$/.test(value.message)) {
+      if (typeof value.message === "string" && /^(?:restoration-[a-z0-9-]+|advisory_gate_[a-z_]+|daemon_socket_[a-z_]+)$/.test(value.message)) {
         reason = value.message; break;
       }
       cause = value.cause;
