@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { once } from "node:events";
 import { spawn } from "node:child_process";
 import { ManagementClient } from "@grokbox/client";
+import { publishConfigFile } from "@grokbox/box-runtime/runtime";
 import { startManagementServer } from "../src/server.ts";
 import { readHostHealthJournal, readHostSourceEvidence } from "../../box-runtime/src/internal/io/provenance.node.ts";
 import { projectHostHealth } from "@grokbox/runtime-kernel/host-health";
@@ -219,20 +220,21 @@ test("owned updates traverse the real producer, public API, provenance and origi
 });
 
 test("execution disabled still observes; explicit observation withdrawal and bad policy stop sampling without losing evidence",async()=>{
- let observe=true,fail=false;
- const f=await hostHealthFixture(origin,{disabled:true,ports:{observationEnabled:()=>{if(fail)throw Error("owned policy failure");return observe;}}});try{
+ const f=await hostHealthFixture(origin,{disabled:true});try{
+  const configPath=join(f.root,"config.json"),config=JSON.parse(await readFile(configPath,"utf8"));
+  const setObservation=(enabled:unknown)=>publishConfigFile(configPath,{...config,ops:{...config.ops,observation:{enabled}}});
   const first=await until(()=>health(f),v=>v.data.latest?.analysis==="passed"&&v.data.intake==="committed");
   const episode=first.data.latest!.sourceChange!.episodeId;
-  observe=false;await until(()=>health(f),v=>v.data.state==="disabled");
+  await setObservation(false);await until(()=>health(f),v=>v.data.state==="disabled");
   const prior=await readHostHealthJournal(f.root,H_INSTALL),pids=f.state.pids.length;
   await delay(100);assert.deepEqual(await readHostHealthJournal(f.root,H_INSTALL),prior);assert.equal(f.state.pids.length,pids);
-  observe=true;await until(()=>health(f),v=>v.data.state==="running"&&v.data.latest?.analysis==="passed"&&v.data.intake==="committed");
+  await setObservation(true);await until(()=>health(f),v=>v.data.state==="running"&&v.data.latest?.analysis==="passed"&&v.data.intake==="committed");
   assert.equal((await health(f)).data.latest!.sourceChange!.episodeId,episode);
-  fail=true;await until(()=>health(f),v=>v.data.state==="blocked"&&v.data.reason==="observation-config-unavailable");
+  await setObservation("invalid");await until(()=>health(f),v=>v.data.state==="blocked"&&v.data.reason==="observation-config-unavailable");
   const blocked=await readHostHealthJournal(f.root,H_INSTALL);
   await writeFile(f.paths.worker,"module.exports = {duringPause:true};\n",{mode:0o600});await delay(100);
   assert.deepEqual(await readHostHealthJournal(f.root,H_INSTALL),blocked);
-  fail=false;const resumed=await until(()=>health(f),v=>v.data.latest?.workerSha!==first.data.latest!.workerSha&&v.data.latest?.analysis==="passed"&&v.data.intake==="committed");
+  await setObservation(true);const resumed=await until(()=>health(f),v=>v.data.latest?.workerSha!==first.data.latest!.workerSha&&v.data.latest?.analysis==="passed"&&v.data.intake==="committed");
   assert.equal(resumed.data.latest!.sourceChange!.classification,"related-same-shape");assert.equal(f.state.nativeCalls,0);
  }finally{await f.close();}
 });
