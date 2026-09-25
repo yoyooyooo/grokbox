@@ -45,8 +45,9 @@ export async function activateOpsNotifications(input: { durableRoot: string; com
     if (record.automatic) return refuse("authorization_conflict");
     if (record.revision !== command.expectedBindingRevision) return refuse("binding_revision_changed");
     const configured = yield* io(() => config.read());
-    const route = selectNotificationTarget(effectiveOps(configured.document.ops));
+    const route = selectNotificationTarget(effectiveOps(configured.document.ops), record.plan.target.intent);
     if (route.state !== "selected" || route.target.alias !== command.alias) return refuse("default_target_not_selected");
+    if ((route.target.intent === "diagnose-or-report") !== (command.confirmAnalysis === true)) return refuse("analysis_confirmation_required");
     const scope = yield* io(() => monitor.notificationScope());
     const preflight = createPreparedNoticeDriver({ durableRoot: input.durableRoot, expectedBindingRevision: command.expectedBindingRevision,
       expectedModelRevision: command.expectedModelRevision, readNative: input.readNative, signal: input.signal, allowDisabled: true });
@@ -55,7 +56,8 @@ export async function activateOpsNotifications(input: { durableRoot: string; com
     const activatedAtMs = Date.now();
     const authorization: NoticeAuthorization = { version: 2, consent: "explicit-enable", id: randomUUID(), operationId: command.operationId, requestDigest,
       bindingRevision: record.revision + 1, activatedAtMs, modelRevision: binding.modelRevision, qualificationRevision: binding.qualificationRevision,
-      nativeTurnObserved: false, includesExistingWork: false };
+      nativeTurnObserved: false, includesExistingWork: false,
+      ...(command.confirmAnalysis ? { analysisAuthorized: true as const } : {}) };
     const identity = { operationId: command.operationId, requestDigest, bindingId: record.bindingId };
     yield* Effect.uninterruptible(Effect.tryPromise({ try: () => owner.authorizeAutomatic(record, authorization, async () => {
       const [currentConfig, currentScope, currentManaged] = await Promise.all([

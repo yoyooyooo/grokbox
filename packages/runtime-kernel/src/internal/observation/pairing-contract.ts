@@ -22,13 +22,16 @@ export function pairingScope(v: NotificationScope): NotificationScope {
 export function pairingTarget(ops: unknown, name: string): NotificationTarget {
   pairingAlias(name); const t = own(own(ops, "targets"), name), notifications = own(ops, "notifications");
   if (!t || !own(t, "agentId") || !own(t, "routineKey")) return pairingFail("target_unconfigured");
+  const intent = own(own(ops, "maintainer"), "target") === name ? "diagnose-or-report" : "brief-notice";
+  const budget = own(ops, intent === "diagnose-or-report" ? "maintainer" : "notifications");
   const intents = own(t, "allowedIntents");
-  if (own(t, "dataPolicy") !== "safe-summary" || !Array.isArray(intents) || !intents.includes("brief-notice")
+  if (own(t, "dataPolicy") !== "safe-summary" || !Array.isArray(intents) || !intents.includes(intent)
     || own(t, "modelChangePolicy") !== "require-rebind") return pairingFail("unsupported_target");
   try { return validateNotificationTarget({ alias: name, agentId: own(t, "agentId") as string, routineKey: own(t, "routineKey") as string,
-    policyRevision: notificationPolicyRevision(ops), dataPolicy: "safe-summary",
-    installationLimit: own(notifications, "maxAutomaticWakeupsPerDay") as number,
-    targetLimit: (own(t, "maxAutomaticWakeupsPerDay") ?? own(notifications, "maxAutomaticWakeupsPerDay")) as number }); }
+    policyRevision: notificationPolicyRevision(ops, intent), dataPolicy: "safe-summary",
+    installationLimit: own(budget, "maxAutomaticWakeupsPerDay") as number,
+    targetLimit: (own(t, "maxAutomaticWakeupsPerDay") ?? own(budget, "maxAutomaticWakeupsPerDay")) as number,
+    ...(intent === "diagnose-or-report" ? { intent } : {}) }); }
   catch { return pairingFail("unsupported_target"); }
 }
 export type PairingCommand = { action: "preview" | "bind"; alias: string; routineId: string; expectedRevision: string; operationId: string; confirmed?: boolean };

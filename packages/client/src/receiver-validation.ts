@@ -1,11 +1,12 @@
 import { UUID, notificationIdentity, type ReceiverChangeRequest, type ReceiverView, type ReceiverOperation, type NotificationView, type NotificationTestOperation } from "./contract.ts";
 import { exact, record, revision } from "./response-validation.ts";
+import { validateMaintenanceTask, validateMaintenanceReceipt, type MaintenanceTask, type MaintenanceReceipt } from "@grokbox/runtime-kernel/notification-tasks";
 const number = (v: unknown, min = 0): v is number => Number.isSafeInteger(v) && Number(v) >= min && Number(v) <= 8_640_000_000_000_000;
 function ref(value: unknown, installationId: string, kind: "receiver" | "notification") {
   try { return typeof value === "string" && notificationIdentity(value, installationId, kind).ref === value; } catch { return false; }
 }
 export function receiverView(value: unknown, installationId: string): value is ReceiverView {
-  if (!record(value) || !exact(value, ["receiverRef", "bindingId", "databaseId", "alias", "botRef", "routineId", "revision", "state", "credentialStored", "updatedAtMs", "automatic", "currentEligibility", "testRequired", "nativeTurnObserved"])
+  if (!record(value) || !exact(value, ["receiverRef", "bindingId", "databaseId", "alias", "botRef", "routineId", "revision", "state", "credentialStored", "updatedAtMs", "automatic", "currentEligibility", "testRequired", "nativeTurnObserved", "intent"])
     || !ref(value.receiverRef, installationId, "receiver") || typeof value.bindingId !== "string" || !UUID.test(value.bindingId)
     || typeof value.databaseId !== "string" || !UUID.test(value.databaseId) || value.receiverRef !== `receiver:${installationId}:${value.databaseId}:${value.bindingId}`
     || typeof value.alias !== "string" || !/^[a-z][a-z0-9_-]{0,31}$/.test(value.alias) || typeof value.botRef !== "string"
@@ -13,6 +14,7 @@ export function receiverView(value: unknown, installationId: string): value is R
     || typeof value.routineId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value.routineId)
     || !number(value.revision, 1) || !number(value.updatedAtMs, 1) || !["enrolling", "prepared", "disabled", "unbound"].includes(String(value.state))
     || typeof value.credentialStored !== "boolean" || value.currentEligibility !== "not-checked" || value.testRequired !== false || value.nativeTurnObserved !== false) return false;
+  if (value.intent !== undefined && value.intent !== "diagnose-or-report") return false;
   if (value.automatic === null) return true;
   return value.state === "prepared" && value.credentialStored && record(value.automatic) && exact(value.automatic, ["authorizationId", "activatedAtMs", "modelRevision"])
     && typeof value.automatic.authorizationId === "string" && UUID.test(value.automatic.authorizationId) && number(value.automatic.activatedAtMs, 1) && revision(value.automatic.modelRevision);
@@ -29,7 +31,7 @@ export function receiverOperation(value: unknown, installationId: string, databa
   return !request || value.receiverRef === request.receiverRef && value.action === request.action && value.beforeRevision === request.expectedRevision;
 }
 export function notificationView(value: unknown, installationId: string, databaseId: string): value is NotificationView {
-  if (!record(value) || !exact(value, ["notificationRef", "databaseId", "workId", "purpose", "incidentRef", "evidenceRevision", "state", "createdAtMs", "expiresAtMs", "attempt", "retry", "attemptHistory", "automaticRetry", "botReport", "userRead"])
+  if (!record(value) || !exact(value, ["notificationRef", "databaseId", "workId", "purpose", "incidentRef", "evidenceRevision", "state", "createdAtMs", "expiresAtMs", "attempt", "retry", "attemptHistory", "task", "taskReceipt", "automaticRetry", "botReport", "userRead"])
     || value.databaseId !== databaseId || !ref(value.notificationRef, installationId, "notification") || typeof value.workId !== "string" || !UUID.test(value.workId)
     || value.notificationRef !== `notification:${installationId}:${databaseId}:${value.workId}`
     || !["incident", "test"].includes(String(value.purpose)) || !["preparing", "ready", "blocked", "completed", "expired", "superseded", "unknown"].includes(String(value.state))
@@ -37,6 +39,16 @@ export function notificationView(value: unknown, installationId: string, databas
     || (value.purpose === "test" ? value.incidentRef !== null || value.evidenceRevision !== null
       : typeof value.incidentRef !== "string" || !value.incidentRef.startsWith(`incident:${installationId}:${databaseId}:`) || !UUID.test(value.incidentRef.split(":")[3] ?? "") || value.incidentRef.split(":").length !== 4 || !number(value.evidenceRevision, 1))
     || value.automaticRetry !== false || value.botReport !== "not_observed" || value.userRead !== "not_observed") return false;
+  if (value.task !== undefined || value.taskReceipt !== undefined) {
+    if (value.task === null) { if (value.taskReceipt !== null) return false; }
+    else try {
+      const task = validateMaintenanceTask(value.task as MaintenanceTask);
+      if (task.databaseId !== databaseId || task.taskId !== value.workId || task.evidenceRevision !== value.evidenceRevision
+        || value.incidentRef !== `incident:${installationId}:${databaseId}:${task.incidentId}` || task.expiresAtMs !== value.expiresAtMs
+        || !value.attempt || value.purpose !== "incident") return false;
+      if (value.taskReceipt !== null) validateMaintenanceReceipt(value.taskReceipt as MaintenanceReceipt, task);
+    } catch { return false; }
+  }
   if (!notificationRetryView(value)) return false;
   if (value.attempt === null) return value.state !== "completed";
   return notificationAttempt(value.attempt) && (value.state !== "completed" || value.attempt.state === "native-accepted")
@@ -47,7 +59,7 @@ function notificationRetryView(value: Record<string, unknown>): boolean {
   const retry = value.retry, history = value.attemptHistory;
   if (!record(retry) || !exact(retry, ["state", "reason", "attempts", "notBeforeMs"])
     || !["not_retryable", "waiting", "ready"].includes(String(retry.state))
-    || !["not_attempted", "explicit_or_test_owned", "not_definitely_rejected", "retry_limit", "clock_reversed", "expired", "definite_rejection"].includes(String(retry.reason))
+    || !["not_attempted", "explicit_or_test_owned", "not_definitely_rejected", "retry_limit", "clock_reversed", "expired", "definite_rejection", "receiver_reported"].includes(String(retry.reason))
     || !number(retry.attempts) || retry.attempts > 3 || !Array.isArray(history) || history.length !== retry.attempts) return false;
   const seen = new Set<string>();
   let previousSettled = 0;

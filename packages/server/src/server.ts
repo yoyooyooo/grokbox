@@ -301,6 +301,7 @@ export async function startManagementServer(options: ManagementServerOptions, te
           if (!materialIndexer) throw new HttpFailure(503,"unavailable","Material indexing is starting."); return materialIndexer.status();
         }, authorizeWrite: signal => materialAuthorize(signal,"materials.write"), writeHooks: testPorts.materials?.writeHooks },
         notificationDomain: { root: options.store.root, installationId, authorizeSend: signal => materialAuthorize(signal, "notifications.send"),
+          authorizeTasks: signal => materialAuthorize(signal, "notifications.tasks"),
           afterSendClaim: testPorts.notification?.sendClaimed,
           readNative: options.native.readNotificationReceiver ?? (async () => { throw new Error("notification_receiver_unavailable"); }),
           request: testPorts.notification?.request } }, principal!, request.method!, url, input);
@@ -347,7 +348,8 @@ export async function startManagementServer(options: ManagementServerOptions, te
         yield* Effect.tryPromise({try:signal=>materialAuthorize(signal,url.pathname.startsWith("/v1/protection-operations/")?"operations.read":"protection.read"),catch:error=>error});
       }
       if (request.method === "GET" && (url.pathname.startsWith("/v1/notification-") || url.pathname === "/v1/notifications" || url.pathname.startsWith("/v1/notifications/"))) {
-        yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, url.pathname.includes("-operations/") ? "operations.read" : "notifications.read"), catch: error => error });
+        yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, url.pathname.startsWith("/v1/notification-tasks/")
+          ? "notifications.tasks" : url.pathname.includes("-operations/") ? "operations.read" : "notifications.read"), catch: error => error });
       }
       if (request.method === "GET" && (url.pathname === "/v1/messages" || url.pathname.startsWith("/v1/messages/") || url.pathname.startsWith("/v1/message-"))) {
         yield* Effect.tryPromise({ try: signal => materialAuthorize(signal, "messages.read"), catch: error => error });

@@ -153,6 +153,8 @@ export function openOpsBindings(durableRoot: string) {
         const slot = (await read())?.slots.find(s => s.bindingId === expected.bindingId);
         if (!slot || slot.state !== "prepared" || !slot.credential || canonicalJson(projected(slot)) !== canonicalJson(expected))
           return { state: "definitely-not-accepted", reason: "revoked" };
+        if (slot.plan.target.intent === "diagnose-or-report" && (!authorizationId || slot.automatic?.analysisAuthorized !== true))
+          return { state: "definitely-not-accepted", reason: "policy_changed" };
         if (authorizationId && (!slot.automatic || slot.automatic.id !== authorizationId
           || slot.automatic.bindingRevision !== slot.revision || slot.automatic.modelRevision !== input.binding.modelRevision
           || slot.automatic.qualificationRevision !== input.binding.qualificationRevision)) return { state: "definitely-not-accepted", reason: "revoked" };

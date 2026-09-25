@@ -20,6 +20,7 @@
     "./status": "./src/status.ts",
     "./monitor": "./src/monitor.ts",
     "./observation": "./src/observation.ts",
+    "./notification-tasks": "./src/notification-tasks.ts",
     "./continuity": "./src/continuity.ts",
     "./alerts": "./src/alerts.ts",
     "./routines": "./src/routines.ts",

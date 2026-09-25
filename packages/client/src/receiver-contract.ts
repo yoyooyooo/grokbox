@@ -1,12 +1,13 @@
 import { ManagementClientError, UUID } from "./contract.ts";
+import type { MaintenanceTask, MaintenanceReceipt } from "@grokbox/runtime-kernel/notification-tasks";
 
 export type ReceiverView = { receiverRef: string; bindingId: string; databaseId: string; alias: string; botRef: string; routineId: string;
   revision: number; state: "enrolling" | "prepared" | "disabled" | "unbound"; credentialStored: boolean; updatedAtMs: number;
   automatic: { authorizationId: string; activatedAtMs: number; modelRevision: string } | null;
-  currentEligibility: "not-checked"; testRequired: false; nativeTurnObserved: false };
+  currentEligibility: "not-checked"; testRequired: false; nativeTurnObserved: false; intent?: "diagnose-or-report" };
 export type ReceiverList = { receivers: ReceiverView[]; coverage: "local-bindings"; maxReceivers: 8 };
 export type ReceiverChangeRequest = { receiverRef: string; requestId: string; expectedRevision: number; confirmed: true } & (
-  { action: "enable" | "test"; expectedModelRevision: string } | { action: "disable" | "unbind" });
+  { action: "enable" | "test"; expectedModelRevision: string; confirmAnalysis?: true } | { action: "disable" | "unbind" });
 export type ReceiverOperation = { version: 1; operationRef: string; requestId: string; receiverRef: string;
   action: "enable" | "disable" | "unbind"; beforeRevision: number; appliedRevision: number; appliedAtMs: number;
   authorizationId: string | null; state: "succeeded"; notificationSent: false; testRequired: false };
@@ -15,6 +16,7 @@ export type NotificationView = { notificationRef: string; databaseId: string; wo
   createdAtMs: number; expiresAtMs: number;
   attempt: { attemptId: string; state: "reserved" | "attempting" | "native-accepted" | "definitely-not-accepted" | "unknown";
     targetAgentId: string; bindingRevision: number; envelopeDigest: string; envelopeBytes: number; reservedAtMs: number; settledAtMs: number | null } | null;
+  task?: MaintenanceTask | null; taskReceipt?: MaintenanceReceipt | null;
   retry?: { state: "not_retryable" | "waiting" | "ready"; reason: string; attempts: number; notBeforeMs: number | null };
   attemptHistory?: Array<{ attemptId: string; state: string; reservedAtMs: number; settledAtMs: number | null }>;
   automaticRetry: false; botReport: "not_observed"; userRead: "not_observed" };
@@ -35,10 +37,10 @@ export function normalizeReceiverChange(value: unknown, installationId: string):
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new ManagementClientError("invalid_input", "Invalid receiver action.");
   const data = value as Record<string, unknown>;
   const needsModel = data.action === "enable" || data.action === "test";
-  if (Object.keys(data).some(key => !["receiverRef", "requestId", "expectedRevision", "confirmed", "action", ...(needsModel ? ["expectedModelRevision"] : [])].includes(key))
+  if (Object.keys(data).some(key => !["receiverRef", "requestId", "expectedRevision", "confirmed", "action", ...(needsModel ? ["expectedModelRevision"] : []), ...(data.action === "enable" ? ["confirmAnalysis"] : [])].includes(key))
     || !["enable", "disable", "unbind", "test"].includes(String(data.action)) || typeof data.requestId !== "string" || !UUID.test(data.requestId)
     || !Number.isSafeInteger(data.expectedRevision) || Number(data.expectedRevision) < 1 || Number(data.expectedRevision) >= Number.MAX_SAFE_INTEGER
-    || data.confirmed !== true || (needsModel && (typeof data.expectedModelRevision !== "string" || !/^[a-f0-9]{64}$/.test(data.expectedModelRevision))))
+    || data.confirmed !== true || (data.confirmAnalysis !== undefined && data.confirmAnalysis !== true) || (needsModel && (typeof data.expectedModelRevision !== "string" || !/^[a-f0-9]{64}$/.test(data.expectedModelRevision))))
     throw new ManagementClientError("invalid_input", "A receiver action requires its revision, persisted request UUID and explicit confirmation; enable/test also requires the reviewed model revision.");
   const ref = notificationIdentity(data.receiverRef as string, installationId).ref;
   return { ...structuredClone(data), receiverRef: ref, requestId: data.requestId.toLowerCase() } as ReceiverChangeRequest;

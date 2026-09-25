@@ -1,6 +1,6 @@
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { decideManagedOwnership } from "@grokbox/runtime-kernel/contract";
-import { NotificationError, RECEIVER_NOTICE_POLICY_REVISION, NOTIFICATION_DELIVERY_POLICY,
+import { NotificationError, receiverPolicyRevision, NOTIFICATION_DELIVERY_POLICY,
   projectReceiverModelObservation, type NotificationBinding, type PairingRecord } from "@grokbox/runtime-kernel/observation";
 import { openOpsBindings } from "../io/ops-bindings.node.ts";
 import { openRoutineProvisionStore } from "../io/routine-provision.node.ts";
@@ -37,6 +37,8 @@ export function createPreparedNoticeDriver(input: PreparedNoticeDriverInput & { 
       if (input.authorizationId && (!record.automatic || record.automatic.id !== input.authorizationId
         || record.automatic.bindingRevision !== record.revision || Date.now() < record.automatic.activatedAtMs))
         return stop("automatic_authorization_changed");
+      if (input.authorizationId && (record.automatic!.analysisAuthorized === true) !== (target.intent === "diagnose-or-report"))
+        return stop("automatic_authorization_changed");
       if (canonicalJson(record.plan.target) !== canonicalJson(target) || canonicalJson(record.plan.scope) !== canonicalJson(scope))
         return stop("pairing_scope_or_policy_changed");
       const managedStore = openRoutineProvisionStore(input.durableRoot);
@@ -53,7 +55,7 @@ export function createPreparedNoticeDriver(input: PreparedNoticeDriverInput & { 
       if (!routine || !routine.enabled || !routine.mutable || routine.trigger.type !== "webhook"
         || sha256Text(canonicalJson({ definitionRevision: routine.definitionRevision, enabled: false })) !== record.plan.routineRevision)
         return stop("enabled_routine_not_matched");
-      if (native.promptPolicyRevision !== RECEIVER_NOTICE_POLICY_REVISION) return stop("notice_policy_mismatch");
+      if (native.promptPolicyRevision !== receiverPolicyRevision(target.intent)) return stop("notice_policy_mismatch");
       const [current, currentManaged] = await Promise.all([owner.record(target.alias), managedStore.binding(target.agentId, target.routineKey)]);
       if (canonicalJson(current) !== canonicalJson(record) || canonicalJson(currentManaged) !== canonicalJson(managed))
         return stop("pairing_changed_during_read");
@@ -66,8 +68,8 @@ export function createPreparedNoticeDriver(input: PreparedNoticeDriverInput & { 
         return stop("receiver_model_or_loaded_host_not_matched");
       if (model.modelRevision !== input.expectedModelRevision) return stop("expected_model_changed");
       latest = record; blocker = null;
-      const qualificationRevision = sha256Text(canonicalJson({ lane: "explicit-notice-v1", http: NATIVE_NOTIFICATION_HTTP_REVISION,
-        noticePolicy: RECEIVER_NOTICE_POLICY_REVISION, generation: native.snapshot.generation,
+      const qualificationRevision = sha256Text(canonicalJson({ lane: target.intent ? "maintenance-analysis-v1" : "explicit-notice-v1", http: NATIVE_NOTIFICATION_HTTP_REVISION,
+        noticePolicy: receiverPolicyRevision(target.intent), generation: native.snapshot.generation,
         accountScope: ownership.evidence.scopeId, serverId: ownership.evidence.serverId,
         profile: model.loadedProfileRevision, source: model.loadedSourceRevision, preload: model.loadedPreloadRevision, mode: model.loadedMode }));
       if (input.authorizationId && (record.automatic!.modelRevision !== model.modelRevision
@@ -79,7 +81,7 @@ export function createPreparedNoticeDriver(input: PreparedNoticeDriverInput & { 
         databaseId: scope.databaseId, scopeId: scope.scopeId, targetAlias: target.alias, agentId: target.agentId,
         routineKey: target.routineKey, routineId: routine.id, routineRevision: routine.revision,
         modelRevision: model.modelRevision!, qualificationRevision, policyRevision: target.policyRevision,
-        dataPolicy: "safe-summary", receiverMode: "notify_then_end", observedAtMs,
+        dataPolicy: "safe-summary", receiverMode: target.intent ? "claim_analyze_report" : "notify_then_end", observedAtMs,
         validUntilMs: observedAtMs + NOTIFICATION_DELIVERY_POLICY.bindingFreshMs };
       return binding;
     },

@@ -5,7 +5,7 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaultConfig, validateConfig } from "@grokbox/runtime-kernel/config";
-import { receiverBlueprint, nativeAutomationIdentity, RECEIVER_NOTICE_POLICY_REVISION, RECEIVER_MODEL_SOURCE, type NoticeActivationCommand } from "@grokbox/runtime-kernel/observation";
+import { receiverBlueprint, nativeAutomationIdentity, receiverPolicyRevision, RECEIVER_MODEL_SOURCE, type NoticeActivationCommand } from "@grokbox/runtime-kernel/observation";
 import { projectNativeRoutines, desiredRoutineDigest } from "@grokbox/runtime-kernel/routines";
 import { OWNERSHIP_LOCAL_SOURCE } from "@grokbox/runtime-kernel/contract";
 import { openMonitorStore } from "../../src/internal/io/monitor-store.node.ts";
@@ -21,27 +21,31 @@ import { ownedOwnershipSnapshot } from "../ownership-fixture.ts";
 export const SUBJECT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", RECEIVER = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 export const MODEL = "f".repeat(64), GENERATION = "c".repeat(64), PROFILE = "d".repeat(64), SOURCE = "e".repeat(64), PRELOAD = "1".repeat(64);
 export const tick = (ms = 2) => new Promise<void>(resolve => setTimeout(resolve, ms));
-export async function automaticFixture(limit = 10) {
+export async function automaticFixture(limit = 10, intent?: "diagnose-or-report") {
+  const alias = intent ? "maintainer" : "default";
   const root = await mkdtemp(join(tmpdir(), "automatic-notice-")), epoch = randomUUID(), configPath = join(root, "config.json");
   const document = validateConfig({ ...defaultConfig(), runtime: { desiredMode: "identity" }, ops: {
-    notifications: { maxAutomaticWakeupsPerDay: limit }, targets: { default: { agentId: RECEIVER, routineKey: "ops-notice", maxAutomaticWakeupsPerDay: limit } } } });
+    notifications: { maxAutomaticWakeupsPerDay: limit }, routing: { defaultTarget: alias },
+    ...(intent ? { maintainer: { enabled: true, target: alias, maxAutomaticWakeupsPerDay: limit }, diagnostics: { mode: "automatic-bounded" } } : {}),
+    targets: { [alias]: { agentId: RECEIVER, routineKey: "ops-notice", maxAutomaticWakeupsPerDay: limit,
+      ...(intent ? { allowedIntents: [intent] } : {}) } } } });
   await writeFile(configPath, JSON.stringify(document), { mode: 0o600 });
   const store = openMonitorStore(root); await store.initialize(); await store.begin(epoch, Date.now(), [SUBJECT]);
-  const blueprint = receiverBlueprint("ops-notice"); let rows: Record<string, unknown>[] = [], reads = 0;
+  const blueprint = receiverBlueprint("ops-notice", intent); let rows: Record<string, unknown>[] = [], reads = 0;
   const snapshot = () => ({ catalog: projectNativeRoutines(RECEIVER, rows), generation: GENERATION });
   const observe = () => ({ ...snapshot(), definitions: new Map(rows.map(row => [String(row.id), desiredRoutineDigest(blueprint)])) });
   const provision = await runRoutineProvisionCommand({ durableRoot: root,
     command: { action: "apply", agentId: RECEIVER, operationId: "provision", confirmed: true, blueprint },
     native: { list: async () => observe(), write: async () => { rows = [{ ...blueprint, id: "notice-native", createdAt: 1 }]; return observe(); } } });
   await runOpsPairing({ durableRoot: root,
-    command: { action: "bind", alias: "default", routineId: "notice-native", expectedRevision: provision.revision!, operationId: "pair", confirmed: true },
+    command: { action: "bind", alias, routineId: "notice-native", expectedRevision: provision.revision!, operationId: "pair", confirmed: true },
     native: { list: async () => snapshot(), credential: async () => ({ generation: GENERATION,
       value: { url: `https://api2.cursor.sh/automations/webhook/${nativeAutomationIdentity(RECEIVER, "notice-native")}`, key: "PRIVATE_TEST_KEY" } }) } });
-  const owner = openOpsBindings(root), pairing = (await owner.record("default"))!; rows[0]!.isEnabled = true;
+  const owner = openOpsBindings(root), pairing = (await owner.record(alias))!; rows[0]!.isEnabled = true;
   let nativeChange: ((value: ExplicitReceiverRead) => void) | undefined;
   const readNative = async (): Promise<ExplicitReceiverRead> => {
     reads++;
-    const value: ExplicitReceiverRead = { snapshot: snapshot(), promptPolicyRevision: RECEIVER_NOTICE_POLICY_REVISION, consistentGeneration: true,
+    const value: ExplicitReceiverRead = { snapshot: snapshot(), promptPolicyRevision: receiverPolicyRevision(intent), consistentGeneration: true,
       ownership: ownedOwnershipSnapshot([RECEIVER]), ownershipGeneration: GENERATION,
       model: { version: 1, source: RECEIVER_MODEL_SOURCE, state: "observed", agentId: RECEIVER, observedAtMs: Date.now(), selection: "native", modelRevision: MODEL,
         loadedProfileRevision: PROFILE, loadedSourceRevision: SOURCE, loadedPreloadRevision: PRELOAD, loadedMode: "identity", reason: "selected",
@@ -63,14 +67,14 @@ export async function automaticFixture(limit = 10) {
   const server = createServer((req, res) => { let body = ""; req.on("data", bytes => body += bytes); req.on("end", () => { requests.push(body); response(res); }); });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   const request: NotificationRequest = (url, options, callback) => httpRequest({ ...options, protocol: "http:", hostname: "127.0.0.1", port: (server.address() as AddressInfo).port, path: url.pathname }, callback);
-  const input = { durableRoot: root, readNative };
+  const input = { durableRoot: root, readNative, intent };
   const seed = async () => {
     const workId = await emit();
     const result = await deliverPreparedFixture({ ...input, workId, expectedBindingRevision: pairing.revision, expectedModelRevision: MODEL }, { request });
     return { workId, result };
   };
-  const command = (_workId?: string): NoticeActivationCommand => ({ alias: "default", expectedBindingRevision: pairing.revision,
-    expectedModelRevision: MODEL, operationId: "activate", confirmed: true });
+  const command = (_workId?: string): NoticeActivationCommand => ({ alias, expectedBindingRevision: pairing.revision,
+    expectedModelRevision: MODEL, operationId: "activate", confirmed: true, ...(intent ? { confirmAnalysis: true as const } : {}) });
   return { root, configPath, document, store, owner, pairing, rows, input, readNative, request, requests, reads: () => reads, emit, seed, command,
     mutateNative: (fn: typeof nativeChange) => { nativeChange = fn; }, reply: (fn: typeof response) => { response = fn; },
     activate: (workId?: string) => activateOpsNotifications({ ...input, command: command(workId) }),

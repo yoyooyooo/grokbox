@@ -13,15 +13,16 @@ import { runOpsNotificationDelivery } from "./ops-notification.runtime.ts";
 
 export type { AutomaticNoticeCycle, AutomaticNoticeWorkerStatus } from "@grokbox/runtime-kernel/observation";
 type Input = { durableRoot: string; readNative: ExplicitReceiverReader; signal?: AbortSignal; replayFence?: NoticeReplayFence };
+type PurposeInput = Input & { intent?: "diagnose-or-report" };
 type Ports = { request?: NotificationRequest };
 const configuration = (root: string) => openConfigStore(rootConfigLayout(root));
 
 /** Send only a future work under the exact durable permission selected by the
  * worker. Public explicit-send semantics are unchanged. Caller IDs cannot turn
  * an old work item, a prepared binding, or a changed generation into authority. */
-export async function runAutomaticOpsNotification(input: Input & { workId: string; authorization: NoticeAuthorization }, ports: Ports = {}) {
+export async function runAutomaticOpsNotification(input: PurposeInput & { workId: string; authorization: NoticeAuthorization }, ports: Ports = {}) {
   const config = await configuration(input.durableRoot).read();
-  const route = selectNotificationTarget(effectiveOps(config.document.ops));
+  const route = selectNotificationTarget(effectiveOps(config.document.ops), input.intent);
   if (route.state !== "selected") return { state: "blocked", reason: "notifications_policy_blocked" };
   const record = await openOpsBindings(input.durableRoot).record(route.target.alias);
   if (!record || record.state !== "prepared" || !record.automatic || canonicalJson(record.automatic) !== canonicalJson(input.authorization))
@@ -38,29 +39,30 @@ export async function runAutomaticOpsNotification(input: Input & { workId: strin
   const prepared = createPreparedNoticeDriver({ durableRoot: input.durableRoot, expectedBindingRevision: record.revision,
     expectedModelRevision: record.automatic.modelRevision, authorizationId: record.automatic.id, readNative: input.readNative, signal: input.signal }, ports);
   return runOpsNotificationDelivery({ durableRoot: input.durableRoot, workId: input.workId, driver: prepared.driver,
-    signal: input.signal, replayFence: input.replayFence, automaticRetry: true });
+    signal: input.signal, replayFence: input.replayFence, automaticRetry: true, intent: input.intent });
 }
 
 /** One bounded pass. No database initialization, remote calls without eligible
  * work, authorization renewal, generic retry or alternative target selection. */
-export async function automaticNoticeCycle(input: Input, ports: Ports = {}): Promise<AutomaticNoticeCycle> {
+async function noticePurposeCycle(input: PurposeInput, ports: Ports = {}): Promise<AutomaticNoticeCycle> {
   try {
     if (input.signal?.aborted) return { state: "blocked", reason: "stopping" };
     const config = await configuration(input.durableRoot).read();
-    const route = selectNotificationTarget(effectiveOps(config.document.ops));
+    const route = selectNotificationTarget(effectiveOps(config.document.ops), input.intent);
     if (route.state !== "selected") return { state: "blocked", reason: route.reason };
     const record = await openOpsBindings(input.durableRoot).record(route.target.alias);
     if (!record || record.state !== "prepared" || !record.credentialPresent || !record.automatic)
       return { state: "blocked", reason: "automatic_not_authorized" };
     if (canonicalJson(record.plan.target) !== canonicalJson(route.target)) return { state: "blocked", reason: "target_policy_changed" };
     const auth = record.automatic, nowMs = Date.now();
+    if ((auth.analysisAuthorized === true) !== (input.intent === "diagnose-or-report")) return { state: "blocked", reason: "automatic_not_authorized" };
     if (nowMs < auth.activatedAtMs) return { state: "blocked", reason: "clock_reversed" };
     const store = openMonitorStore(input.durableRoot);
     if (canonicalJson(await store.notificationScope()) !== canonicalJson(record.plan.scope)) return { state: "blocked", reason: "installation_scope_changed" };
     const replayFailure = input.replayFence?.check(nowMs);
     if (replayFailure) return { state: "blocked", reason: replayFailure };
     const workId = await store.nextAutomaticNotification(Math.max(auth.activatedAtMs, input.replayFence?.startedAtMs ?? 0,
-      input.replayFence ? nowMs - OBSERVATION_RETENTION.notificationTtlMs : 0), nowMs);
+      input.replayFence ? nowMs - OBSERVATION_RETENTION.notificationTtlMs : 0), nowMs, input.intent);
     if (!workId) return { state: "idle", reason: "no_fresh_work", authorizationId: auth.id };
     const observed = input.replayFence ? await store.notificationDelivery(workId) : undefined;
     if (input.replayFence && (!observed || !("occurrenceIdentity" in observed) || typeof observed.occurrenceIdentity !== "string"))
@@ -85,6 +87,16 @@ export async function automaticNoticeCycle(input: Input, ports: Ports = {}): Pro
       reason: outcome === "blocked" || outcome === "unavailable" ? "delivery_preflight_blocked" : "attempt_settled",
       workId, authorizationId: auth.id, outcome };
   } catch { return { state: "unavailable", reason: "local_or_native_source_unavailable" }; }
+}
+
+/** Two fixed independent purposes, not fallback routing for a failed work.
+ * Each purpose has one configured target. Once an attempt was made, end this
+ * cycle even when its HTTP result is unknown; never send that work elsewhere. */
+export async function automaticNoticeCycle(input: Input, ports: Ports = {}): Promise<AutomaticNoticeCycle> {
+  const user = await noticePurposeCycle(input, ports);
+  if (user.state === "processed" || input.signal?.aborted) return user;
+  const maintainer = await noticePurposeCycle({ ...input, intent: "diagnose-or-report" }, ports);
+  return maintainer.reason === "notifications_off" ? user : maintainer;
 }
 
 /** Owned by the management Server, never by a caller's HTTP request. Delay begins

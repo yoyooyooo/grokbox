@@ -1,4 +1,5 @@
 import "./notification-receiver.node.ts";
+import "./notification-tasks.node.ts";
 import "./receiver-management.node.ts";
 import "./receiver-boundaries.node.ts";
 import "./notification-send.node.ts";

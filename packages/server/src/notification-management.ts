@@ -10,10 +10,12 @@ import { activateOpsNotifications, openOpsBindings, openMonitorStore, openConfig
   createPreparedNoticeDriver, runOpsNotificationDelivery, type ExplicitReceiverReader, type startOpsNotificationWorker } from "@grokbox/box-runtime/runtime";
 import { HttpFailure, requireCapability, type Principal } from "./access.ts";
 import { pageInput } from "./pagination.ts";
+import { notificationTaskManagement } from "./notification-task-management.ts";
 
 export type NotificationDomain = { root: string; installationId: string; readNative: ExplicitReceiverReader;
   request?: NonNullable<Parameters<typeof startOpsNotificationWorker>[1]>["request"];
   authorizeSend?: (signal: AbortSignal) => Promise<void>;
+  authorizeTasks?: (signal: AbortSignal) => Promise<void>;
   afterSendClaim?: (signal: AbortSignal) => Promise<void> };
 const refuse = (code: "not_found" | "revision_conflict" | "source_changed" | "idempotency_conflict" | "source_unavailable", message: string): never => {
   throw new HttpFailure(code === "not_found" ? 404 : code === "source_unavailable" ? 503 : 409, code, message);
@@ -26,10 +28,14 @@ function projectError(error: unknown): HttpFailure {
   if (reason && ["capacity", "receipt_capacity", "notification_test_capacity", "notification_send_capacity"].includes(reason)) return new HttpFailure(507, "store_full", "The notification recovery capacity is full; previous records have not been removed.");
   if (reason && ["authorization_conflict", "notification_test_conflict", "notification_send_conflict"].includes(reason)) return new HttpFailure(409, "idempotency_conflict", "The request ID already belongs to another receiver action.");
   if (reason && ["binding_revision_changed", "binding_identity_changed", "operation_conflict"].includes(reason)) return new HttpFailure(409, "revision_conflict", "The binding changed; refresh its revision without discarding the draft.");
+  if (reason === "notification_task_not_found") return new HttpFailure(404, "not_found", "The exact retained analysis task was not found.");
+  if (reason === "notification_task_receiver_mismatch") return new HttpFailure(403, "permission_denied", "This credential does not own that task receiver.");
+  if (reason === "notification_task_invalid_input") return new HttpFailure(400, "invalid_input", "The task receipt is not a valid bounded record.");
+  if (reason?.startsWith("notification_task_")) return new HttpFailure(409, "revision_conflict", "The original task cannot make that transition; read its retained receipt without re-dispatching.");
   if (reason === "notification_scope_changed") return new HttpFailure(409, "source_changed", "The notification database changed; do not repeat an old action into its replacement.");
   if (reason === "notification_cursor_gap") return new HttpFailure(409, "cursor_gap", "The retained notification cursor is no longer in this database.");
   if (reason && ["activation_outcome_unknown", "monitor_commit_unknown"].includes(reason)) return new HttpFailure(409, "operation_unknown", "The notification action is uncertain. Read the original operation; do not repeat it.");
-  if (reason === "automatic_confirmation_required" || reason === "invalid_automatic_authorization") return new HttpFailure(400, "invalid_input", "Explicit notification consent and a reviewed target revision are required.");
+  if (reason === "automatic_confirmation_required" || reason === "analysis_confirmation_required" || reason === "invalid_automatic_authorization") return new HttpFailure(400, "invalid_input", "Explicit notification consent and a reviewed target revision are required.");
   return new HttpFailure(503, "source_unavailable", "The notification source or receiver qualification is unavailable. No alternative target was selected.");
 }
 const io = <A>(run: (signal: AbortSignal) => Promise<A>) => Effect.tryPromise({ try: run, catch: projectError });
@@ -54,7 +60,8 @@ function receiverView(installationId: string, row: PairingRecord): ReceiverView 
     databaseId: row.plan.scope.databaseId, alias: row.plan.target.alias, botRef: `bot:${installationId}:${row.plan.target.agentId}`, routineId: row.plan.routineId,
     revision: row.revision, state: row.state, credentialStored: row.credentialPresent, updatedAtMs: row.updatedAtMs,
     automatic: row.automatic ? { authorizationId: row.automatic.id, activatedAtMs: row.automatic.activatedAtMs, modelRevision: row.automatic.modelRevision } : null,
-    currentEligibility: "not-checked", testRequired: false, nativeTurnObserved: false };
+    currentEligibility: "not-checked", testRequired: false, nativeTurnObserved: false,
+    ...(row.plan.target.intent ? { intent: row.plan.target.intent } : {}) };
 }
 function operationView(installationId: string, databaseId: string, requestId: string, row: ReceiverManagementReceipt): ReceiverOperation {
   return { version: 1, operationRef: `receiver-operation:${installationId}:${databaseId}:${row.operationId}`, requestId,
@@ -79,7 +86,7 @@ async function deliveryView(domain: NotificationDomain, databaseId: string, work
     attempt: attempt ? { attemptId: attempt.attemptId, state: attempt.state as NonNullable<NotificationView["attempt"]>["state"],
       targetAgentId: attempt.targetAgentId, bindingRevision: attempt.bindingRevision, envelopeDigest: attempt.envelopeDigest, envelopeBytes: attempt.envelopeBytes,
       reservedAtMs: attempt.reservedAtMs, settledAtMs: attempt.settledAtMs } : null,
-    retry: row.retry,
+    task: row.task, taskReceipt: row.taskReceipt, retry: row.retry,
     attemptHistory: row.attemptHistory?.map(({ attemptId, state, reservedAtMs, settledAtMs }) => ({ attemptId, state, reservedAtMs, settledAtMs })),
     automaticRetry: false, botReport: "not_observed", userRead: "not_observed" };
 }
@@ -108,7 +115,7 @@ async function verify(domain: NotificationDomain, row: PairingRecord, signal: Ab
   const blocked = (reason: string): ReceiverVerification => ({ receiverRef: ref, revision: row.revision, state: "blocked", reason,
     modelRevision: null, testRequired: false, notificationSent: false, grantsPermission: false });
   if (!["prepared", "disabled"].includes(row.state) || !row.credentialPresent) return blocked("binding_not_prepared");
-  const configured = await openConfigStore(rootConfigLayout(domain.root)).read(), route = selectNotificationTarget(effectiveOps(configured.document.ops));
+  const configured = await openConfigStore(rootConfigLayout(domain.root)).read(), route = selectNotificationTarget(effectiveOps(configured.document.ops), row.plan.target.intent);
   if (route.state !== "selected" || route.target.alias !== row.plan.target.alias) return blocked("target_policy_blocked");
   const scope = await openMonitorStore(domain.root).notificationScope();
   const native = await domain.readNative(row.plan.target.agentId, row.plan.routineId, signal);
@@ -125,6 +132,8 @@ async function verify(domain: NotificationDomain, row: PairingRecord, signal: Ab
 export function notificationManagement(domain: NotificationDomain, principal: Principal, method: string, url: URL, input?: unknown) {
   return Effect.gen(function* () {
     const path = url.pathname;
+    if (path.startsWith("/v1/notification-tasks/") || path === "/v1/notification-task-claims" || path === "/v1/notification-task-results")
+      return yield* owned(signal => notificationTaskManagement(domain, principal, method, url, input, signal));
     yield* Effect.try({ try: () => {
       requireCapability(principal, method === "POST" ? path === "/v1/notification-sends" ? "notifications.send" : path === "/v1/notification-tests" ? "notifications.test" : "notifications.write"
         : path.includes("-operations/") ? "operations.read" : "notifications.read");
@@ -223,7 +232,8 @@ export function notificationManagement(domain: NotificationDomain, principal: Pr
         if (row.revision !== request.expectedRevision) return refuse("revision_conflict", "The receiver revision changed. Review the current target before another submission.");
         if (request.action === "enable") {
           const result = await activateOpsNotifications({ durableRoot: domain.root, command: { alias: row.plan.target.alias, expectedBindingRevision: request.expectedRevision,
-            expectedModelRevision: request.expectedModelRevision, operationId: key, confirmed: true }, expectedBindingId: id, requestDigest, readNative: domain.readNative, signal });
+            expectedModelRevision: request.expectedModelRevision, operationId: key, confirmed: true,
+            ...(request.confirmAnalysis ? { confirmAnalysis: true as const } : {}) }, expectedBindingId: id, requestDigest, readNative: domain.readNative, signal });
           return operationView(domain.installationId, databaseId, request.requestId, result.receipt);
         }
         if (request.action === "disable" || request.action === "unbind") {

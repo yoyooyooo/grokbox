@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { assessEvidenceCoverage, assessIncident, buildBotIncidentNotice, evidenceIdentity, publicEvidenceSummary, allocateEvidenceAliases, selectEvidenceClosure,
-  OBSERVATION_RETENTION, projectContinuityEvent, type EvidenceFact, type EvidenceView, type IncidentAssessment, type IncidentEvidenceManifest } from "@grokbox/runtime-kernel/observation";
+  OBSERVATION_RETENTION, maintenanceSource, projectContinuityEvent, type EvidenceFact, type EvidenceView, type IncidentAssessment, type IncidentEvidenceManifest } from "@grokbox/runtime-kernel/observation";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { projectControlEvent } from "./journal.node.ts";
 import type { MonitorSqlite, SqlRow } from "./monitor-sqlite.node.ts";
@@ -106,7 +106,11 @@ export async function captureIncidentEvidence(db: MonitorSqlite, incidentId: str
   const factsDigest = sha256Text(canonicalJson([data.facts.map(f => [f.ref, sha256Text(canonicalJson(f.value))]), String(incident.rule), assessed]));
   const previous = await db.first("SELECT * FROM incident_snapshots WHERE incident_id=? ORDER BY revision DESC LIMIT 1", [incidentId]);
   const prepareWork = async (revision: number) => {
-    if (input.prepareNotification && assessed.disposition === "notify" && incident.acknowledged !== 1
+    const source = maintenanceSource(data.facts);
+    // This is a fixed analysis task from the original producer, not a new
+    // classifier or a grant. Retain it even when user reminders are disabled.
+    const shouldPrepare = source.state === "ready" || source.state === "not_applicable" && input.prepareNotification && assessed.disposition === "notify";
+    if (shouldPrepare && incident.acknowledged !== 1
       && Number(incident.last_seen) >= atMs - OBSERVATION_RETENTION.notificationTtlMs && Number(incident.last_seen) <= atMs + 60_000
       && (incident.snooze_until === null || Number(incident.snooze_until) <= atMs) && !incident.parent_id) {
       await db.run("INSERT OR IGNORE INTO notification_work(id,incident_id,evidence_revision,state,created_at,expires_at) VALUES(?,?,?,'ready',?,?)", [randomUUID(), incidentId, revision, atMs, atMs + OBSERVATION_RETENTION.notificationTtlMs]);

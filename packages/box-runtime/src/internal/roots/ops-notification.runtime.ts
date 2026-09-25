@@ -22,7 +22,7 @@ export type PairedNotificationDriver = {
 };
 export type OpsNotificationInput = { durableRoot: string; workId: string; driver?: PairedNotificationDriver;
   signal?: AbortSignal; now?: () => number; storeOptions?: MonitorStoreOptions; replayFence?: NoticeReplayFence; managementOperationId?: string;
-  automaticRetry?: true };
+  automaticRetry?: true; intent?: "diagnose-or-report" };
 const io = <A>(run: () => Promise<A>) => Effect.tryPromise({ try: run, catch: () => new NotificationError("source_unavailable") });
 
 /** One explicit iteration. No service/autostart installation, pairing or retry.
@@ -31,7 +31,7 @@ const io = <A>(run: () => Promise<A>) => Effect.tryPromise({ try: run, catch: ()
 export async function runOpsNotificationDelivery(input: OpsNotificationInput) {
   if (!monitorUuid(input.workId)) throw new NotificationError("invalid_work");
   const now = input.now ?? Date.now;
-  const policy = async () => selectNotificationTarget(effectiveOps((await openConfigStore(rootConfigLayout(input.durableRoot)).read()).document.ops));
+  const policy = async () => selectNotificationTarget(effectiveOps((await openConfigStore(rootConfigLayout(input.durableRoot)).read()).document.ops), input.intent);
   const observedStore = openMonitorStore(input.durableRoot, input.storeOptions);
   const writeStore = async () => {
     const storage = await readStorageConfiguration(input.durableRoot);

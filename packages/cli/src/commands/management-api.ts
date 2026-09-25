@@ -24,7 +24,7 @@ export type ManagementCommandOptions = {
   preview?: boolean; acceptNonAtomic?: boolean; scopeId?: string; expectPlan?: string; itemId?: string; evidenceRef?: string;
   requestId?: string; expectRevision?: string; model?: string; followDefault?: boolean; effort?: string; receiver?: string;
   root?: string; nativeDiscovery?: string; port?: string; input?: string; mode?: string;
-  untilMs?: string; durationMs?: string; domain?: string; databaseId?: string; confirm?: boolean; expectModelRevision?: string;
+  untilMs?: string; durationMs?: string; domain?: string; databaseId?: string; confirm?: boolean; confirmAnalysis?: boolean; expectModelRevision?: string;
   bot?: string; snapshotRef?: string; routineRef?: string; expectBindingRevision?: string; enabled?: string; target?: string;
   origin?: string; credentialFile?: string; consoleOrigin?: string; managementUrl?: string; installationId?: string;
   nonce?: string; beforeSeq?: string; fromPi?: string; probeTimeoutMs?: string;
@@ -422,7 +422,8 @@ export async function runManagementCommand(deps: CliDeps, command: string, args:
       if (options.confirm !== true || !options.expectRevision || !/^[1-9][0-9]*$/.test(options.expectRevision)) throw invalid("A receiver change requires explicit confirmation and an integer revision.");
       const action = command.split(" ").at(-1)! as "enable" | "disable" | "unbind" | "test";
       const input = { requestId: options.requestId ?? "", receiverRef: args[0] ?? "", expectedRevision: Number(options.expectRevision), confirmed: true as const,
-        ...(action === "enable" || action === "test" ? { action, expectedModelRevision: options.expectModelRevision ?? "" } : { action }) };
+        ...(action === "enable" || action === "test" ? { action, expectedModelRevision: options.expectModelRevision ?? "" } : { action }),
+        ...(action === "enable" && options.confirmAnalysis ? { confirmAnalysis: true as const } : {}) };
       reply = action === "test" ? await client.testReceiver(input, deps.signal) : await client.changeReceiver(input, deps.signal);
       break;
     }

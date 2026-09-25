@@ -14,20 +14,23 @@ const positive = (v: unknown): v is number => typeof v === "number" && Number.is
 const operation = (v: unknown): v is string => typeof v === "string" && /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(v);
 const bad = (): never => { throw new NotificationError("invalid_automatic_authorization"); };
 export type NoticeActivationCommand = { alias: string; expectedBindingRevision: number;
-  expectedModelRevision: string; operationId: string; confirmed: boolean };
+  expectedModelRevision: string; operationId: string; confirmed: boolean; confirmAnalysis?: true };
 export function validateNoticeActivation(input: NoticeActivationCommand): NoticeActivationCommand {
-  if (!input || Object.keys(input).some(k => !["alias", "expectedBindingRevision", "expectedModelRevision", "operationId", "confirmed"].includes(k))) return bad();
+  if (!input || Object.keys(input).some(k => !["alias", "expectedBindingRevision", "expectedModelRevision", "operationId", "confirmed", "confirmAnalysis"].includes(k))) return bad();
   const alias = own(input, "alias"), revision = own(input, "expectedBindingRevision"), model = own(input, "expectedModelRevision"), id = own(input, "operationId");
   if (typeof alias !== "string" || !/^[a-z][a-z0-9_-]{0,31}$/.test(alias) || !positive(revision) || revision >= Number.MAX_SAFE_INTEGER || !hash(model) || !operation(id)) return bad();
   if (own(input, "confirmed") !== true) throw new NotificationError("automatic_confirmation_required");
-  return { alias, expectedBindingRevision: revision, expectedModelRevision: model, operationId: id, confirmed: true };
+  if (own(input, "confirmAnalysis") !== undefined && own(input, "confirmAnalysis") !== true) return bad();
+  return { alias, expectedBindingRevision: revision, expectedModelRevision: model, operationId: id, confirmed: true,
+    ...(own(input, "confirmAnalysis") === true ? { confirmAnalysis: true as const } : {}) };
 }
 export const noticeActivationDigest = (input: NoticeActivationCommand) => sha256Text(canonicalJson(validateNoticeActivation(input)));
 export type NoticeAuthorization = { version: 2; consent: "explicit-enable"; id: string; operationId: string; requestDigest: string; bindingRevision: number;
-  activatedAtMs: number; modelRevision: string; qualificationRevision: string; nativeTurnObserved: false; includesExistingWork: false };
+  activatedAtMs: number; modelRevision: string; qualificationRevision: string; nativeTurnObserved: false; includesExistingWork: false; analysisAuthorized?: true };
 export function validateNoticeAuthorization(value: unknown): NoticeAuthorization {
   if (!value || typeof value !== "object" || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) return bad();
   const keys = ["version", "consent", "id", "operationId", "requestDigest", "bindingRevision", "activatedAtMs", "modelRevision", "qualificationRevision", "nativeTurnObserved", "includesExistingWork"];
+  if (Object.hasOwn(value, "analysisAuthorized")) keys.push("analysisAuthorized");
   if (Reflect.ownKeys(value).length !== keys.length) return bad();
   // Check descriptors before reading even the version. A prototype or getter
   // cannot grant authority and then disappear from its canonical persistence.
@@ -39,7 +42,8 @@ export function validateNoticeAuthorization(value: unknown): NoticeAuthorization
   if (v.version !== NOTICE_AUTHORIZATION_VERSION || v.consent !== "explicit-enable"
     || !uuid(v.id) || !operation(v.operationId) || !hash(v.requestDigest) || !positive(v.bindingRevision)
     || !positive(v.activatedAtMs) || !hash(v.modelRevision) || !hash(v.qualificationRevision)
-    || v.nativeTurnObserved !== false || v.includesExistingWork !== false) return bad();
+    || v.nativeTurnObserved !== false || v.includesExistingWork !== false
+    || v.analysisAuthorized !== undefined && v.analysisAuthorized !== true) return bad();
   return structuredClone(v);
 }
 

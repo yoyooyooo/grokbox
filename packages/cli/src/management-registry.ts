@@ -258,6 +258,7 @@ export const MANAGEMENT_COMMANDS: readonly LeafCommand[] = [
       { flags: "--request-id <uuid>", description: "Persisted identity for this action", required: true },
       { flags: "--expect-revision <n>", description: "Observed binding revision", required: true },
       ...(["enable", "test"].includes(action) ? [{ flags: "--expect-model-revision <sha256>", description: "Model revision from receiver verify", required: true }] : []),
+      ...(action === "enable" ? [{ flags: "--confirm-analysis", description: "Authorize the dedicated maintainer to claim and analyze fixed tasks; grants no repair or adoption permission" }] : []),
       { flags: "--confirm", description: action === "test" ? "Authorize this one test and possible model cost" : "Confirm the local consent change; future enabled delivery may incur model cost", required: true },
     ]), destructive: true })),
   { ...command("notification send", "Send one existing incident notification through its original outbox; may consume model usage, never grants automatic delivery.",

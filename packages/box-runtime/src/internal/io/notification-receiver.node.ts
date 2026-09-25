@@ -1,7 +1,7 @@
 import { assessLoadedHostCapabilities, type LoadedHostIdentity } from "@grokbox/runtime-kernel/contract";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { NATIVE_ROUTINE_MAX_BYTES, projectNativeRoutines } from "@grokbox/runtime-kernel/routines";
-import { projectReceiverModelObservation, RECEIVER_NOTICE_POLICY_REVISION } from "@grokbox/runtime-kernel/observation";
+import { projectReceiverModelObservation, RECEIVER_NOTICE_POLICY_REVISION, RECEIVER_ANALYSIS_POLICY_REVISION } from "@grokbox/runtime-kernel/observation";
 
 export type ReceiverReadMethod = "getAgentAutomations" | "getHostStatus";
 export type ReceiverReadPorts = {
@@ -63,7 +63,7 @@ export function createNotificationReceiver(ports: ReceiverReadPorts, timeoutMs =
       capabilities: assessLoadedHostCapabilities(own(host.result, "grokboxRuntimeCapabilities"), { gatewayPid: host.source.pid, profile: after }),
       consistentGeneration: generation(host.source) === generation(routines.source) };
     if (!explicit || !receiver.consistentGeneration || receiver.capabilities.state !== "ready" || receiver.model?.state !== "observed"
-      || receiver.promptPolicyRevision !== RECEIVER_NOTICE_POLICY_REVISION) return { ...receiver, ownership: null, ownershipGeneration: receiver.snapshot.generation };
+      || ![RECEIVER_NOTICE_POLICY_REVISION, RECEIVER_ANALYSIS_POLICY_REVISION].includes(receiver.promptPolicyRevision ?? "")) return { ...receiver, ownership: null, ownershipGeneration: receiver.snapshot.generation };
     const ownership = await call("getHostStatus", { grokboxOwnershipAgentIds: [agentId] });
     return { ...receiver, ownership: own(ownership.result, "grokboxOwnership"), ownershipGeneration: generation(ownership.source) };
   };

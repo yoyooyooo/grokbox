@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { effectiveOps } from "@grokbox/runtime-kernel/config";
 import { canonicalJson } from "@grokbox/runtime-kernel/hash";
-import { pairingAlias, pairingTarget, receiverBlueprint, RECEIVER_NOTICE_POLICY_REVISION, projectReceiverModelObservation, type ReceiverModelObservation } from "@grokbox/runtime-kernel/observation";
+import { pairingAlias, pairingTarget, receiverBlueprint, receiverPolicyRevision, projectReceiverModelObservation, type ReceiverModelObservation } from "@grokbox/runtime-kernel/observation";
 import type { RoutineSnapshot } from "@grokbox/runtime-kernel/routines";
 import type { HostCapabilityReport } from "@grokbox/runtime-kernel/contract";
 import { openOpsBindings } from "../io/ops-bindings.node.ts";
@@ -17,8 +17,10 @@ const io = <A>(read: () => Promise<A>) => Effect.tryPromise({ try: read, catch: 
 
 export async function prepareOpsReceiverBlueprint(input: { durableRoot: string; alias: string }) {
   pairingAlias(input.alias);
-  return Effect.runPromise(io(() => openConfigStore(rootConfigLayout(input.durableRoot)).read()).pipe(Effect.map(snapshot =>
-    receiverBlueprint(pairingTarget(effectiveOps(snapshot.document.ops), input.alias).routineKey))));
+  return Effect.runPromise(io(() => openConfigStore(rootConfigLayout(input.durableRoot)).read()).pipe(Effect.map(snapshot => {
+    const target = pairingTarget(effectiveOps(snapshot.document.ops), input.alias);
+    return receiverBlueprint(target.routineKey, target.intent);
+  })));
 }
 
 /** Read only, no credential access or stored qualification. A current model
@@ -49,7 +51,7 @@ export async function verifyOpsReceiver(input: { durableRoot: string; alias: str
     const routine = native.snapshot.catalog.routines.find(r => r.id === record.plan.routineId);
     if (native.snapshot.catalog.agentId !== target.agentId || !native.consistentGeneration) blockers.push("native_generation_changed");
     if (!routine || routine.revision !== record.plan.routineRevision || !routine.mutable || routine.trigger.type !== "webhook" || routine.enabled) blockers.push("disabled_routine_changed");
-    if (native.promptPolicyRevision !== RECEIVER_NOTICE_POLICY_REVISION) blockers.push("notice_policy_mismatch");
+    if (native.promptPolicyRevision !== receiverPolicyRevision(target.intent)) blockers.push("notice_policy_mismatch");
     let model = projectReceiverModelObservation(native.model, target.agentId, now());
     if (!model || model.state !== "observed") blockers.push("model_selection_unobserved");
     if (native.capabilities.state !== "ready" || !model || native.capabilities.observed?.loaded.profileSha256 !== model.loadedProfileRevision
@@ -64,7 +66,7 @@ export async function verifyOpsReceiver(input: { durableRoot: string; alias: str
       model = null; blockers.push("model_observation_expired");
     }
     return result({ bindingId: record.bindingId, bindingRevision: record.revision, routineId: record.plan.routineId,
-      routineRevision: routine?.revision ?? null, promptPolicy: native.promptPolicyRevision === RECEIVER_NOTICE_POLICY_REVISION ? "matched" : "not_matched",
+      routineRevision: routine?.revision ?? null, promptPolicy: native.promptPolicyRevision === receiverPolicyRevision(target.intent) ? "matched" : "not_matched",
       model, hostCapability: { state: native.capabilities.state, reason: native.capabilities.reason }, nativeCompareAndSwap: false });
   }).pipe(Effect.catch(() => Effect.succeed({ schemaVersion: 1, alias: input.alias, state: "unavailable", localPreflightComplete: false,
     blockers: ["source_unavailable"], deliveryAuthorized: false, qualificationPersisted: false, nativeCredentialsRequested: false, privateCredentialsIncluded: false, routineChanged: false,

@@ -19,7 +19,7 @@ for (const preset of ["user", "maintainer"] as const) {
 
 test("observation changes preserve previously paired notification fingerprints", () => {
   const input = { targets: { default: { agentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", routineKey: "notices" } } };
-  const ops = effectiveOps(input), { observation: _, ...priorContract } = ops;
+  const ops = effectiveOps(input), { observation: _, maintainer: _maintainer, ...priorContract } = ops;
   const before = selectNotificationTarget(ops);
   expect(before.state).toBe("selected");
   if (before.state !== "selected") throw Error("fixture route unavailable");
