@@ -48,9 +48,11 @@ Host/worker 的持续更新是开发期狗粮输入，不是外部异常，也�
 
 副本父目录0700、文件0400，最多4个原子占用槽，主Host/worker各64MiB、profile 1MiB、manifest 16KiB；正常结束、失败或可结算取消释放本窗口及其测试临时目录。异常退出留下的占用不自动抢删，容量不足明确拒绝；人工核对原owner已退出后才清理。UUID及inode核对防止旧清理动作删除复用槽的新任务。此上限约束输入副本，不声称子测试的所有工作目录、进程内存或历史证据无限保留。公开回执只有摘要/有限字段；原路径只在私有manifest中，副本不成为已安装、已加载或已审核profile。
 
-`runtime-kernel/host-source-evolution.ts` 是分类唯一合同。source hash变化、完整有序recipe失配（准确slice/code）、静态语义检查（id/revision/code）、显式原生ABI检查及未覆盖slice分别表达；未执行为 `not-run`，未评估覆盖为 `not-evaluated`。完整维护配方匹配不等于所选profile被审核；完整维护配方失配也不自动伪装成无关已选profile的故障。`source-change-needs-abi-proof` 不是功能回归，四项静态通过不关闭未覆盖项。静态producer不得携带原生ABI通过声明；显式原生组另报选定范围结果，退出/SIGKILL/skip本身不证明ABI退化。手动 `--reference-host-sha` / `--reference-worker-sha` 必须同时提供完整摘要，仅定义比较基线，不更改任何原生pin。
+`runtime-kernel/host-source-evolution.ts` 拥有来源身份与既有资格事实的比较合同；AH-188 的可消费更新分类由同一 `host-health` 出口的 `host-source-change.ts` 定义，生产、证据、去重与观察控制归 [T44](T44-host-ops-continuous-sensing.md#source-change-events)，不再把资格事实和任务派发混成一个结论。source hash变化、完整有序recipe失配（准确slice/code）、静态语义检查（id/revision/code）、显式原生ABI检查及未覆盖slice分别表达；未执行为 `not-run`，未评估覆盖为 `not-evaluated`。完整维护配方匹配不等于所选profile被审核；完整维护配方失配也不自动伪装成无关已选profile的故障。`source-change-needs-abi-proof` 不是功能回归，四项静态通过不关闭未覆盖项。静态producer不得携带原生ABI通过声明；显式原生组另报选定范围结果，退出/SIGKILL/skip本身不证明ABI退化。手动 `--reference-host-sha` / `--reference-worker-sha` 必须同时提供完整摘要，仅定义比较基线，不更改任何原生pin。
 
-安装级producer继续采用一项运行、一项可替换待跑任务，取消过期排队而不抢占已运行的固定分析。完成缓存键包含source/worker/profile集合、完整recipe、checker build及必需检查版本；有界64项报告可从原provenance恢复，刷新只发现依赖变化，不清空同一完成结果。淘汰后重新检查是有界保留的代价，不承诺永久全局exactly-once；未完成的检测器失败保留原有有界退避。迟到完成进入原journal/OBS的 `sourceState=snapshot`，不更新当前 `latest`，不打开或解除当前condition；A→B→A重新发布当前观察但可复用A的固定分析。未引入第二套collector、监控数据库、parser fallback、profile writer或自动pin/adopt。
+安装级producer继续采用一项运行、一项可替换待跑任务，取消过期排队而不抢占已运行的固定分析。完成缓存键包含source/worker/profile集合、完整recipe、checker build及必需检查版本；有界64项报告可从原provenance恢复，刷新只发现依赖变化，不清空同一完成结果。淘汰后重新检查是有界保留的代价，不承诺永久全局exactly-once；未完成的检测器失败保留原有有界退避。迟到完成进入原journal/OBS的 `sourceState=snapshot`，不更新当前 `latest`，不打开或解除当前condition，也不生成来源分析任务；A→B→A重新发布新的观察 episode，但可复用A的固定分析。未引入第二套collector、监控数据库、parser fallback、profile writer或自动pin/adopt。
+
+**更新分级不等待全部未来 checker。** 当前实际 recipe 窗口与 worker 无交集只留证；相关同形也进入原 OBS 的分析 occurrence；结构失配/静态负证据与无法判断分别保留，不能被旧 open condition 吞掉。前后固定来源与私有引用不等于实际运行代或已造成用户影响；观察、受管执行与通知许可分别控制，AH-143 拥有公共 ops schema 与通知接线，AH-188 不接管 AH-124 的恢复/采用。
 
 **问题回流仍由原Owner与Linear完成，不是运行时新建工单服务。** 先用source pair、recipe、slice/checker/ABI及实际失败范围定位；同一故障先查已有Issue并更新原回执，只有能复现且影响该消费者的缺口才新增修复/Blocks。单纯SHA变化、fixture误用、资源退出或未执行检查不冒充上游功能回归。已签收固定窗口保持Done，新来源的准确后续由对应Owner推进；A2评估可达风险，E1消费原健康/观察事件，Q采用门仍核对实际准备采用的版本与权限，不形成全局停更锁。该接口不自动授权外部Webhook、收费模型或用户Bot变更。
 

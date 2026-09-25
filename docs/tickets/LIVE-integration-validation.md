@@ -6,6 +6,12 @@
 
 [固定报告](../reports/2026-09-24-controlled-dual-bot.md)记录同一授权窗口的历史与当前状态。2026-09-25，原失败操作已完成同 ID 物理恢复，后续 `d15cf498` 固定安装的受控接管及 loaded/committed 对齐实际成功。**双 Bot 验收仍未完成：第一只 Temporal Bot 创建进入 `effect_unknown`，未取得可验证的原生身份回执；没有重发或另换 ID，B/C 未提交，模型/DM/tool/compact/follow-up 未执行。** 当前现场已回官方 Host、desired disabled，实验 modeld 正式停止；49 个原有本机 Bot 身份/harness、模型字节和原 controller 行保留。controller 有 7 条 unknown，产品创建台账另有一条 unknown，均未清除。最新父会话修复未追加独立审查；历史审查仍绑定原范围。原生 40 项及有限静态/模型链资格不扩成完整 E2E、J3/J4、模型矩阵或持久运行通过。
 
+### AH-188 Host 更新分级待验窗口（2026-09-25）
+
+**`awaiting-integration / not-run`；没有新增现场通过。** [T44 更新事件合同](T44-host-ops-continuous-sensing.md#source-change-events)已实现自有来源 → 原 producer → 固定 provenance → 原 OBS occurrence 的隔离纵切；AH-143 仍负责公共观察配置、通知与接收者接线。合入与源码测试不更换 AH-124 固定候选，不授权部署或修复/采用。
+
+同一候选完成 Q 合流与必要复核后，仅沿原 [采集寿命](#live-monitor-persistence)、[通知寿命](#live-ops-observer-lifetime)、[证据](#live-obs-evidence)、[隐私](#live-alert-privacy)及[容量](#live-obs-storage)补验：实际官方来源的窗口外更新零唤醒；相关同形/结构变化/无法判断分别形成可消费事件；连续来源与同 episode 风险升级不被旧 open incident 吞掉；前后固定私有引用可读回且公共面无源码/路径；新磁盘、已验证候选、实际运行代与用户影响不混。核验公共 observation 开关与 execution/notification 开关独立生效，以及真实消费者接收和原 outbox 证据保全。不能以自有 fixture、HTTP 受理或未返回结论的审查代签这些判据。
+
 ### F1 持久宿主当前探针回执（2026-09-22）
 
 - **候选/来源**：v2 集成候选（AH-113 F1），动态 `runtime services status` 探针；只读，无安装、启用、启动或停止动作。
