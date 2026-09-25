@@ -38,7 +38,7 @@ export async function materialsFixture(origin: string, input: { enabled?: boolea
   ]};
   await publishConfigFile(join(root,"config.json"),config);
   const options = { store:openRuntimeStore(root,{}),installationId:MATERIAL_INSTALLATION,native,readGrants:async()=>structuredClone(state.grants),env:{},allowedOrigins:[origin],port:0 };
-  const ports = {materials:{intervalMs:input.intervalMs ?? 50,writeHooks:input.writeHooks,scan:input.scan}};
+  const ports = {hostHealth:{enabled:false},materials:{intervalMs:input.intervalMs ?? 50,writeHooks:input.writeHooks,scan:input.scan}};
   let server = await startManagementServer(options,ports); options.port = Number(new URL(server.url).port);
   config.client.profiles = {default:{serverUrl:server.url,installationId:MATERIAL_INSTALLATION,daemonTokenRef:"env:SYNTHETIC_MATERIAL_CREDENTIAL"}};
   await publishConfigFile(join(root,"config.json"),config);

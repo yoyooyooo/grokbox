@@ -184,7 +184,7 @@ test("client disconnection preserves the Server-owned operation and a competing 
     f.hooks!.beforeCommit = async label => { if (label === "managed-context-prepare") { entered = true; await gate; } };
     const controller = new AbortController(), pending = f.client().changeContext(r, controller.signal).catch(e => e);
     await until(async () => entered); controller.abort(); const lost = await pending; assert.equal(lost.code, "operation_unknown");
-    other = await startManagementServer({ ...f.options, port: 0 });
+    other = await startManagementServer({ ...f.options, port: 0 }, { hostHealth: { enabled: false } });
     const second = new ManagementClient({ baseUrl: other.url, installationId: C_INSTALL, credential: async () => C_OWNER });
     assert.equal((await second.identity()).data.installationId, C_INSTALL);
     const competing = second.changeContext(r).catch(e => e); release();
@@ -207,7 +207,7 @@ test("revoked final authorization prevents native mutation and delayed head data
     const wrapped = (signal: AbortSignal) => { const native = transport(signal); return { ...native, currentStateControl: async (...args: Parameters<typeof native.currentStateControl>) => {
       const reply = await native.currentStateControl(...args); entered = true; await gate; return reply;
     } }; };
-    const other = await startManagementServer({ ...f.options, native: { ...f.native, continuityAccess: wrapped }, port: 0 });
+    const other = await startManagementServer({ ...f.options, native: { ...f.native, continuityAccess: wrapped }, port: 0 }, { hostHealth: { enabled: false } });
     try {
       const client = new ManagementClient({ baseUrl: other.url, installationId: C_INSTALL, credential: async () => C_READER });
       const pending = client.context(C_SOURCE); void pending.catch(() => undefined); await until(async () => entered);

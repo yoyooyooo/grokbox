@@ -280,7 +280,7 @@ test("competing management instances cannot dispatch the same original operation
   f.state.waitSummary = deferred();
   try {
     const r = await request(f), pending = f.client().compact(r); void pending.catch(() => undefined); await f.state.started.promise;
-    second = await startManagementServer({ ...f.serverOptions, port: 0 });
+    second = await startManagementServer({ ...f.serverOptions, port: 0 }, { hostHealth: { enabled: false } });
     const client = new ManagementClient({ baseUrl: second.url, installationId: C_INSTALL, credential: async () => C_OWNER });
     assert.equal((await client.identity()).data.installationId, C_INSTALL);
     await assert.rejects(client.compact(r), { code: "operation_unknown" });

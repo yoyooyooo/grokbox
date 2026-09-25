@@ -83,7 +83,7 @@ export async function protectionFixture(origin:string,options:{disabled?:boolean
       handover:async()=>({state:"not-observed"})};
   };
   const serverOptions={store,installationId:P_INSTALL,native,allowedOrigins:[origin],env:{},readGrants:async()=>structuredClone(state.grants),port:0};
-  let server=await startManagementServer(serverOptions,{protection:timings});serverOptions.port=Number(new URL(server.url).port);
+  let server=await startManagementServer(serverOptions,{hostHealth:{enabled:false},protection:timings});serverOptions.port=Number(new URL(server.url).port);
   const config=structuredClone(document);config.client.currentProfile="default";config.client.profiles={default:{serverUrl:server.url,installationId:P_INSTALL,daemonTokenRef:"env:SYNTHETIC_PROTECTION_CREDENTIAL"}};
   await publishConfigFile(join(root,"config.json"),config);
   await publishConfigFile(join(root,"state","installation.json"),{schemaVersion:1,installationId:P_INSTALL,role:"box",root,daemon:{tokenSha256:hash(P_OWNER)}});
@@ -91,7 +91,7 @@ export async function protectionFixture(origin:string,options:{disabled?:boolean
   return {root,store,state,native,config,serverOptions,timings,get server(){return server;},
     controls:()=>openContinuityControls({durableRoot:root,scopeId:P_SCOPE}),
     client:(token=P_OWNER)=>new ManagementClient({baseUrl:server.url,installationId:P_INSTALL,credential:async()=>token}),
-    restart:async()=>{await server.close();server=await startManagementServer(serverOptions,{protection:timings});},
+    restart:async()=>{await server.close();server=await startManagementServer(serverOptions,{hostHealth:{enabled:false},protection:timings});},
     close:async()=>{try{await server.close();}finally{nativeServer.closeAllConnections();await new Promise<void>(r=>nativeServer.close(()=>r()));await rm(root,{recursive:true,force:true});}}
   };
 }

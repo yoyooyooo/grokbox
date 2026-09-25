@@ -77,7 +77,7 @@ export async function handoverFixture(origin:string,options:{allowMessages?:bool
   await publishConfigFile(join(root,"config.json"),validateConfig({...defaultConfig(),runtime:{desiredMode:"disabled",continuity:{enabled:false}}}));
   const store=openRuntimeStore(root,{}),gateway=createManagementGateway({discoveryPath,configurationRoot:root,timeoutMs:2000}),hooks:ContinuityStoreHooks={};
   const serverOptions={store,installationId:H_INSTALL,native:gateway,env:{},allowedOrigins:[origin],readGrants:async()=>structuredClone(state.grants),port:0};
-  let server=await startManagementServer(serverOptions,{context:{hooks}});serverOptions.port=Number(new URL(server.url).port);
+  let server=await startManagementServer(serverOptions,{hostHealth:{enabled:false},context:{hooks}});serverOptions.port=Number(new URL(server.url).port);
   await publishConfigFile(join(root,"config.json"),validateConfig({...defaultConfig(),runtime:{desiredMode:"disabled",continuity:{enabled:false}},
     client:{currentProfile:"default",profiles:{default:{serverUrl:server.url,installationId:H_INSTALL,daemonTokenRef:"env:HANDOVER_MANAGEMENT_TOKEN"}}}}));
   await publishConfigFile(join(root,"state","installation.json"),{schemaVersion:1,installationId:H_INSTALL,role:"box",root,daemon:{tokenSha256:hash(H_OWNER)}});
@@ -86,7 +86,7 @@ export async function handoverFixture(origin:string,options:{allowMessages?:bool
   return {root,store,hooks,state,rows,transcripts,routines,request,operationId,ref,serverOptions,controls:openContinuityControls({durableRoot:root,scopeId:H_SCOPE}),get server(){return server;},
     client:(credential=H_OWNER)=>new ManagementClient({baseUrl:server.url,installationId:H_INSTALL,credential:async()=>credential,timeoutMs:30000,
       fetch:(async(url,init)=>{const headers=new Headers(init?.headers);headers.set("connection","close");return fetch(url,{...init,headers});}) as typeof fetch}),
-    restart:async()=>{await server.close();server=await startManagementServer(serverOptions,{context:{hooks}});},
+    restart:async()=>{await server.close();server=await startManagementServer(serverOptions,{hostHealth:{enabled:false},context:{hooks}});},
     close:async()=>{state.release.resolve();await server.close();nativeServer.closeAllConnections();await Promise.allSettled([...tasks]);await new Promise<void>(r=>nativeServer.close(()=>r()));await rm(root,{recursive:true,force:true});}
   };
 }

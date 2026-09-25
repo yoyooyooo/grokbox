@@ -91,7 +91,7 @@ export async function contextFixture(origin: string) {
   const native = createManagementGateway({ discoveryPath, configurationRoot: root, timeoutMs: 1000 });
   const hooks: NonNullable<NonNullable<Parameters<typeof startManagementServer>[1]>["context"]>["hooks"] = {};
   const options = { store: openRuntimeStore(root, {}), installationId: C_INSTALL, native, allowedOrigins: [origin], env: {}, port: 0, readGrants: async () => structuredClone(state.grants) };
-  let server = await startManagementServer(options, { context: { hooks } }); options.port = Number(new URL(server.url).port);
+  let server = await startManagementServer(options, { hostHealth: { enabled: false }, context: { hooks } }); options.port = Number(new URL(server.url).port);
   config.client.currentProfile = "default"; config.client.profiles = { default: { serverUrl: server.url, installationId: C_INSTALL, daemonTokenRef: "env:SYNTHETIC_CONTEXT_CREDENTIAL" } };
   await publishConfigFile(join(root, "config.json"), config); await publishConfigFile(join(root, "state", "installation.json"), { schemaVersion: 1, installationId: C_INSTALL, role: "box", root, daemon: { tokenSha256: hash(C_OWNER) } });
   await publishLayoutAliases(root, root, C_INSTALL);
@@ -100,6 +100,6 @@ export async function contextFixture(origin: string) {
   return { root, state, source, target, owner, native, options, hooks, get server() { return server; }, client,
     declaration: async (action: ContextChange["action"], bot = C_SOURCE, snapshotRef?: string) => ({ requestId: randomUUID(), botRef: bot, scopeId: C_SCOPE, expectedRevision: (await client().context(bot)).data.revision,
       confirmed: true, action, ...(snapshotRef ? { snapshotRef } : {}) }) as ContextChange,
-    restart: async () => { await server.close(); server = await startManagementServer(options, { context: { hooks } }); },
+    restart: async () => { await server.close(); server = await startManagementServer(options, { hostHealth: { enabled: false }, context: { hooks } }); },
     close: async () => { try { await server.close(); } finally { gateway.closeAllConnections(); await new Promise<void>(r => gateway.close(() => r())); source.close(); target.close(); await rm(root, { recursive: true, force: true }); } } };
 }

@@ -159,7 +159,7 @@ test("concurrent Server instances share the original handover lock and never rep
  try{
   const r=await declaration(f);f.state.stallAfterWrite=true;const pending=f.client().changeHandover(r);void pending.catch(()=>undefined);
   await until(async()=>f.state.waiting,n=>n>0);
-  second=await startManagementServer({...f.serverOptions,port:0});
+  second=await startManagementServer({...f.serverOptions,port:0},{hostHealth:{enabled:false}});
   const client=new ManagementClient({baseUrl:second.url,installationId:H_INSTALL,credential:async()=>H_OWNER});
   assert.equal((await client.identity()).data.installationId,H_INSTALL);
   await assert.rejects(client.changeHandover(r),{code:"operation_unknown"});assert.equal(writes(f).length,1);

@@ -41,7 +41,10 @@ export async function webFixture(origin: string) {
   };
   const observations = openMonitorStore(root);
   const options = { store, observations, installationId: INSTALLATION, native, env: {}, allowedOrigins: [origin], readGrants: async () => structuredClone(state.grants), port: 0 };
-  let server = await startManagementServer(options);
+  // These domain tests own no Host source. Do not rely on execution intent to
+  // suppress an independent observer or let it discover private machine files.
+  const testPorts = { hostHealth: { enabled: false } };
+  let server = await startManagementServer(options, testPorts);
   options.port = Number(new URL(server.url).port);
   const config = defaultConfig();
   config.client.profiles = { default: { serverUrl: server.url, daemonTokenRef: "env:SYNTHETIC_MANAGEMENT_CREDENTIAL", installationId: INSTALLATION } };
@@ -56,7 +59,7 @@ export async function webFixture(origin: string) {
     // unchanged, and the production client still reports network failures.
     client: (credential = OWNER) => new ManagementClient({ baseUrl: server.url, installationId: INSTALLATION, credential: async () => credential,
       fetch: (async (url, init) => { const headers = new Headers(init?.headers); headers.set("connection", "close"); return fetch(url, { ...init, headers }); }) as typeof fetch }),
-    restart: async () => { await server.close(); server = await startManagementServer(options); },
+    restart: async () => { await server.close(); server = await startManagementServer(options, testPorts); },
     close: async () => { await server.close(); await rm(root, { recursive: true, force: true }); },
   };
 }

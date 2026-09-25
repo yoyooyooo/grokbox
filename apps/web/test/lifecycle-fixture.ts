@@ -81,7 +81,7 @@ export async function lifecycleFixture(origin: string) {
       if (state.revokeAfterBirth && state.created) grants[0]!.capabilities = grants[0]!.capabilities.filter(c => c !== "lifecycle.write");
       return grants;
     } };
-  let server = await startManagementServer(options, { lifecycle: { create } }); options.port = Number(new URL(server.url).port);
+  let server = await startManagementServer(options, { hostHealth: { enabled: false }, lifecycle: { create } }); options.port = Number(new URL(server.url).port);
   config.client.currentProfile = "default"; config.client.profiles = { default: { serverUrl: server.url, installationId: L_INSTALL, daemonTokenRef: "env:SYNTHETIC_LIFECYCLE_CREDENTIAL" } };
   await publishConfigFile(join(root, "config.json"), config);
   await publishConfigFile(join(root, "state", "installation.json"), { schemaVersion: 1, installationId: L_INSTALL, role: "box", root, daemon: { tokenSha256: hash(L_OWNER) } });
@@ -91,7 +91,7 @@ export async function lifecycleFixture(origin: string) {
     // Do not turn undici's old pooled socket into an automatic write retry.
     client: (token = L_OWNER, transport?: typeof fetch) => new ManagementClient({ baseUrl: server.url, installationId: L_INSTALL, credential: async () => token,
       fetch: transport ?? (async (input, init) => { const headers = new Headers(init?.headers); headers.set("connection", "close"); return fetch(input, { ...init, headers }); }) as typeof fetch }),
-    restart: async () => { await server.close(); server = await startManagementServer(options, { lifecycle: { create } }); },
+    restart: async () => { await server.close(); server = await startManagementServer(options, { hostHealth: { enabled: false }, lifecycle: { create } }); },
     revoke: (cap: Capability) => { state.grants[0]!.capabilities = state.grants[0]!.capabilities.filter(c => c !== cap); },
     close: async () => { try { await server.close(); } finally { gateway.closeAllConnections(); await new Promise<void>(r => gateway.close(() => r())); await rm(root, { recursive: true, force: true }); } },
   };

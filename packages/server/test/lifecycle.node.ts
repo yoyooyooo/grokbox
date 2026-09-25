@@ -183,7 +183,7 @@ test("independent management servers share one manual driver gate without blocki
   try {
     const intent = lifecycleIntent(), preview = (await f.client().previewLifecycle(intent)).data;
     const another = lifecycleIntent(), nextPreview = (await f.client().previewLifecycle(another)).data;
-    second = await startManagementServer({ ...f.options, port: 0 }, { lifecycle: { create: f.create } });
+    second = await startManagementServer({ ...f.options, port: 0 }, { hostHealth: { enabled: false }, lifecycle: { create: f.create } });
     const client = new ManagementClient({ baseUrl: second.url, installationId: L_INSTALL, credential: async () => L_OWNER });
     f.state.holdCreate = async () => { entered(); await gate; };
     const input = { ...intent, scopeId: L_SCOPE, planRevision: preview.planRevision, confirmed: true as const };

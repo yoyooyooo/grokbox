@@ -111,7 +111,7 @@ export async function compactionFixture(origin: string, options: { small?: boole
   await publishConfigFile(join(root, "config.json"), validateConfig({ ...defaultConfig(), runtime: { desiredMode: "disabled", continuity: { enabled: false } } }));
   const gateway = createManagementGateway({ discoveryPath, configurationRoot: root, timeoutMs: 2000 });
   const serverOptions = { store, installationId: C_INSTALL, native: gateway, env: {}, allowedOrigins: [origin], readGrants: async () => structuredClone(state.grants), port: 0 };
-  let server = await startManagementServer(serverOptions, { context: { hooks } }); serverOptions.port = Number(new URL(server.url).port);
+  let server = await startManagementServer(serverOptions, { hostHealth: { enabled: false }, context: { hooks } }); serverOptions.port = Number(new URL(server.url).port);
   const config = validateConfig({ ...defaultConfig(), runtime: { desiredMode: "disabled", continuity: { enabled: false } }, client: { currentProfile: "default", profiles: { default: { serverUrl: server.url, installationId: C_INSTALL, daemonTokenRef: "env:COMPACTION_MANAGEMENT_TOKEN" } } } });
   await publishConfigFile(join(root, "config.json"), config);
   await publishConfigFile(join(root, "state", "installation.json"), { schemaVersion: 1, installationId: C_INSTALL, role: "box", root, daemon: { tokenSha256: hash(C_OWNER) } });
@@ -121,7 +121,7 @@ export async function compactionFixture(origin: string, options: { small?: boole
     // server's idle global socket. This does not change production transport.
     client: (credential = C_OWNER) => new ManagementClient({ baseUrl: server.url, installationId: C_INSTALL, credential: async () => credential, timeoutMs: 30000,
       fetch: (async (url, init) => { const headers = new Headers(init?.headers); headers.set("connection", "close"); return fetch(url, { ...init, headers }); }) as typeof fetch }),
-    restart: async () => { await server.close(); server = await startManagementServer(serverOptions, { context: { hooks } }); },
+    restart: async () => { await server.close(); server = await startManagementServer(serverOptions, { hostHealth: { enabled: false }, context: { hooks } }); },
     close: async () => { signal.abort(); state.waitSummary?.resolve(); state.waitCleanup?.resolve(); await server.close();
       await Promise.allSettled([...nativeJobs]);
       await Effect.runPromise(Fiber.interrupt(modeld)); provider.closeAllConnections(); nativeServer.closeAllConnections();

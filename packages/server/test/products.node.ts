@@ -208,7 +208,7 @@ test("independent Server instances share the original driver gate and identical 
   const gate = new Promise<void>(r => { release = r; }), reached = new Promise<void>(r => { entered = r; });
   try {
     const { command } = await reviewed(f);
-    second = await startManagementServer({ ...f.options, port: 0 }, { products: f.hooks });
+    second = await startManagementServer({ ...f.options, port: 0 }, { hostHealth: { enabled: false }, products: f.hooks });
     const client = new ManagementClient({ baseUrl: second.url, installationId: P_INSTALL, credential: async () => P_OWNER });
     f.state.holdWrite = async () => { entered(); await gate; };
     const pending = f.client().submitProduct(command); void pending.catch(() => undefined); await reached;

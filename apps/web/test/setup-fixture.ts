@@ -72,7 +72,7 @@ export async function setupFixture(origin: string) {
   const observations=openMonitorStore(root);await observations.initialize();
   const native=createManagementGateway({discoveryPath,configurationRoot:root});
   const options={store:openRuntimeStore(root,{}),installationId:SETUP_INSTALLATION,native,observations,allowedOrigins:[origin],readGrants:async()=>structuredClone(state.grants),env:{},port:0};
-  const ports={notification:{request,idleMs:10,blockedMs:10}};
+  const ports={hostHealth:{enabled:false},notification:{request,idleMs:10,blockedMs:10}};
   let server=await startManagementServer(options,ports);options.port=Number(new URL(server.url).port);
   config.client.currentProfile="default";config.client.profiles={default:{serverUrl:server.url,installationId:SETUP_INSTALLATION,daemonTokenRef:"env:SYNTHETIC_SETUP_CREDENTIAL"}};
   await publishConfigFile(join(root,"config.json"),config);await publishLayoutAliases(root,root,SETUP_INSTALLATION);

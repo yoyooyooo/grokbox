@@ -104,7 +104,7 @@ export async function productFixture() {
     cleanup: async () => { state.cleanupCalls++; if (state.failCleanup) throw Error("synthetic-cleanup-failed"); return { display: 3, outcome: "stopped" }; } };
   const options = { store: openRuntimeStore(root, {}), installationId: P_INSTALL, native, allowedOrigins: ["https://products.example.test"], env: {}, port: 0,
     readGrants: async () => structuredClone(state.grants) };
-  let server = await startManagementServer(options, { products: hooks }); options.port = Number(new URL(server.url).port);
+  let server = await startManagementServer(options, { hostHealth: { enabled: false }, products: hooks }); options.port = Number(new URL(server.url).port);
   config.client.currentProfile = "default"; config.client.profiles = { default: { serverUrl: server.url, installationId: P_INSTALL, daemonTokenRef: "env:SYNTHETIC_PRODUCT_CREDENTIAL" } };
   await publishConfigFile(join(root, "config.json"), config);
   await publishConfigFile(join(root, "state", "installation.json"), { schemaVersion: 1, installationId: P_INSTALL, role: "box", root, daemon: { tokenSha256: hash(P_OWNER) } });
@@ -112,7 +112,7 @@ export async function productFixture() {
   return { root, native, options, state, hooks, get server() { return server; },
     client: (token = P_OWNER, transport?: typeof fetch) => new ManagementClient({ baseUrl: server.url, installationId: P_INSTALL, credential: async () => token,
       fetch: transport ?? (async (input, init) => { const headers = new Headers(init?.headers); headers.set("connection", "close"); return fetch(input, { ...init, headers }); }) as typeof fetch }),
-    restart: async () => { await server.close(); server = await startManagementServer(options, { products: hooks }); },
+    restart: async () => { await server.close(); server = await startManagementServer(options, { hostHealth: { enabled: false }, products: hooks }); },
     rotateToken: async () => { state.token = "synthetic-product-rotated"; await publishDiscovery(); },
     revoke: (cap: Capability) => { state.grants[0]!.capabilities = state.grants[0]!.capabilities.filter(c => c !== cap); },
     close: async () => { try { await server.close(); } finally { gateway.closeAllConnections(); await new Promise<void>(r => gateway.close(() => r())); await rm(root, { recursive: true, force: true }); } },

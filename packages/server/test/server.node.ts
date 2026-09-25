@@ -79,14 +79,14 @@ async function fixture(options: { wrapStore?: (store: RuntimeStore) => RuntimeSt
   const serverOptions = { store, installationId: I, native, env: upstream ? { PRIVATE_MODEL_KEY: CATALOG_CREDENTIAL } : {}, maxConcurrentRequests: options.maxConcurrentRequests,
     allowedOrigins: options.allowedOrigins,
     readGrants: async () => { state.policyReads++; return structuredClone(state.grants); } };
-  let server = await startManagementServer(serverOptions);
+  let server = await startManagementServer(serverOptions, { hostHealth: { enabled: false } });
   cleanup.push(() => server.close());
   const client = (token = OWNER, installationId = I, fetch?: typeof globalThis.fetch) => new ManagementClient({ baseUrl: server.url, installationId, credential: async () => token, fetch });
   const request = async (agentId = A): Promise<ModelChangeRequest> => ({ requestId: randomUUID(), expectedRevision: modelConfigurationRevision(await disk.loadModels()),
     change: { kind: "bot-selection", agentId, selection: { kind: "default" } } });
   return { root, disk, store, state, native, upstream, client, request, get server() { return server; },
     headers: () => ({ authorization: `Bearer ${OWNER}`, "x-grokbox-installation-id": I }),
-    restart: async () => { await server.close(); server = await startManagementServer(serverOptions); } };
+    restart: async () => { await server.close(); server = await startManagementServer(serverOptions, { hostHealth: { enabled: false } }); } };
 }
 
 async function installation(root: string, token = OWNER, id = I) {

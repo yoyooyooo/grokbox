@@ -64,6 +64,7 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
   if (!Number.isSafeInteger(witnessPollMs) || witnessPollMs < 10 || witnessPollMs > 60000) throw Error("invalid-witness-period");
   const runtime=ManagedRuntime.make(hostVerifierLayer({directory:ports.binaryDirectory,onSpawn:ports.onSpawn}));
   const controller=new AbortController();
+  let observationController=new AbortController();
   let gate:AdvisoryGate|null=null, watchers:FSWatcher[]=[], dirty=true, lastHashAt=0, closed=false, enabled=false;
   let generation=0, currentKey:string|null=null, analyzedKey:string|null=null, retryAt=0, failures=0;
   type Pending={artifacts:HostArtifacts;generation:number;key:string;buildId:string|null;reference:NativeSourceIdentity;change:HostSourceChange;controller:AbortController};
@@ -185,8 +186,9 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
   }
   async function tickRuntime() {
     if(closed||!enabled||!gate)return;
-    const selectedRoot=runtimeRoot, observation=await observeHostCompilation(input.root,selectedRoot,paths.source,ports.runtime);
-    if(closed||!enabled||selectedRoot!==runtimeRoot)return;
+    const selectedRoot=runtimeRoot, observationSignal=observationController.signal;
+    const observation=await observeHostCompilation(input.root,selectedRoot,paths.source,ports.runtime);
+    if(closed||!enabled||observationSignal.aborted||selectedRoot!==runtimeRoot)return;
     const key=canonicalJson([selectedRoot,observation.state,observation.process,observation.receipt]);
     observedRuntimeKey=key;
     if(observation.state!==status.runtime?.state || observation.receipt?.observationId!==status.runtime?.receipt?.observationId) observedWitnessKey=null;
@@ -196,7 +198,7 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
       witness:observation.state===status.runtime?.state&&observation.receipt?.observationId===status.runtime?.receipt?.observationId?status.witness:null,
       ...(key!==runtimeKey?{runtimeIntake:"not-observed" as const}:{})};
     await serial(async()=>{
-      if(closed||!enabled||selectedRoot!==runtimeRoot)return;
+      if(closed||!enabled||observationSignal.aborted||selectedRoot!==runtimeRoot)return;
       let journal=await readHostRuntimeJournal(input.root,input.installationId);
       // First observation after a Server restart is fresh process evidence,
       // even if immutable compilation bytes match the retained receipt.
@@ -211,12 +213,12 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
   }
   async function tickWitness() {
     if (closed || !enabled || !gate) return;
-    const selectedRoot = runtimeRoot, observedGeneration = generation, compilation = status.runtime;
+    const selectedRoot = runtimeRoot, observedGeneration = generation, compilation = status.runtime, observationSignal=observationController.signal;
     const selectedLaunch = canonicalJson([compilation?.state ?? null, compilation?.receipt ?? null]);
-    const stillSelected = () => selectedRoot === runtimeRoot && observedGeneration === generation
+    const stillSelected = () => !observationSignal.aborted && selectedRoot === runtimeRoot && observedGeneration === generation
       && selectedLaunch === canonicalJson([status.runtime?.state ?? null, status.runtime?.receipt ?? null]);
     const observation = await observeHostWitness({ root: input.root, runRoot: selectedRoot, target: paths.source,
-      compilation, read: input.readWitness, previous: previousWitness, inspect: ports.runtime }, controller.signal);
+      compilation, read: input.readWitness, previous: previousWitness, inspect: ports.runtime }, AbortSignal.any([controller.signal,observationSignal]));
     if (closed || !enabled || !stillSelected()) return;
     if (observation.snapshot) previousWitness = { observationId: observation.snapshot.compilation.observationId, sequence: observation.snapshot.sequence,
       eventTotal: observation.snapshot.eventsDropped + observation.snapshot.events.length, leaseOpportunity: observation.snapshot.leaseOpportunity };
@@ -239,7 +241,7 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
   }
   async function pauseObservation(state:"disabled"|"blocked", reason:string) {
     if(enabled){generation++;currentKey=null;analyzedKey=null;}
-    enabled=false;pending?.controller.abort();active?.controller.abort();pending=null;dirty=true;
+    enabled=false;observationController.abort();pending?.controller.abort();active?.controller.abort();pending=null;dirty=true;
     runtimeKey=null;witnessKey=null;observedRuntimeKey=null;observedWitnessKey=null;
     for(const watcher of watchers)watcher.close();watchers=[];
     await serial(async()=>{await gate?.release();gate=null;});
@@ -257,6 +259,7 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
       if(!observe){await pauseObservation("disabled","observation-disabled");return;}
     } catch {await pauseObservation("blocked","observation-config-unavailable");return;}
     if(!config)return;
+    if(observationController.signal.aborted)observationController=new AbortController();
     enabled=true;
     runtimeRoot=ports.runtime?.runRoot??config.daemon?.observation?.runRoot??ephemeralRuntimeRoot();
     if(!gate) {

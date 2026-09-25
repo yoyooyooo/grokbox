@@ -244,7 +244,7 @@ test("a competing management process cannot acquire the protection worker and ke
   const f=await protectionFixture(origin,{simulatedRestore:true});let other:Awaited<ReturnType<typeof startManagementServer>>|undefined;
   try{
     await until(()=>f.client().protection(),v=>v.data.worker.state==="running");
-    other=await startManagementServer({...f.serverOptions,port:0},{protection:f.timings});
+    other=await startManagementServer({...f.serverOptions,port:0},{hostHealth:{enabled:false},protection:f.timings});
     const second=new ManagementClient({baseUrl:other.url,installationId:P_INSTALL,credential:async()=>P_OWNER});
     await until(()=>second.protection(),v=>v.data.worker.reason==="competing-owner");
     assert.equal((await second.identity()).data.installationId,P_INSTALL);

@@ -242,7 +242,7 @@ test("a competing management worker remains blocked without disrupting the first
     await until(async () => f.server.status().observation!.collectorEpoch !== null);
     const epoch = f.server.status().observation!.collectorEpoch;
     other = await startManagementServer({ store: f.store, observations: f.observations, installationId: INSTALLATION,
-      native: f.native, env: {}, readGrants: async () => f.state.grants });
+      native: f.native, env: {}, readGrants: async () => f.state.grants }, { hostHealth: { enabled: false } });
     await until(async () => other!.status().observation!.reason === "monitor_already_running_or_recovery_required");
     assert.equal(other.status().state, "running"); assert.equal(f.server.status().observation!.collectorEpoch, epoch);
     assert.ok((await f.client().models()).data.models.length > 0);

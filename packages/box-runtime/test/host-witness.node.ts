@@ -143,12 +143,21 @@ test("Server shutdown cancels the actual pending native metadata read and never 
   } finally { await f.close(); }
 });
 
-test("explicit disabled intent stops metadata reads and does not masquerade as repaired attachment", async () => {
-  const f = await hostWitnessFixture("https://witness-disabled.example.test");
+test("execution withdrawal keeps observation; explicit observation withdrawal cancels reads without repairing attachment", async () => {
+  let enabled=true;
+  const f = await hostWitnessFixture("https://witness-disabled.example.test", {observationEnabled:()=>enabled});
   try { await current(f); await f.control("replace"); await until(() => observation(f), o => o?.snapshot?.capabilities[0]?.handles === "changed");
+    await until(() => rows(f), r => r.some(row => row.status === "open"));
+    const ids=(await rows(f)).filter(r=>r.status==="open").map(r=>r.id).sort(), before=f.probeState.calls;
     const config = JSON.parse(await readFile(join(f.root, "config.json"), "utf8")); config.runtime.desiredMode = "disabled"; await publishConfigFile(join(f.root, "config.json"), config);
+    await until(async()=>f.probeState.calls,n=>n>before);
+    assert.equal((await f.client().hostHealth()).data.state,"running");
+    await f.control("delay",{ms:5000});const pending=f.probeState.calls;
+    await until(async()=>f.probeState.calls,n=>n>pending);enabled=false;
     await until(() => f.client().hostHealth(), v => v.data.state === "disabled"); const count = f.probeState.calls;
+    assert.ok(f.probeState.aborted>0);assert.equal(f.process.child.exitCode,null);
     await delay(120); assert.equal(f.probeState.calls, count); assert.equal((await f.client().hostHealth()).data.witness, null);
+    assert.deepEqual((await rows(f)).filter(r=>r.status==="open").map(r=>r.id).sort(),ids);
   } finally { await f.close(); }
 });
 
