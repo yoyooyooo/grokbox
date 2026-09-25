@@ -90,7 +90,7 @@ async function fixture(options: { wrapStore?: (store: RuntimeStore) => RuntimeSt
 }
 
 async function installation(root: string, token = OWNER, id = I) {
-  await publishConfigFile(join(root, "config.json"), defaultConfig());
+  await publishConfigFile(join(root, "config.json"), { ...defaultConfig(), ops: { observation: { enabled: false } } });
   await publishConfigFile(join(root, "state", "installation.json"), {
     schemaVersion: 1, installationId: id, role: "box", root, daemon: { tokenSha256: digest(token) },
   });
@@ -99,6 +99,7 @@ async function installation(root: string, token = OWNER, id = I) {
 async function cliConfiguration(f: Awaited<ReturnType<typeof fixture>>) {
   await installation(f.root);
   const config = defaultConfig();
+  config.ops = { ...config.ops, observation: { enabled: false } };
   config.client.currentProfile = "different";
   config.client.profiles = {
     default: { serverUrl: f.server.url, daemonTokenRef: "env:TEST_MANAGEMENT_TOKEN" },

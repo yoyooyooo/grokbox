@@ -54,7 +54,7 @@ export async function protectionFixture(origin:string,options:{disabled?:boolean
   });
   nativeServer.listen(0,"127.0.0.1");await once(nativeServer,"listening");const address=nativeServer.address();if(!address||typeof address==="string")throw Error("fixture-listen");
   await publishConfigFile(discoveryPath,{scheme:"http",host:"127.0.0.1",port:address.port,pid:4242,startedAt:1000,token:"synthetic-protection-native"});
-  const document=validateConfig({...defaultConfig(),runtime:{desiredMode:"disabled",...(options.disabled?{continuity:{enabled:false}}:{})}});
+  const document=validateConfig({...defaultConfig(),ops:{observation:{enabled:false}},runtime:{desiredMode:"disabled",...(options.disabled?{continuity:{enabled:false}}:{})}});
   await publishConfigFile(join(root,"config.json"),document);
   const native=createManagementGateway({discoveryPath,configurationRoot:root,timeoutMs:1000});
   const timings:ProtectionServiceTestPorts={pollMs:20,discoveryMs:40,observationMs:30,advancementMs:35,handoverMs:50};

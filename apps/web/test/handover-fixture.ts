@@ -74,11 +74,11 @@ export async function handoverFixture(origin:string,options:{allowMessages?:bool
   });
   nativeServer.listen(0,"127.0.0.1");await once(nativeServer,"listening");const address=nativeServer.address();if(!address||typeof address==="string")throw Error("fixture-address");
   const discoveryPath=join(root,"gateway.json");await publishConfigFile(discoveryPath,{scheme:"http",host:"127.0.0.1",port:address.port,pid:4242,startedAt:1000,token:"synthetic-handover-native"});
-  await publishConfigFile(join(root,"config.json"),validateConfig({...defaultConfig(),runtime:{desiredMode:"disabled",continuity:{enabled:false}}}));
+  await publishConfigFile(join(root,"config.json"),validateConfig({...defaultConfig(),ops:{observation:{enabled:false}},runtime:{desiredMode:"disabled",continuity:{enabled:false}}}));
   const store=openRuntimeStore(root,{}),gateway=createManagementGateway({discoveryPath,configurationRoot:root,timeoutMs:2000}),hooks:ContinuityStoreHooks={};
   const serverOptions={store,installationId:H_INSTALL,native:gateway,env:{},allowedOrigins:[origin],readGrants:async()=>structuredClone(state.grants),port:0};
   let server=await startManagementServer(serverOptions,{hostHealth:{enabled:false},context:{hooks}});serverOptions.port=Number(new URL(server.url).port);
-  await publishConfigFile(join(root,"config.json"),validateConfig({...defaultConfig(),runtime:{desiredMode:"disabled",continuity:{enabled:false}},
+  await publishConfigFile(join(root,"config.json"),validateConfig({...defaultConfig(),ops:{observation:{enabled:false}},runtime:{desiredMode:"disabled",continuity:{enabled:false}},
     client:{currentProfile:"default",profiles:{default:{serverUrl:server.url,installationId:H_INSTALL,daemonTokenRef:"env:HANDOVER_MANAGEMENT_TOKEN"}}}}));
   await publishConfigFile(join(root,"state","installation.json"),{schemaVersion:1,installationId:H_INSTALL,role:"box",root,daemon:{tokenSha256:hash(H_OWNER)}});
   await publishLayoutAliases(root,root,H_INSTALL);

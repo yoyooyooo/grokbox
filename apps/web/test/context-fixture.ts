@@ -87,7 +87,7 @@ export async function contextFixture(origin: string) {
   });
   gateway.listen(0, "127.0.0.1"); await once(gateway, "listening"); const address = gateway.address(); if (!address || typeof address === "string") throw Error("fixture-listen");
   await publishConfigFile(discoveryPath, { scheme: "http", host: "127.0.0.1", port: address.port, pid: 4242, startedAt: 1000, token: "synthetic-context-native" });
-  const config = validateConfig({ ...defaultConfig(), runtime: { desiredMode: "disabled", continuity: { enabled: false } } }); await publishConfigFile(join(root, "config.json"), config);
+  const config = validateConfig({ ...defaultConfig(), ops: { observation: { enabled: false } }, runtime: { desiredMode: "disabled", continuity: { enabled: false } } }); await publishConfigFile(join(root, "config.json"), config);
   const native = createManagementGateway({ discoveryPath, configurationRoot: root, timeoutMs: 1000 });
   const hooks: NonNullable<NonNullable<Parameters<typeof startManagementServer>[1]>["context"]>["hooks"] = {};
   const options = { store: openRuntimeStore(root, {}), installationId: C_INSTALL, native, allowedOrigins: [origin], env: {}, port: 0, readGrants: async () => structuredClone(state.grants) };

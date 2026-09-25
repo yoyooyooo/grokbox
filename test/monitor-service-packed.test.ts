@@ -49,7 +49,7 @@ async function fixture() {
   const document = validateConfig({ ...defaultConfig(),
     client: { currentProfile: "default", profiles: { default: { transport: "local", gatewayDiscovery: discovery,
       serverUrl: `http://127.0.0.1:${port}`, installationId: INSTALLATION, daemonTokenRef: "env:TEST_MONITOR_MANAGEMENT_TOKEN" } } },
-    daemon: { network: { host: "127.0.0.1", port } }, ops: { notifications: { mode: "off" } } });
+    daemon: { network: { host: "127.0.0.1", port } }, ops: { observation: { enabled: false }, notifications: { mode: "off" } } });
   await publishConfigFile(join(root, "config.json"), document);
   await publishConfigFile(join(root, "state", "installation.json"), { schemaVersion: 1, installationId: INSTALLATION, role: "box", root,
     daemon: { tokenSha256: createHash("sha256").update(MANAGEMENT_TOKEN).digest("hex") } });

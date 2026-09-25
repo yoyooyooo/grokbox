@@ -108,11 +108,11 @@ export async function compactionFixture(origin: string, options: { small?: boole
   });
   nativeServer.listen(0, "127.0.0.1"); await once(nativeServer, "listening"); const na = nativeServer.address(); if (!na || typeof na === "string") throw Error("fixture-native-listen");
   await publishConfigFile(discoveryPath, { scheme: "http", host: "127.0.0.1", port: na.port, pid: 4242, startedAt: 1000, token: "synthetic-native-compaction" });
-  await publishConfigFile(join(root, "config.json"), validateConfig({ ...defaultConfig(), runtime: { desiredMode: "disabled", continuity: { enabled: false } } }));
+  await publishConfigFile(join(root, "config.json"), validateConfig({ ...defaultConfig(), ops: { observation: { enabled: false } }, runtime: { desiredMode: "disabled", continuity: { enabled: false } } }));
   const gateway = createManagementGateway({ discoveryPath, configurationRoot: root, timeoutMs: 2000 });
   const serverOptions = { store, installationId: C_INSTALL, native: gateway, env: {}, allowedOrigins: [origin], readGrants: async () => structuredClone(state.grants), port: 0 };
   let server = await startManagementServer(serverOptions, { hostHealth: { enabled: false }, context: { hooks } }); serverOptions.port = Number(new URL(server.url).port);
-  const config = validateConfig({ ...defaultConfig(), runtime: { desiredMode: "disabled", continuity: { enabled: false } }, client: { currentProfile: "default", profiles: { default: { serverUrl: server.url, installationId: C_INSTALL, daemonTokenRef: "env:COMPACTION_MANAGEMENT_TOKEN" } } } });
+  const config = validateConfig({ ...defaultConfig(), ops: { observation: { enabled: false } }, runtime: { desiredMode: "disabled", continuity: { enabled: false } }, client: { currentProfile: "default", profiles: { default: { serverUrl: server.url, installationId: C_INSTALL, daemonTokenRef: "env:COMPACTION_MANAGEMENT_TOKEN" } } } });
   await publishConfigFile(join(root, "config.json"), config);
   await publishConfigFile(join(root, "state", "installation.json"), { schemaVersion: 1, installationId: C_INSTALL, role: "box", root, daemon: { tokenSha256: hash(C_OWNER) } });
   await publishLayoutAliases(root, root, C_INSTALL);
