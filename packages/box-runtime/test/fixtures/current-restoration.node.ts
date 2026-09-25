@@ -99,11 +99,15 @@ try {
   assert.ok(retained.candidates[0]!.descriptors.some(fd => fd.locked && fd.relevant));
   const qualify = (row: typeof retained.candidates[number]) => { q.replacements = [{ lifetime: originalLifetime, imageSha256: row.image.sha256, librarySha256: row.image.libraries, qualificationSha256: hash, descriptors: row.descriptors.map(({ fd, digest }) => ({ fd, digest })) }]; };
   qualify(retained.candidates[0]!);
+  // A qualified independent-holder entry must never bypass a selected
+  // candidate's real image/descriptor/lock proof.
+  q.resources.independentOwners = [originalLifetime];
   const qualificationPath = join(root, "qualification.json"), save = () => writeFile(qualificationPath, JSON.stringify(q), { mode: 0o600 }); await save();
   const ports: RestorationPorts = { processes: tree, classify: row => tree.roles().find(item => item.pid === row.pid)?.role as never, gatewayPid: () => host.pid, hasRelevantPreload: () => false };
   const input = { boxRoot: root, ephemeralRoot: runRoot, confirm: true, restoreOperation: "original", restorationQualification: qualificationPath };
   await assert.rejects(recoverControllerOperationState(input, ports));
   assert.equal(unresolvedAdoption(runRoot), "original");
+  q.resources.independentOwners = []; await save();
   candidate.stdin.write("retire\n"); stage = "retired"; assert.equal(await next(), "RETIRED");
   await assert.rejects(recoverControllerOperationState(input, ports)); // The old descriptor qualification is stale.
   const retired = await observed();

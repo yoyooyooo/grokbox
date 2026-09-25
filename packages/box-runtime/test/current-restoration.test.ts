@@ -69,6 +69,30 @@ for (const fault of ["lock", "preload", "relevant-fd", "image", "library", "fd",
   expect(historical.restoration).toBeUndefined();
 });
 
+for (const holdsRequiredResource of [false, true]) test(`unrelated process churn ${holdsRequiredResource ? "cannot hide a required holder" : "does not change the retirement proof"}`, async () => {
+  const f = await fixture(true), before = await Promise.all(f.files.map(path => readFile(path)));
+  const observe = f.ports.current!.observe;
+  let reads = 0;
+  f.ports.current!.observe = async (...args) => {
+    const row = { pid: 90000, start: f.q.hostScope.upper.start + 1000, pgid: 90000, sid: 90000, nspid: [90000], nstgid: [90000] };
+    const observation = await observe(...args);
+    if (++reads === 2) {
+      observation.census.push(row);
+      if (holdsRequiredResource) observation.resourceHolders.push({ pid: row.pid, start: row.start });
+    }
+    return observation;
+  };
+  const result = await recoverControllerOperationState(f.input, f.ports).catch(() => null);
+  if (holdsRequiredResource) {
+    expect(result?.outcome).not.toBe("restored");
+    expect(unresolvedAdoption(f.runRoot)).toBe("original");
+  } else {
+    expect(result?.outcome).toBe("restored");
+    expect(unresolvedAdoption(f.runRoot)).toBeNull();
+  }
+  expect(await Promise.all(f.files.map(path => readFile(path)))).toEqual(before);
+});
+
 test("current observation cancellation joins work before releasing recovery gates and cannot publish", async () => {
   const f = await fixture(); const cancellation = new AbortController();
   let entered!: () => void, release!: () => void;

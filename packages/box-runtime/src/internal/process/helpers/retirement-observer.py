@@ -242,7 +242,12 @@ def descriptors(pid, pfd, resources):
                         credential = struct.unpack('iII', sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
                         facts['socket']['credential'] = list(credential)
                         if credential[0] > 0:
-                            facts['socket']['peerLifetime'] = lifetime(credential[0])
+                            # SO_PEERCRED records a credential origin, not the current
+                            # peer holder. That PID may have exited or been reused.
+                            try:
+                                facts['socket']['credentialPidObservation'] = {'state': 'present', 'lifetime': lifetime(credential[0])}
+                            except FileNotFoundError:
+                                facts['socket']['credentialPidObservation'] = {'state': 'absent'}
                     for encoded in (local, peer):
                         if encoded:
                             raw = bytes.fromhex(encoded)
@@ -297,8 +302,10 @@ def observe(request):
             os.close(pfd)
     holders = []
     for row in first:
-        # Observer-owned fds are closed before returning, never independent survivors.
-        if row['pid'] == os.getpid():
+        # Qualified independent owners are already outside the required holder
+        # set. Candidate/image/descriptor checks above are never skipped for them.
+        # Observer-owned fds are closed before returning, never survivors.
+        if row['pid'] == os.getpid() or any(same(row, owner) for owner in q['resources']['independentOwners']):
             continue
         found = False
         for name in os.listdir(f'/proc/{row["pid"]}/fd'):

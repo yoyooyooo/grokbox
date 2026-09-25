@@ -117,6 +117,12 @@ export function validateRetirementObservation(q: CurrentRestorationQualification
   }
   const independent = [...official, recoveryOwner, ...q.resources.independentOwners];
   if (o.resourceHolders.some(owner => !independent.some(row => sameLifetime(row, owner)))) throw Error("restoration-resource-holder-present");
-  // Stable exact census plus image/FD anchors are reobserved before each publication.
-  return sha256Text(canonicalJson(o));
+  // Validate the complete census above, but bind repeated-proof stability only
+  // to relevant lifetimes. Unrelated jobs starting or exiting are not a change
+  // to the old generation's retirement or to its qualified resource boundary.
+  const anchors = [q.view.anchor, q.view.clock.anchor, q.hostScope.upper, ...q.resources.scopes.map(scope => scope.upper)];
+  return sha256Text(canonicalJson({ ...o,
+    census: o.census.filter(row => [...candidates, ...anchors].some(required => sameLifetime(row, required))),
+    resourceHolders: o.resourceHolders.filter(owner => !independent.some(row => sameLifetime(row, owner))),
+  }));
 }

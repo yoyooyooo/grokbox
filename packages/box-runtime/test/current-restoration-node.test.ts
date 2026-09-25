@@ -14,6 +14,14 @@ async function run(command: string, args: string[]) {
   return { code, stdout, stderr };
 }
 
+(process.platform === "linux" && process.arch === "x64" ? test : test.skip)("socket credential origin may exit while an owned socket remains live", async () => {
+  const repo = fileURLToPath(new URL("../../../", import.meta.url));
+  const result = await run("python3", ["-I", "-S", join(repo, "packages/box-runtime/test/fixtures/retirement-peer-origin.py"),
+    join(repo, "packages/box-runtime/src/internal/process/helpers/retirement-observer.py")]);
+  expect(result.code, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({ creatorAbsent: true, liveSocketsObserved: true, ownedJoined: true, signals: 0 });
+}, 15000);
+
 (process.platform === "linux" && process.arch === "x64" ? test : test.skip)("owned Linux namespace: same-PID exec, real memory/FD proof, stopped modeld and existing recovery owner", async () => {
   const repo = fileURLToPath(new URL("../../../", import.meta.url)), root = await mkdtemp(join(tmpdir(), "current-restoration-node-"));
   const outfile = join(root, "fixture.mjs"), executable = join(root, "before-exec");
