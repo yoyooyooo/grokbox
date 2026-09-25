@@ -71,7 +71,7 @@ test("analysis envelope freezes one task with no mutation authority, and the pri
   const frozen = freezeNotification({ scope, target, binding, task, notice, workId, attemptId: randomUUID(), createdAtMs: now, expiresAtMs: now + 60000 });
   expect(frozen.envelope).toMatchObject({ intent: "diagnose-or-report", notice: { behavior: "claim_analyze_report", automaticDiagnosis: true }, task: { mutationAuthority: false, adoptionAuthority: false } });
   expect(validateNotificationBody(frozen.serialized, frozen.frozen.envelopeDigest, binding, target, now)).toEqual(frozen.envelope);
-  for (const patch of [{ mutationAuthority: true }, { adoptionAuthority: true }, { endpoint: "https://PRIVATE" }, { taskId: randomUUID() }]) {
+  for (const patch of [{ mutationAuthority: true }, { adoptionAuthority: true }, { endpoint: "https://private.example.test" }, { taskId: randomUUID() }]) {
     expect(() => validateMaintenanceTask({ ...task, ...patch } as never)).toThrow();
     const body = canonicalJson({ ...frozen.envelope, task: { ...task, ...patch } });
     expect(() => validateNotificationBody(body, sha256Text(body), binding, target, now)).toThrow();

@@ -30,7 +30,7 @@
 
 原 daemon/modeld 的实际 V8 加载脚本、PID/start、原 Node 与依赖闭包先被保全。原 schema3 writer 在受持有的协作 guard 下只发布 disabled，排空并由原进程完成 SIGTERM 退出/socket 清理；没有强停、删除 socket、清账本或重放请求。
 
-固定 b1d3 CLI 随后执行正式 schema4 迁移，计划 digest `b50a04265b304497db119adc439737321b1c175b946e1b6feff4051051936ec7`；原操作 `ed8ccaac-7ff7-4ace-b385-003b5d3e9504` 到达 `retired`。迁移差异仅 schemaVersion 和退役 `daemon.serve`，desired 保持 disabled。模型字节、安装文件、controller/coordinator、旧 attestation 和前次迁移回执在迁移窗口逐字节保留，五条 controller unknown 未变。
+固定 b1d3 CLI 随后执行正式 schema4 迁移，计划 digest `b50a04265b304497db119adc439737321b1c175b946e1b6feff4051051936ec7`；原迁移操作（完整标识保留于私有现场回执）到达 `retired`。迁移差异仅 schemaVersion 和退役 `daemon.serve`，desired 保持 disabled。模型字节、安装文件、controller/coordinator、旧 attestation 和前次迁移回执在迁移窗口逐字节保留，五条 controller unknown 未变。
 
 后续管理 bootstrap 是独立操作：安装身份和其他安全字段保留，仅替换 owner verifier，并保留原安全 checkpoint。connection 原 writer 以 CAS/原请求 UUID 更新默认连接的 endpoint、installationId、credentialRef；不在报告输出凭据。初次误用内部 bootstrap DTO 被拒绝，未进入 applying；修正为公开 launch DTO 后沿同一操作完成。安装文件不能跨这两次操作泛称字节未变。
 
