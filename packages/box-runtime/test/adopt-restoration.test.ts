@@ -106,7 +106,7 @@ for (const mutation of ["journal", "marker", "attestation", "store", "identity",
   if (mutation === "identity") f.tree.spawn("host", { pid: f.host.pid });
   if (mutation === "gateway") f.ports.gatewayPid = () => null;
   if (mutation === "receipt") await writeFile(restorationReceiptPath(f.runRoot, "original"), "uncertain prior receipt\n");
-  expect(() => prepared.publish()).toThrow();
+  await expect(prepared.publish()).rejects.toThrow();
   if (mutation === "receipt") expect(await readFile(restorationReceiptPath(f.runRoot, "original"), "utf8")).toBe("uncertain prior receipt\n");
 });
 

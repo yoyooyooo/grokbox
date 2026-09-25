@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { ensurePackedCli } from "../../../test/packed-cli-fixture.ts";
 import { resolveNodeRequireablePreload, resolveRuntimeHelpers, RUNTIME_HELPER_FILES,
   RUNTIME_HELPER_GUARDIAN_CHILD, RUNTIME_HELPER_INJECTOR_HOLD, RUNTIME_HELPER_PRELOAD,
-  RUNTIME_HELPER_TEMP_SUPERVISOR } from "../src/internal/process/helpers/runtime-helpers.ts";
+  RUNTIME_HELPER_TEMP_SUPERVISOR, RUNTIME_HELPER_RETIREMENT_OBSERVER } from "../src/internal/process/helpers/runtime-helpers.ts";
 
 const SRC = dirname(fileURLToPath(new URL("../src/internal/process/helpers/runtime-helpers.ts", import.meta.url)));
 const roots: string[] = [];
@@ -21,13 +21,14 @@ describe("current runtime helper published layout", () => {
     expect(existsSync(helpers.preload)).toBe(true);
     expect(helpers.guardianChild).toBe(join(SRC, RUNTIME_HELPER_GUARDIAN_CHILD));
     expect(helpers.injectorHold).toBe(join(SRC, RUNTIME_HELPER_INJECTOR_HOLD));
+    expect(helpers.retirementObserver).toBe(join(SRC, RUNTIME_HELPER_RETIREMENT_OBSERVER));
     expect(helpers.tempSupervisor).toBe(join(SRC, RUNTIME_HELPER_TEMP_SUPERVISOR));
     for (const path of Object.values(helpers)) expect(existsSync(path)).toBe(true);
   });
   test("an installed layout resolves only its own sibling helpers", async () => {
     const dist = await directory(), index = pathToFileURL(join(dist, "index.js")).href;
     await writeFile(join(dist, RUNTIME_HELPER_PRELOAD), "module.exports = {};\n");
-    for (const name of [RUNTIME_HELPER_GUARDIAN_CHILD, RUNTIME_HELPER_INJECTOR_HOLD, RUNTIME_HELPER_TEMP_SUPERVISOR]) await copyFile(join(SRC, name), join(dist, name));
+    for (const name of [RUNTIME_HELPER_GUARDIAN_CHILD, RUNTIME_HELPER_INJECTOR_HOLD, RUNTIME_HELPER_TEMP_SUPERVISOR, RUNTIME_HELPER_RETIREMENT_OBSERVER]) await copyFile(join(SRC, name), join(dist, name));
     expect(resolveRuntimeHelpers(index).preload).toBe(join(dist, RUNTIME_HELPER_PRELOAD));
     for (const name of RUNTIME_HELPER_FILES) expect(existsSync(join(dist, name))).toBe(true);
   });

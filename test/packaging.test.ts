@@ -214,6 +214,7 @@ describe("published Node package", () => {
       "dist/index.js",
       "dist/injector-hold.cjs",
       "dist/preload.cjs",
+      "dist/retirement-observer.py",
       "dist/server.js",
       "dist/native/x86_64-unknown-linux-gnu/grokbox-host-verifier",
       "dist/native/x86_64-unknown-linux-gnu/verifier-manifest.json",

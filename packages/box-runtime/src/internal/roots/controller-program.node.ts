@@ -1,3 +1,4 @@
+import { acquireCurrentRestorationPorts } from "../process/current-restoration-ports.node.ts";
 import { unresolvedAdoption, writeAdoptionOwner } from "../process/adopt-evidence.ts";
 import { randomUUID } from "node:crypto";
 import { constants, closeSync, existsSync, fstatSync, fsyncSync, lstatSync, openSync, readFileSync, readSync, renameSync, writeFileSync, mkdirSync } from "node:fs";
@@ -822,9 +823,10 @@ async function operationRecoveryFacts(boxRoot: string, runRoot: string) {
  * remain owned by this Effect Scope. A partial metadata commit leaves unknown,
  * never a fabricated attestation or permission to replay business work.
  */
-export async function recoverControllerOperationState(input: { boxRoot: string; ephemeralRoot?: string; confirm?: boolean; signal?: AbortSignal; restoreOperation?: string }, restorationPorts?: RestorationPorts): Promise<OperationRecoveryReport> {
+export async function recoverControllerOperationState(input: { boxRoot: string; ephemeralRoot?: string; confirm?: boolean; signal?: AbortSignal; restoreOperation?: string; restorationQualification?: string }, restorationPorts?: RestorationPorts): Promise<OperationRecoveryReport> {
   const runRoot = input.ephemeralRoot ?? ephemeralRuntimeRoot();
   if (!isAbsolute(input.boxRoot) || !isAbsolute(runRoot)) throw new BoxRuntimeError("invalid_usage", "Operation recovery requires absolute local roots.");
+  if (input.restorationQualification && (!input.restoreOperation || !isAbsolute(input.restorationQualification))) throw new BoxRuntimeError("invalid_usage", "A current qualification requires an original operation and an absolute protected file path.");
   // acquireRelease deliberately masks interruption until resource ownership is
   // registered. Refuse an already-cancelled caller before that acquisition starts.
   if (input.signal?.aborted) throw new BoxRuntimeError("invalid_usage", "Operation metadata recovery was cancelled before inspection; no recovery was attempted.",
@@ -854,18 +856,27 @@ export async function recoverControllerOperationState(input: { boxRoot: string; 
         return { ...facts.report, outcome: "blocked" as const, reason: "restoration-original-owner-unproven" };
       }
       const prepared = yield* Effect.result(Effect.try(() => prepareOriginalRestoration({
-        operationId: input.restoreOperation!, runRoot, storePath: storePath(input.boxRoot), expectedOperation: row,
+        operationId: input.restoreOperation!, runRoot, storePath: storePath(input.boxRoot), expectedOperation: row, qualificationPath: input.restorationQualification,
         ports: restorationPorts ?? { processes: strictLinuxObservationPort(), classify: roleOf,
           gatewayPid: () => readGatewayPid(), hasRelevantPreload: hasRelevantPreloadStrict },
       })));
       if (prepared._tag === "Failure") return { ...facts.report, outcome: "blocked" as const, reason: "restoration-evidence-unproven" };
-      return yield* Effect.uninterruptible(Effect.tryPromise(async () => {
-        for (const snapshot of facts.snapshots) await recheckOperationLease(snapshot);
-        // No lease cleanup, store rewrite or new business operation. Preserve
-        // every original byte and unknown even after physical restoration.
-        const restoration = prepared.success.publish();
-        return { ...facts.report, outcome: "restored" as const, restoration, next: "grokbox runtime status --json" };
-      }));
+      const current = prepared.success.qualification ? restorationPorts?.current
+        ?? (yield* acquireCurrentRestorationPorts(prepared.success.qualification, input.boxRoot, runRoot)) : undefined;
+      return yield* Effect.callback<OperationRecoveryReport, unknown>(resume => {
+        const cancellation = new AbortController();
+        const work = (async (): Promise<OperationRecoveryReport> => {
+          for (const snapshot of facts.snapshots) await recheckOperationLease(snapshot);
+          // All original work is joined before the observer, modeld fence or
+          // either physical gate releases. Only the synchronous links publish.
+          const restoration = await prepared.success.publish(current, cancellation.signal, async () => {
+            for (const snapshot of facts.snapshots) await recheckOperationLease(snapshot);
+          });
+          return { ...facts.report, outcome: "restored", restoration, next: "grokbox runtime status --json" };
+        })();
+        void work.then(value => resume(Effect.succeed(value)), error => resume(Effect.fail(error)));
+        return Effect.promise(async () => { cancellation.abort(); await work.catch(() => undefined); });
+      });
     }
     if (facts.report.outcome !== "ready" || !facts.loaded.ok) return facts.report;
     const store = facts.loaded.store;

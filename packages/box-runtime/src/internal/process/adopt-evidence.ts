@@ -3,6 +3,7 @@ import { join, dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import { writeRuntimeArtifact } from "../io/artifacts.node.ts";
+import { readCompletedRestoration } from "./restoration-proof.ts";
 
 function readEvidence(path: string, optional = false): Buffer | null {
   let fd: number;
@@ -86,16 +87,7 @@ export function unresolvedAdoption(root: string): string | null {
     }
     if (!owner) return null;
     if (!owner.operationId || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(owner.operationId)) return "unresolved";
-    const receiptPath = join(root, "state", `adopt-restoration-${owner.operationId}.json`);
-    const receiptBytes = readEvidence(receiptPath)!;
-    const receipt = JSON.parse(receiptBytes.toString());
-    const completion = JSON.parse(readEvidence(`${receiptPath}.complete.json`)!.toString());
-    if (completion.version !== 1 || receipt.version !== 1 || receipt.physicallyRestored !== false || receipt.adopted !== false || receipt.replayAuthorized !== false || completion.operationId !== owner.operationId || completion.receiptSha256 !== sha256Bytes(receiptBytes)
-      || completion.publication !== "complete" || receipt.publication !== "prepared" || receipt.operationId !== owner.operationId
-      || receipt.evidence?.ownerClaim !== sha256Bytes(readEvidence(path)!)
-      || receipt.evidence?.journal !== sha256Bytes(readEvidence(journalPath)!)
-      || receipt.evidence.journal !== sha256Bytes(readEvidence(adoptionEvidencePath(root, owner.operationId, "journal"))!)
-      || receipt.evidence.marker !== sha256Bytes(readEvidence(adoptionEvidencePath(root, owner.operationId, "marker"))!)) return owner.operationId;
+    if (!readCompletedRestoration(root, owner.operationId, true)) return owner.operationId;
     return null;
   } catch { return owner?.operationId ?? "unresolved"; }
 }

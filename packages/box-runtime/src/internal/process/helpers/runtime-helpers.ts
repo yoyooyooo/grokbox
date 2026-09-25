@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 export const RUNTIME_HELPER_PRELOAD = "preload.cjs";
 export const RUNTIME_HELPER_GUARDIAN_CHILD = "guardian-child.cjs";
 export const RUNTIME_HELPER_INJECTOR_HOLD = "injector-hold.cjs";
+export const RUNTIME_HELPER_RETIREMENT_OBSERVER = "retirement-observer.py";
 export const RUNTIME_HELPER_TEMP_SUPERVISOR = "grokbox-temp-supervisor.cjs";
 
 export const RUNTIME_HELPER_FILES = [
@@ -12,6 +13,7 @@ export const RUNTIME_HELPER_FILES = [
   RUNTIME_HELPER_GUARDIAN_CHILD,
   RUNTIME_HELPER_INJECTOR_HOLD,
   RUNTIME_HELPER_TEMP_SUPERVISOR,
+  RUNTIME_HELPER_RETIREMENT_OBSERVER,
 ] as const;
 
 /** Resolve a sibling of the published bundle (`dist/index.js`) or this source module. */
@@ -36,11 +38,13 @@ export function resolveRuntimeHelpers(base = import.meta.url): {
   guardianChild: string;
   injectorHold: string;
   tempSupervisor: string;
+  retirementObserver: string;
 } {
   return {
     preload: resolveNodeRequireablePreload(base),
     guardianChild: resolveRuntimeHelper(RUNTIME_HELPER_GUARDIAN_CHILD, base),
     injectorHold: resolveRuntimeHelper(RUNTIME_HELPER_INJECTOR_HOLD, base),
     tempSupervisor: resolveRuntimeHelper(RUNTIME_HELPER_TEMP_SUPERVISOR, base),
+    retirementObserver: resolveRuntimeHelper(RUNTIME_HELPER_RETIREMENT_OBSERVER, base),
   };
 }
