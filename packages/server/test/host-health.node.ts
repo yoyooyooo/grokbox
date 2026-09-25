@@ -11,6 +11,7 @@ import { startManagementServer } from "../src/server.ts";
 import { readHostHealthJournal, readHostSourceEvidence } from "../../box-runtime/src/internal/io/provenance.node.ts";
 import { projectHostHealth } from "@grokbox/runtime-kernel/host-health";
 import { readHostSourceEvidencePins } from "../../box-runtime/src/internal/io/host-source-change.node.ts";
+import { openMonitorSqlite } from "../../box-runtime/src/internal/io/monitor-sqlite.node.ts";
 import { hostHealthFixture, H_INSTALL, H_OWNER, H_READER } from "../../../apps/web/test/host-health-fixture.ts";
 const origin="https://health.example.test", delay=(ms:number)=>new Promise<void>(r=>setTimeout(r,ms));
 async function until<T>(read:()=>Promise<T>,ok:(value:T)=>boolean,ms=8000){const end=Date.now()+ms;let last:unknown;do{try{const v=await read();if(ok(v))return v;last=v;}catch(e){last=String(e);}await delay(25);}while(Date.now()<end);throw Error(`health_test_deadline:${JSON.stringify(last)}`);}
@@ -67,6 +68,27 @@ test("unsafe orphan cleanup cannot strand committed observations or fill the jou
   await until(()=>health(f),v=>v.data.reason==="observed"&&v.data.intake==="committed");
   await assert.rejects(lstat(orphan),{code:"ENOENT"});
  }finally{await f.close();}
+});
+
+test("incomplete active pins defer cleanup and are retried after expiry without another source update",async()=>{
+ const f=await hostHealthFixture(origin);let db:Awaited<ReturnType<typeof openMonitorSqlite>>|undefined;
+ try{
+  await until(()=>health(f),v=>v.data.latest?.analysis==="passed"&&v.data.intake==="committed");
+  db=await openMonitorSqlite(f.observations.path,"write");const now=Date.now();
+  await db.run("BEGIN IMMEDIATE");
+  for(let n=0;n<200;n++)await db.run("INSERT INTO notification_work(id,incident_id,evidence_revision,state,created_at,expires_at,last_reason) VALUES(?,?,1,'ready',?,?,'owned-pin-window-test')",
+    [randomUUID(),randomUUID(),now-n,now+60000]);
+  await db.run("COMMIT");
+  const orphan=join(f.root,"host-bundles/source-evidence",`${"e".repeat(64)}.json`);
+  await writeFile(orphan,"{}",{mode:0o600});
+  await writeFile(f.paths.worker,"module.exports = { pendingPins: true };\n",{mode:0o600});
+  await until(()=>health(f),v=>v.data.reason==="evidence-retirement-unavailable"&&v.data.latest?.analysis==="passed"&&v.data.intake==="committed");
+  const sequence=(await readHostHealthJournal(f.root,H_INSTALL))!.nextSequence;assert.ok(await lstat(orphan));
+  await db.run("UPDATE notification_work SET expires_at=? WHERE last_reason='owned-pin-window-test'",[Date.now()-1]);
+  await until(()=>health(f),v=>v.data.reason==="observed"&&v.data.intake==="committed");
+  await assert.rejects(lstat(orphan),{code:"ENOENT"});
+  assert.equal((await readHostHealthJournal(f.root,H_INSTALL))!.nextSequence,sequence);
+ }finally{await db?.close();await f.close();}
 });
 
 test("actual TS candidate passes four Rust checks through the management owner with no Bot roster or native RPC",async()=>{

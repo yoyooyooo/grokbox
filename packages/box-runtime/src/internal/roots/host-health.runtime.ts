@@ -120,9 +120,8 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
   async function replay(){await serial(async()=>intake(await readHostHealthJournal(input.root,input.installationId)));}
   async function retireEvidence(journal:HostHealthJournal) {
     try {
-      await pruneHostSourceEvidence(input.root,journal,[active?.change.before?.evidenceRef,active?.change.after?.evidenceRef,
+      retirementUnavailable=!await pruneHostSourceEvidence(input.root,journal,[active?.change.before?.evidenceRef,active?.change.after?.evidenceRef,
         pending?.change.before?.evidenceRef,pending?.change.after?.evidenceRef],()=>readHostSourceEvidencePins(input.root));
-      retirementUnavailable=false;
     } catch { retirementUnavailable=true; }
   }
   function publish(a:HostArtifacts|null, analysis:StaticAnalysis|null, code:string|null, phase:HostHealthEvidence["analysis"], expectedGeneration:number,reference:NativeSourceIdentity=NATIVE_CHECKPOINT_PAIR, change?:HostSourceChange) {

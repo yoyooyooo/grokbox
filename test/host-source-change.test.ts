@@ -94,9 +94,9 @@ test("private retirement preserves original work pins and refuses deletion on an
   const f = await fixture(); try {
     const a = await f.capture(); await writeFile(f.paths.source, source + "// orphaned owned generation\n"); const b = await f.capture();
     const rolled = { version: 1 as const, installationId: install, nextSequence: 0, acknowledgedThrough: -1, receipts: [] };
-    await pruneHostSourceEvidence(f.root, rolled, [], async () => null);
+    expect(await pruneHostSourceEvidence(f.root, rolled, [], async () => null)).toBe(false);
     expect(await readHostSourceEvidence(f.root, b.evidenceRef!)).not.toBeNull();
-    await pruneHostSourceEvidence(f.root, rolled, [], async () => [a.evidenceRef!]);
+    expect(await pruneHostSourceEvidence(f.root, rolled, [], async () => [a.evidenceRef!])).toBe(true);
     expect(await readHostSourceEvidence(f.root, a.evidenceRef!)).not.toBeNull();
     expect(await readHostSourceEvidence(f.root, b.evidenceRef!)).toBeNull();
   } finally { await f.close(); }

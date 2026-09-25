@@ -219,15 +219,15 @@ export async function retainHostSourceEvidence(root: string, value: HostSourcePr
 /** Attachments outlive both sides of every retained transition. Unindexed
  * journal rows cannot be retired. Expired references never resolve to latest. */
 export async function pruneHostSourceEvidence(root: string, journal: HostHealthJournal, extra: (string | null | undefined)[] = [],
-  readPins: () => Promise<readonly string[] | null> = async () => null): Promise<void> {
+  readPins: () => Promise<readonly string[] | null> = async () => null): Promise<boolean> {
   const keep = new Set([...extra, ...journal.receipts.flatMap(r => [r.event.sourceChange?.before?.evidenceRef, r.event.sourceChange?.after?.evidenceRef])].filter(Boolean));
-  const directory = join(hostBundlesDir(root), "source-evidence"); if (!await isRealDir(directory)) return;
+  const directory = join(hostBundlesDir(root), "source-evidence"); if (!await isRealDir(directory)) return true;
   await assertSafeDirectory(directory);
   const names = await readdir(directory);
-  if (!names.some(name => name.endsWith(".json") && SHA.test(name.slice(0,-5)) && !keep.has(name.slice(0,-5)))) return;
+  if (!names.some(name => name.endsWith(".json") && SHA.test(name.slice(0,-5)) && !keep.has(name.slice(0,-5)))) return true;
   // OBS can outlive the rolling producer journal. Preserve pending/unknown
   // delivery evidence; an unavailable or truncated pin read forbids deletion.
-  const pins = await readPins(); if (pins === null) return;
+  const pins = await readPins(); if (pins === null) return false;
   for (const ref of pins) keep.add(ref);
   for (const name of names) {
     const ref = name.endsWith(".json") ? name.slice(0, -5) : "";
@@ -236,6 +236,7 @@ export async function pruneHostSourceEvidence(root: string, journal: HostHealthJ
     if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.uid !== process.getuid?.() || (stat.mode & 0o077)) throw Error("source-evidence-invalid");
     await rm(path);
   }
+  return true;
 }
 
 export type HostHealthRetained = { event: HostHealthEvidence; analysis: StaticAnalysis | null };
