@@ -210,6 +210,22 @@ describe("box-local runtime CLI", () => {
       expect((await lstat(join(boxRuntimeRoot, "profiles"))).mode & 0o777).toBe(0o700);
       expect((await lstat(String(body.profilePath))).mode & 0o777).toBe(0o600);
       expect(await readFile(hostBundle, "utf8")).toBe(LIVE_SHAPED_HOST);
+      const beforeRefresh = await readFile(String(body.profilePath), "utf8");
+      const baselineObserved = await captureCli(["runtime", "profile", "observe", "--from", hostBundle], deps);
+      expect(baselineObserved.code, baselineObserved.stderr).toBe(0);
+      const newSource = LIVE_SHAPED_HOST + "\n// independent source update\n";
+      await writeFile(hostBundle, newSource);
+      const nextObserved = await captureCli(["runtime", "profile", "observe", "--from", hostBundle], deps);
+      expect(nextObserved.code, nextObserved.stderr).toBe(0);
+      const nextSha = String(data(nextObserved.stdout).observedSha);
+      const refreshArgs = ["runtime", "profile", "write", "--sha", nextSha, "--refresh-reviewed", "--expected-reviewed-sha"];
+      const stale = await captureCli([...refreshArgs, "f".repeat(64)], deps);
+      expect(stale.code).not.toBe(0); expect(await readFile(String(body.profilePath), "utf8")).toBe(beforeRefresh);
+      const refreshed = await captureCli([...refreshArgs, sha256Bytes(Buffer.from(beforeRefresh))], deps);
+      expect(refreshed.code, refreshed.stderr).toBe(0);
+      expect(data(refreshed.stdout)).toMatchObject({ sourceSha256: nextSha, inject: false,
+        sourceRefresh: { previousSourceSha256: sha, preservedIds: profile.slices.map((s: {id:string}) => s.id) } });
+      expect(JSON.parse(await readFile(String(body.profilePath), "utf8")).slices).toEqual(profile.slices);
       liveSpy.assertNone();
       expect(secretSpy).not.toHaveBeenCalled();
     } finally {

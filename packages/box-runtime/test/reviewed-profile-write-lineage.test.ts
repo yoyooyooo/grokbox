@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { acquireAdvisoryGate } from "../src/internal/io/advisory-gate.node.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
@@ -31,6 +32,60 @@ async function writeHost(root: string, source: string, name = "host.cjs"): Promi
   await writeFile(path, source);
   return path;
 }
+
+async function refreshFixture(changedWindow = false) {
+  const f = await rootFixture(), before = toyEnvelope("");
+  const afterSource = changedWindow ? toyEnvelope("settledMessageCount:y").source : before.source + "\n// unrelated update\n";
+  const beforeSha = sha256Text(before.source), afterSha = sha256Text(afterSource);
+  await retainHostBundle({ root:f.root, source:before.source, sourceSha:beforeSha, observedAt:AT, profile:before.profile, matchedProfileId:before.profile.profileId });
+  await writeReviewedProfileFromCopy({ destDir:f.destDir, hostBundle:retainedGenerationSourcePath(f.root,beforeSha), slices:before.profile.slices });
+  await retainHostBundle({ root:f.root, source:afterSource, sourceSha:afterSha, observedAt:AT });
+  const profilePath=join(f.destDir,"reviewed.json"), original=await readFile(profilePath,"utf8");
+  return {...f,before,afterSource,beforeSha,afterSha,profilePath,original,input:{destDir:f.destDir,hostBundle:retainedGenerationSourcePath(f.root,afterSha),
+    refreshReviewed:true,expectedReviewedSha:sha256Text(original),lineage:{root:f.root,retainedSha:afterSha}}};
+}
+
+test("source refresh preserves all approved slices in one publication, without a same-source baseline or core-only intermediate",async()=>{
+ const f=await refreshFixture();try{
+  await expect(writeReviewedProfileFromCopy({...f.input,expectedReviewedSha:"f".repeat(64)})).rejects.toMatchObject({refusal:"refresh_baseline_changed"});
+  await expect(writeReviewedProfileFromCopy({...f.input,slices:f.before.profile.slices})).rejects.toBeDefined();
+  expect(await readFile(f.profilePath,"utf8")).toBe(f.original);
+  const result=await writeReviewedProfileFromCopy(f.input);
+  expect(result.profile.sourceSha256).toBe(f.afterSha);expect(result.profile.slices).toEqual(f.before.profile.slices);
+  expect(result.sourceRefresh).toEqual({baselineProfileSha256:sha256Text(f.original),previousSourceSha256:f.beforeSha,preservedIds:f.before.profile.slices.map(s=>s.id)});
+  expect(result.envelope?.rejectingIds).toEqual([]);expect(result.capabilityUpgrade).toBeUndefined();
+  expect(await readFile(retainedGenerationSourcePath(f.root,f.beforeSha),"utf8")).toBe(f.before.source);
+ }finally{await rm(f.root,{recursive:true,force:true});}
+});
+
+test("source refresh keeps exact envelope review and refuses unqualified native capability reuse",async()=>{
+ const f=await refreshFixture(true);try{
+  const rejected=await writeReviewedProfileFromCopy(f.input).then(()=>null,e=>e as ProfileWriteRefused);
+  expect(rejected?.refusal).toBe("envelope_drift");expect(rejected?.next).toContain("--refresh-reviewed");
+  expect(await readFile(f.profilePath,"utf8")).toBe(f.original);
+  const ids=rejected!.details.requiredIds as string[];
+  await expect(writeReviewedProfileFromCopy({...f.input,lineage:{...f.input.lineage,sliceReview:[...ids,"agent-id"]}})).rejects.toMatchObject({refusal:"envelope_drift"});
+  const result=await writeReviewedProfileFromCopy({...f.input,lineage:{...f.input.lineage,sliceReview:ids}});
+  expect(result.profile.slices).toEqual(f.before.profile.slices);
+  const native={...JSON.parse(f.original),slices:f.before.profile.slices.map((s,i)=>i===2?{...s,id:"continuity-native-worker-handshake"}:s)};
+  const body=JSON.stringify(native);await writeFile(f.profilePath,body,{mode:0o600});
+  await expect(writeReviewedProfileFromCopy({...f.input,expectedReviewedSha:sha256Text(body)})).rejects.toMatchObject({refusal:"source_pair_unqualified"});
+  expect(await readFile(f.profilePath,"utf8")).toBe(body);
+ }finally{await rm(f.root,{recursive:true,force:true});}
+});
+
+test("source refresh rechecks the same approved bytes under the publication gate and never overwrites a later writer",async()=>{
+ const f=await refreshFixture();let gate:Awaited<ReturnType<typeof acquireAdvisoryGate>> = null;
+ try{
+  gate=await acquireAdvisoryGate(join(f.root,"state","profile-publication.gate"),2000);if(!gate)throw Error("fixture_gate");
+  const pending=writeReviewedProfileFromCopy(f.input).then(()=>null,e=>e as ProfileWriteRefused);
+  const end=performance.now()+1200;
+  while(!(await readdir(f.destDir)).some(name=>name.startsWith(".reviewed-"))){if(performance.now()>end)throw Error("fixture_staging_missing");await new Promise(r=>setTimeout(r,5));}
+  const newer=JSON.stringify({...JSON.parse(f.original),profileId:"later-reviewed-writer"});await writeFile(f.profilePath,newer,{mode:0o600});
+  await gate.release();gate=null;
+  expect((await pending)?.refusal).toBe("refresh_baseline_changed");expect(await readFile(f.profilePath,"utf8")).toBe(newer);
+ }finally{await gate?.release();await rm(f.root,{recursive:true,force:true});}
+},6000);
 
 describe("reviewed profile write retained bind + envelope reject-on-drift", () => {
   test("context recipe upgrade: analyzer and writer agree, exact new slice review works and incomplete/superset reviews refuse", async () => {

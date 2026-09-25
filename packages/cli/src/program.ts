@@ -172,6 +172,7 @@ type CliOptions = ProfileOptions & ConfigCommandOptions & ManagementCommandOptio
   sliceReview?: string | string[];
   capability?: string;
   expectedReviewedSha?: string;
+  refreshReviewed?: boolean;
 };
 
 type LeafAction = (
@@ -323,6 +324,7 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
         confirm: options.confirm,
         sliceReview: options.sliceReview,
         capability: options.capability,
+        refreshReviewed: options.refreshReviewed,
         expectedReviewedSha: options.expectedReviewedSha,
       }),
     "runtime re-adopt": async (deps, _args, options) => await runRuntimeReAdopt(deps, options.confirm),

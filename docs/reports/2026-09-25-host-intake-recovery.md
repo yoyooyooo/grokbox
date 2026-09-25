@@ -28,6 +28,18 @@
 
 此变更的 Host-health 19、packed witness 26 个 Node 用例及共享 transform/背景源读取检查通过；独立安装的 API 响应和十秒退出上限保持，不靠关闭观察通过。
 
+## 固定安装与实际 intake 恢复
+
+`e468ba99` 已线性合入 v2，独立安装的默认观察开启、真实来源只读烟测通过：原五秒 HTTP 请求无超时，原十秒退出上限下实际约 64 毫秒退出。随后仅替换现役管理 Server/Web，不切 Host、不启动 modeld、不改配置/模型/原 controller 字节；全局 CLI shim 未修改。
+
+13:10 UTC 实际读回：原 64 条积压记录已确认入库，后续 sequence 64/65 继续发布，Host/runtime intake 均 committed，真实附件可用。期间官方来源又更新到 `8aeda5f9`（worker 仍为 `0378b9f4`），本次是自动观察而不是人工代写；观察器运行状态与旧 profile 不再适用分开。旧 `99eb` 的 BEFORE 附件缺失仍如实保留，不能反向伪造完整历史。
+
+## 保留完整配方的新来源刷新
+
+进一步实施 `--refresh-reviewed`：原发布者在一个原子写中把现有全部审核切片绑定到新 retained source，校验原 reviewed 文件摘要并在 gate 内重核，不先发布 core 再补回其余能力。原窗口 drift 的准确 slice review、原生 pair 资格、源码/输出摘要要求保留；该命令不改 recipe、checkpoint 业务数据或运行状态，也不冒充自动维护授权。
+
+`8aeda5f9/0378b9f4` 的原生隔离组 40/0（native Node 22.14.0）、原生接收模型与持久化后切换两项通过；这些与 CLI 本身的声明 Bun/Node 验证分开。CLI 实际解析→原发布者的完整刷新、错误摘要拒绝、全部切片保留，以及 gate 内并发写入拒绝已测试。新绑定不是任意未来 Host 的资格；完整 Agent 自动修复/策略授权仍属原 AH-189/AH-190。
+
 ## 接回主线
 
 原操作物理恢复已完成，历史 unknown 不重开。当前 Host 无补丁与其准确来源资格分别处理；已有合格候选的重新加载不应等待 Agent 修改补丁。新来源的 codec/worker 与运行前提仍需针对受影响契约核对，不能从窗口无变化推造整 Host 语义等价。A 原创建 unknown 保留，B/C 独立声明不再受旧全局创建围栏阻挡；实际身份、模型、DM、compact 与非目标收场继续按原场景记录。

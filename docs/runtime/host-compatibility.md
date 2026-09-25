@@ -58,6 +58,8 @@ Human/explicitly delegated policy review must establish correct main-chain sites
 
 Use the existing profile writer, with protected staging/readback, expected-reviewed digest/CAS and source revalidation. Same-source capability upgrades preserve the complete baseline and unrelated slices. Publication writes profile/review evidence only: no automatic code edit, preload rebuild, Host/attestation/desired mutation, or adopt. Snapshot copies of mixed/staged source cannot bypass applicability barriers.
 
+For a source update that does not require changing the reviewed recipe, `runtime profile write --sha <retained-sha> --refresh-reviewed --expected-reviewed-sha <profile-file-digest>` rebinds all existing slices in one publication. It never falls through a core-only intermediate, adds capabilities or accepts caller replacements. The new source must be retained and applicable; existing envelope review remains exact, and native checkpoint/current-state slices require the qualified source pair. The expected reviewed bytes are checked again under the original publication gate, so a later writer is not overwritten. This explicit source refresh does not claim whole-Host equivalence or supply an automatic maintenance grant.
+
 A separately authorized controller operation performs actual adoption against current source/profile/process/Gateway and required native fences. It pins the appropriate observed generation, not a later convenient replacement. Compile marker, canonical attestation, loaded capability, current Bot admission and Provider/App roundtrip are separate proof.
 
 ## HCR: current controlled capability and operation recovery

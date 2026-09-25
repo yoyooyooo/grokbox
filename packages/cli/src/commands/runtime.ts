@@ -598,6 +598,7 @@ export async function runRuntimeProfileWrite(
     confirm?: boolean;
     sliceReview?: string | string[];
     capability?: string;
+    refreshReviewed?: boolean;
     expectedReviewedSha?: string;
   },
 ): Promise<void> {
@@ -639,6 +640,7 @@ export async function runRuntimeProfileWrite(
         hostBundle,
         profileId: "reviewed-copy-envelope",
         ...(options.capability !== undefined ? { capability: options.capability } : {}),
+        ...(options.refreshReviewed !== undefined ? { refreshReviewed: options.refreshReviewed } : {}),
         ...(options.expectedReviewedSha !== undefined ? { expectedReviewedSha: options.expectedReviewedSha } : {}),
         lineage: {
           root: runtime.root,
@@ -672,6 +674,7 @@ export async function runRuntimeProfileWrite(
       ...(written.unretained_source ? { unretained_source: true } : {}),
       ...(written.envelope ? { envelope: written.envelope } : {}),
       ...(written.capabilityUpgrade ? { capabilityUpgrade: written.capabilityUpgrade } : {}),
+      ...(written.sourceRefresh ? { sourceRefresh: written.sourceRefresh } : {}),
     });
   } catch (error) {
     rethrow(error);

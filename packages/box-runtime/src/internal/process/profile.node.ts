@@ -6,6 +6,7 @@ import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "../host/live-slices.ts";
 import { HOST_RECIPE } from "../host/source-recipes.ts";
+import { nativeCheckpointPair } from "../host/native-checkpoint-pair.ts";
 import { parseProfileCapability, upgradeProfileCapability, type CapabilityUpgradeReceipt, type ProfileCapability } from "../host/profile-capabilities.ts";
 import { acquireAdvisoryGate } from "../io/advisory-gate.node.ts";
 import {
@@ -59,7 +60,9 @@ export type WriteReviewedProfileFromCopyInput = {
   hostBundle: string;
   slices?: readonly SlicePatch[];
   capability?: string;
-  /** Exact durable bytes observed during capability analysis, not the source digest. */
+  /** Rebind the exact reviewed slices to a new retained source in one publication. */
+  refreshReviewed?: boolean;
+  /** Exact durable bytes observed before capability/source refresh, not the source digest. */
   expectedReviewedSha?: string;
   profileId?: string;
   /** Optional. CLI always supplies this; library tests may omit it. */
@@ -74,7 +77,10 @@ export type ProfileWriteRefusal =
   | "envelope_drift"
   | "recipe_unapplicable"
   | "capability_baseline_invalid"
-  | "capability_baseline_changed";
+  | "capability_baseline_changed"
+  | "refresh_baseline_invalid"
+  | "refresh_baseline_changed"
+  | "source_pair_unqualified";
 
 export type WriteEnvelopeReceipt = {
   bootstrap: boolean;
@@ -94,6 +100,7 @@ export type WriteReviewedProfileReceipt = {
   unretained_source?: true;
   envelope?: WriteEnvelopeReceipt;
   capabilityUpgrade?: CapabilityUpgradeReceipt;
+  sourceRefresh?: { baselineProfileSha256: string; previousSourceSha256: string; preservedIds: SliceId[] };
 };
 
 export function profileWriteUnretainedNext(fromPath: string): string {
@@ -195,6 +202,32 @@ function capabilityBaseline(root: string, source: string, capability: ProfileCap
     refuse("capability_baseline_invalid", "Capability upgrade requires a regular, applicable same-source reviewed baseline.",
       "grokbox runtime profile status --json", { capability });
   }
+}
+
+type SourceRefreshBaseline = { path: string; info: Stats; sha: string; profile: PatchProfile };
+function sourceRefreshBaseline(root: string, expected: string): SourceRefreshBaseline {
+  const path = reviewedProfilePath(root);
+  let baseline: SourceRefreshBaseline;
+  try {
+    const info = lstatSync(path);
+    if (!info.isFile() || info.isSymbolicLink() || info.size > 1024 * 1024 || (info.mode & 0o022)
+      || process.getuid && info.uid !== process.getuid()) throw Error("invalid-baseline");
+    const bytes = readFileSync(path), profile = parseReviewedProfile(JSON.parse(bytes.toString("utf8")));
+    if (!sameSource(info, lstatSync(path)) || !SHA.test(profile.sourceSha256) || !SHA.test(profile.transformedSourceSha256)) throw Error("invalid-baseline");
+    baseline = { path, info, sha: sha256Bytes(bytes), profile };
+  } catch {
+    refuse("refresh_baseline_invalid", "Source refresh requires an intact reviewed profile; no old source or successful execution is inferred.",
+      "grokbox runtime profile status --json");
+  }
+  if (baseline.sha !== expected) refuse("refresh_baseline_changed", "Reviewed profile no longer matches the requested source refresh.",
+    "grokbox runtime profile status --json");
+  return baseline;
+}
+function recheckSourceRefresh(baseline: SourceRefreshBaseline): void {
+  try {
+    if (!sameSource(baseline.info, lstatSync(baseline.path)) || sha256Bytes(readFileSync(baseline.path)) !== baseline.sha) throw Error("changed");
+  } catch { refuse("refresh_baseline_changed", "Reviewed profile changed before source refresh publication; nothing was replaced.",
+    "grokbox runtime profile status --json"); }
 }
 
 function recheckCapabilityBaseline(baseline: CapabilityBaseline): void {
@@ -458,8 +491,12 @@ export async function writeReviewedProfileFromCopy(
   if (capability && (input.slices !== undefined || !input.lineage?.retainedSha || input.lineage.allowUnretained || process.platform !== "linux")) {
     invalid("Capability upgrades require a retained source on the local Linux Box; explicit slices and unretained input are not allowed.");
   }
-  if (capability ? typeof input.expectedReviewedSha !== "string" || !SHA.test(input.expectedReviewedSha) : input.expectedReviewedSha !== undefined) {
-    invalid("--expected-reviewed-sha is required only with --capability and must be the analyzed baseline's 64-character digest.");
+  const refresh = input.refreshReviewed === true;
+  if (input.refreshReviewed !== undefined && typeof input.refreshReviewed !== "boolean") invalid("Invalid reviewed refresh selection.");
+  if (refresh && (capability || input.slices !== undefined || !input.lineage?.retainedSha || input.lineage.allowUnretained || process.platform !== "linux"))
+    invalid("Reviewed source refresh requires retained local input and cannot change slices or add a capability.");
+  if (capability || refresh ? typeof input.expectedReviewedSha !== "string" || !SHA.test(input.expectedReviewedSha) : input.expectedReviewedSha !== undefined) {
+    invalid("--expected-reviewed-sha is required with --capability or --refresh-reviewed and must bind the reviewed bytes.");
   }
   let slices = authoringSlices(input.slices === undefined ? LIVE_SLICE_PATCHES : input.slices);
   const profileId = input.profileId === undefined ? "live-h3-copy" : input.profileId;
@@ -526,7 +563,7 @@ export async function writeReviewedProfileFromCopy(
   const source = sourceBytes.toString("utf8");
   if (!Buffer.from(source, "utf8").equals(sourceBytes)) invalid("Host bundle must be valid UTF-8.");
   const diskSha = sha256Bytes(sourceBytes);
-  if (input.slices === undefined && !capability) slices = authoringSlices(HOST_RECIPE.core);
+  if (input.slices === undefined && !capability && !refresh) slices = authoringSlices(HOST_RECIPE.core);
 
   if (lineage && !allowUnretained) {
     const retainedSha = lineage.retainedSha as string;
@@ -556,6 +593,14 @@ export async function writeReviewedProfileFromCopy(
         `grokbox runtime profile analyze --sha ${diskSha} --out <abs> --capability ${capability}`, { capability });
     }
     slices = authoringSlices(selected.slices);
+  }
+  const refreshing = refresh ? sourceRefreshBaseline(resolve(lineage!.root), input.expectedReviewedSha!) : undefined;
+  if (refreshing) {
+    if (resolve(refreshing.path) !== profilePath) invalid("Source refresh must use the reviewed profile's canonical destination.");
+    slices = authoringSlices(refreshing.profile.slices);
+    if (slices.some(slice => slice.id.startsWith("continuity-native-")) && !nativeCheckpointPair(diskSha))
+      refuse("source_pair_unqualified", "The preserved native checkpoint/current-state capability requires qualification of this new source pair before publication.",
+        "grokbox system host health");
   }
   const inspected = preflightProfileRecipe(source, slices, profileId);
   if (!inspected.ok) {
@@ -606,7 +651,8 @@ export async function writeReviewedProfileFromCopy(
         "envelope_drift",
         `Envelope windows drifted at ${admission.requiredIds.join(",") || "(none)"} ` +
           `(insertion groups: ${groups}). --slice-review must list exactly those ids; one review note per group.`,
-        profileWriteDriftNext(diskSha, admission.requiredIds, capability, selected?.sha),
+        refreshing ? `grokbox runtime profile write --sha ${diskSha} --refresh-reviewed --expected-reviewed-sha ${refreshing.sha} --slice-review ${admission.requiredIds.join(",")}`
+          : profileWriteDriftNext(diskSha, admission.requiredIds, capability, selected?.sha),
         {
           pinSha,
           candidateSha: diskSha,
@@ -646,6 +692,7 @@ export async function writeReviewedProfileFromCopy(
     if (!sameSource(sourceInfo, await stat(hostBundle))) invalid("Host bundle changed during authoring.");
     await checkDestination(profilePath, sourceInfo);
     if (selected) recheckCapabilityBaseline(selected);
+    if (refreshing) recheckSourceRefresh(refreshing);
     await rename(stagingPath, profilePath);
   } finally {
     await gate?.release();
@@ -660,6 +707,8 @@ export async function writeReviewedProfileFromCopy(
     ...(allowUnretained ? { unretained_source: true as const } : {}),
     ...(envelope ? { envelope } : {}),
     ...(selected ? { capabilityUpgrade: selected.receipt } : {}),
+    ...(refreshing ? { sourceRefresh: { baselineProfileSha256: refreshing.sha, previousSourceSha256: refreshing.profile.sourceSha256,
+      preservedIds: refreshing.profile.slices.map(slice => slice.id) } } : {}),
   };
 }
 

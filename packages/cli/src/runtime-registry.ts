@@ -387,7 +387,8 @@ export const RUNTIME_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["runtime", "profile", "write"],
-    usage: "grokbox runtime profile write (--sha <retainedSourceSha> | --from <host-bundle> --allow-unretained --confirm) [--slice-review <id...>] [--capability ownership-local|current-state --expected-reviewed-sha <sha>]",
+    usage: "grokbox runtime profile write (--sha <retainedSourceSha> | --from <host-bundle> --allow-unretained --confirm) [--slice-review <id...>] [--capability ownership-local|current-state | --refresh-reviewed] [--expected-reviewed-sha <sha>]",
+
     summary: "Atomically author a durable PatchProfile from a retained Host generation; envelope reject-on-drift. No live inject.",
     arguments: [],
     options: options([
@@ -397,7 +398,8 @@ export const RUNTIME_COMMANDS: readonly LeafCommand[] = [
       { flags: "--confirm", description: "Required with --from --allow-unretained" },
       { flags: "--slice-review <id...>", description: "Exact rejecting envelope slice ids (windowSha/count/find.inWindow)" },
       { flags: "--capability <name>", description: "Upgrade the selected ownership-local or current-state capability and dependencies; requires --sha and an applicable baseline" },
-      { flags: "--expected-reviewed-sha <sha>", description: "Required with --capability: exact baselineProfileSha256 from analysis; rejects intervening profile changes" },
+      { flags: "--refresh-reviewed", description: "Bind every existing reviewed slice to the retained source in one publication; no capability or replacement changes" },
+      { flags: "--expected-reviewed-sha <sha>", description: "Required with --capability or --refresh-reviewed: exact prior reviewed file digest; rejects intervening changes" },
     ]),
     stdin: "none",
     table: false,
