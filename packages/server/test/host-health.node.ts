@@ -7,12 +7,17 @@ import { once } from "node:events";
 import { spawn } from "node:child_process";
 import { ManagementClient } from "@grokbox/client";
 import { startManagementServer } from "../src/server.ts";
-import { readHostHealthJournal } from "../../box-runtime/src/internal/io/provenance.node.ts";
+import { readHostHealthJournal, readHostSourceEvidence } from "../../box-runtime/src/internal/io/provenance.node.ts";
+import { projectHostHealth } from "@grokbox/runtime-kernel/host-health";
+import { readHostSourceEvidencePins } from "../../box-runtime/src/internal/io/host-source-change.node.ts";
 import { hostHealthFixture, H_INSTALL, H_OWNER, H_READER } from "../../../apps/web/test/host-health-fixture.ts";
 const origin="https://health.example.test", delay=(ms:number)=>new Promise<void>(r=>setTimeout(r,ms));
 async function until<T>(read:()=>Promise<T>,ok:(value:T)=>boolean,ms=8000){const end=Date.now()+ms;let last:unknown;do{try{const v=await read();if(ok(v))return v;last=v;}catch(e){last=String(e);}await delay(25);}while(Date.now()<end);throw Error(`health_test_deadline:${JSON.stringify(last)}`);}
 const health=(f:Awaited<ReturnType<typeof hostHealthFixture>>)=>f.client().hostHealth();
-const incidents=async(f:Awaited<ReturnType<typeof hostHealthFixture>>)=>(await f.observations.incidents()).filter(r=>r.rule==="host_patch_health");
+// Static/runtime fault latches and consumable source-change occurrences have
+// distinct lifetimes. Preserve the original fault/recovery assertions below.
+const incidents=async(f:Awaited<ReturnType<typeof hostHealthFixture>>)=>(await f.observations.incidents()).filter(r=>r.rule==="host_patch_health"&&r.category==="condition");
+const changes=async(f:Awaited<ReturnType<typeof hostHealthFixture>>)=>(await f.observations.incidents()).filter(r=>r.rule==="host_patch_health"&&r.category==="occurrence");
 
 test("actual TS candidate passes four Rust checks through the management owner with no Bot roster or native RPC",async()=>{
  const f=await hostHealthFixture(origin);try{
@@ -59,6 +64,11 @@ test("a semantically broken retry with freshly pinned valid source/candidate has
   await f.writeProfile(f.source,broken);
   const v=await until(()=>health(f),v=>v.data.latest?.analysis==="violated"&&v.data.intake==="committed");
   assert.equal(v.data.latest!.applicability,"exact");assert.deepEqual(v.data.latest!.failedChecks,["retry.turn-guard"]);
+  const episode=v.data.latest!.sourceChange!.episodeId, journal=(await readHostHealthJournal(f.root,H_INSTALL))!;
+  const phases=journal.receipts.filter(r=>r.event.sourceChange?.episodeId===episode);
+  assert.ok(phases.some(r=>r.event.sourceChange!.classification==="unknown"));
+  assert.ok(phases.some(r=>r.event.sourceChange!.classification==="structural-change"));
+  assert.equal((await changes(f)).length,3); // initial unknown + pending new recipe + actual static risk upgrade
   const rows=await incidents(f);assert.equal(rows.filter(r=>r.status==="open").length,1);const id=rows.find(r=>r.status==="open")!.id;
   await f.writeProfile();await until(()=>health(f),v=>v.data.latest?.analysis==="passed"&&v.data.intake==="committed");
   assert.equal((await incidents(f)).find(r=>r.id===id)!.status,"resolved");
@@ -112,6 +122,8 @@ test("source A to B to A retains separate observation episodes but reuses immuta
   const next=await until(()=>health(f),v=>v.data.latest?.analysis==="passed"&&v.data.latest?.sourceSet!==first.data.latest!.sourceSet);
   await writeFile(f.paths.worker,"// Independent companion.\nmodule.exports = {};\n",{mode:0o600});
   const restored=await until(()=>health(f),v=>v.data.latest?.analysis==="passed"&&v.data.latest?.sourceSet===first.data.latest!.sourceSet&&v.data.latest.sourceSequence>next.data.latest!.sourceSequence);
+  assert.notEqual(restored.data.latest!.sourceChange!.episodeId,first.data.latest!.sourceChange!.episodeId);
+  assert.notEqual(restored.data.latest!.sourceChange!.episodeId,next.data.latest!.sourceChange!.episodeId);
   assert.notEqual(restored.data.latest!.eventId,first.data.latest!.eventId);assert.equal(restored.data.analyses,2);assert.equal(restored.data.latest!.loaded,"not-observed");
  }finally{await f.close();}
 });
@@ -137,6 +149,8 @@ test("continuous versions coalesce pending work, retain late fixed results and n
   await until(async()=>started.length,n=>n===2);
   assert.deepEqual(started,[sourceA,sourceC]);assert.ok(!started.includes(sourceB));
   const late=retained!.receipts.find(row=>row.event.sourceState==="snapshot"&&row.event.sourceSet===sourceA)!;
+  assert.equal(late.event.sourceChange!.episodeId,first.data.latest!.sourceChange!.episodeId);
+  assert.notEqual(late.event.sourceChange!.episodeId,third.data.latest!.sourceChange!.episodeId);
   assert.equal(late.event.analysis,"passed");assert.equal(late.event.loaded,"not-observed");assert.equal(late.event.sourceEvolution!.nativeAbi.state,"not-run");
   const current=await health(f);assert.equal(current.data.latest!.sourceSet,sourceC);assert.equal(current.data.latest!.sourceState,"stable");assert.equal(current.data.latest!.analysis,"pending");
   assert.equal((await incidents(f)).find(row=>row.id===failure.id)!.status,"open");
@@ -155,10 +169,71 @@ test("unconfigured OBS leaves local-only evidence and does not silently initiali
  }finally{await f.close();}
 });
 
-test("explicit disabled intent is inert and GET does not initialize health or native stores",async()=>{
- const f=await hostHealthFixture(origin,{disabled:true,noMonitor:true});try{
+test("explicit disabled observation is inert and GET does not initialize health or native stores",async()=>{
+ const f=await hostHealthFixture(origin,{disabled:true,noMonitor:true,ports:{enabled:false}});try{
   await until(()=>health(f),v=>v.data.state==="disabled");const before=await readdir(f.root);await health(f);await delay(80);
   assert.deepEqual(await readdir(f.root),before);assert.equal(f.state.pids.length,0);assert.equal(f.state.nativeCalls,0);assert.ok(!before.includes("host-bundles"));
+ }finally{await f.close();}
+});
+
+test("owned updates traverse the real producer, public API, provenance and original OBS without an old condition swallowing new work",async()=>{
+ const f=await hostHealthFixture(origin);try{
+  const initial=await until(()=>health(f),v=>v.data.latest?.analysis==="passed"&&v.data.intake==="committed");
+  assert.equal(initial.data.latest!.sourceChange!.classification,"unknown");
+  const firstTasks=(await changes(f)).length;
+  const unrelated=f.source+"\n// unrelated owned trailer\n";
+  await writeFile(f.paths.source,unrelated,{mode:0o600});
+  const outside=await until(()=>health(f),v=>v.data.latest?.sourceSha!==initial.data.latest!.sourceSha&&v.data.latest?.analysis!=="pending"&&v.data.intake==="committed");
+  assert.equal(outside.data.latest!.sourceChange!.classification,"no-intersection");
+  assert.equal((await changes(f)).length,firstTasks);assert.equal((await incidents(f)).length,0);
+  await writeFile(f.paths.worker,"module.exports = {version:'B'};\n",{mode:0o600});
+  const related=await until(()=>health(f),v=>v.data.latest?.workerSha!==outside.data.latest!.workerSha&&v.data.latest?.analysis!=="pending"&&v.data.intake==="committed");
+  assert.equal(related.data.latest!.sourceChange!.classification,"related-same-shape");
+  assert.equal((await changes(f)).length,firstTasks+1);assert.ok((await incidents(f)).some(r=>r.status==="open"));
+  const fixed=related.data.latest!.sourceChange!;
+  assert.ok(fixed.before?.evidenceRef);assert.ok(fixed.after?.evidenceRef);
+  await writeFile(f.paths.worker,"module.exports = {version:'C'};\n",{mode:0o600});
+  const newer=await until(()=>health(f),v=>v.data.latest?.workerSha!==related.data.latest!.workerSha&&v.data.latest?.analysis!=="pending"&&v.data.intake==="committed");
+  assert.equal(newer.data.latest!.sourceChange!.classification,"related-same-shape");
+  assert.notEqual(newer.data.latest!.sourceChange!.episodeId,fixed.episodeId);assert.equal((await changes(f)).length,firstTasks+2);
+  assert.equal((await readHostSourceEvidence(f.root,fixed.after!.evidenceRef!))!.worker,"module.exports = {version:'B'};\n");
+  assert.ok(unrelated.includes("function shouldRetryTurnAttempt(input)"));
+  await writeFile(f.paths.source,unrelated.replace("function shouldRetryTurnAttempt(input)", "function changedRetryTurnAttempt(input)"),{mode:0o600});
+  const structural=await until(()=>health(f),v=>v.data.latest?.sourceChange?.classification==="structural-change"&&v.data.intake==="committed");
+  assert.equal(structural.data.latest!.sourceChange!.reason,"recipe-structure-changed");
+  const all=await changes(f), evidence=await Promise.all(all.map(r=>f.observations.incidentEvidence(r.id)));
+  assert.ok(evidence.some(e=>e.facts.some(fact=>"value" in fact&&projectHostHealth(fact.value)?.sourceChange?.episodeId===fixed.episodeId)));
+  assert.ok((await f.observations.notificationWork()).length>=all.length);
+  const pins=await readHostSourceEvidencePins(f.root);
+  assert.ok(pins?.includes(fixed.before!.evidenceRef!));assert.ok(pins?.includes(fixed.after!.evidenceRef!));
+  for(const e of evidence)assert.ok(!JSON.stringify(e).includes("module.exports"));
+  const ids=all.map(r=>r.id).sort();await f.restart();
+  await until(()=>health(f),v=>v.data.latest?.analysis!=="pending"&&v.data.intake==="committed");
+  assert.deepEqual((await changes(f)).map(r=>r.id).sort(),ids);
+  await unlink(f.paths.worker);
+  const missing=await until(()=>health(f),v=>v.data.latest?.sourceState==="unavailable"&&v.data.intake==="committed");
+  assert.equal(missing.data.latest!.sourceChange!.classification,"unknown");
+  assert.equal(missing.data.latest!.sourceChange!.after,null);
+  assert.equal(f.state.nativeCalls,0);
+ }finally{await f.close();}
+});
+
+test("execution disabled still observes; explicit observation withdrawal and bad policy stop sampling without losing evidence",async()=>{
+ let observe=true,fail=false;
+ const f=await hostHealthFixture(origin,{disabled:true,ports:{observationEnabled:()=>{if(fail)throw Error("owned policy failure");return observe;}}});try{
+  const first=await until(()=>health(f),v=>v.data.latest?.analysis==="passed"&&v.data.intake==="committed");
+  const episode=first.data.latest!.sourceChange!.episodeId;
+  observe=false;await until(()=>health(f),v=>v.data.state==="disabled");
+  const prior=await readHostHealthJournal(f.root,H_INSTALL),pids=f.state.pids.length;
+  await delay(100);assert.deepEqual(await readHostHealthJournal(f.root,H_INSTALL),prior);assert.equal(f.state.pids.length,pids);
+  observe=true;await until(()=>health(f),v=>v.data.state==="running"&&v.data.latest?.analysis==="passed"&&v.data.intake==="committed");
+  assert.equal((await health(f)).data.latest!.sourceChange!.episodeId,episode);
+  fail=true;await until(()=>health(f),v=>v.data.state==="blocked"&&v.data.reason==="observation-config-unavailable");
+  const blocked=await readHostHealthJournal(f.root,H_INSTALL);
+  await writeFile(f.paths.worker,"module.exports = {duringPause:true};\n",{mode:0o600});await delay(100);
+  assert.deepEqual(await readHostHealthJournal(f.root,H_INSTALL),blocked);
+  fail=false;const resumed=await until(()=>health(f),v=>v.data.latest?.workerSha!==first.data.latest!.workerSha&&v.data.latest?.analysis==="passed"&&v.data.intake==="committed");
+  assert.equal(resumed.data.latest!.sourceChange!.classification,"related-same-shape");assert.equal(f.state.nativeCalls,0);
  }finally{await f.close();}
 });
 

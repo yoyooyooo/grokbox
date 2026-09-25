@@ -1,15 +1,16 @@
 import { lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile, open } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
+import { gunzipSync } from "node:zlib";
 import { canonicalJson } from "@grokbox/runtime-kernel/hash";
-import { projectHostHealth, projectHostRuntimeEvidence, projectHostWitnessEvidence, validStaticAnalysis, type HostRuntimeEvidence, type HostWitnessEvidence, type HostHealthEvidence, type StaticAnalysis } from "@grokbox/runtime-kernel/host-health";
+import { projectHostHealth, projectHostRuntimeEvidence, projectHostWitnessEvidence, validStaticAnalysis, projectHostSourceWindow, type HostSourceWindow, type HostRuntimeEvidence, type HostWitnessEvidence, type HostHealthEvidence, type StaticAnalysis } from "@grokbox/runtime-kernel/host-health";
 import { assertSafeDirectory } from "./config-layout.node.ts";
 import { join } from "node:path";
 import { CONTRACT_SLICE_NAMES } from "./contracts.ts";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
 import { boundedText, count, isRecord, observeJson, observeText, type ObservationState } from "./observation.node.ts";
 import { hostBundlesDir, reviewedProfilePath } from "./paths.ts";
-import { extractContractSlices, sliceHashes, type PatchProfile } from "../host/profile.ts";
+import { extractContractSlices, sliceHashes, type PatchProfile, type SlicePatch } from "../host/profile.ts";
 import {
   ENVELOPE_WINDOWS_FILE,
   encodeEnvelopeWindows,
@@ -145,6 +146,98 @@ async function writeProtected(path: string, body: string | Uint8Array): Promise<
   await writeFile(path, body, { mode: 0o600, flag: "wx" });
 }
 
+export function hostSourceEpisodeId(installationId: string, sequence: number, before: HostSourceWindow | null, after: HostSourceWindow | null): string {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(installationId)
+    || !Number.isSafeInteger(sequence) || sequence < 0) throw Error("invalid-source-episode");
+  return sha256Text(canonicalJson(["host-source-change-v1", installationId, sequence, before?.sourceSet ?? null, after?.sourceSet ?? null, after?.recipeSha ?? null]));
+}
+export type HostSourcePrivateEvidence = {
+  version: 1; window: HostSourceWindow; recipe: readonly SlicePatch[];
+  windows: { id: string; sha256: string | null; window: { startByte: number; endByte: number; text: string } | null }[];
+  sourceGzip: string; worker: string;
+};
+export const HOST_SOURCE_EVIDENCE_MAX_BYTES = 8 * 1024 * 1024;
+export const HOST_SOURCE_EVIDENCE_TOTAL_BYTES = 64 * 1024 * 1024;
+const HOST_SOURCE_EVIDENCE_MAX_FILES = 68;
+export function hostSourceEvidenceBytes(value: HostSourcePrivateEvidence): Buffer {
+  if (typeof value.sourceGzip !== "string" || value.sourceGzip.length > HOST_SOURCE_EVIDENCE_MAX_BYTES) throw Error("source-evidence-invalid");
+  return gunzipSync(Buffer.from(value.sourceGzip, "base64"), { maxOutputLength: 64 * 1024 * 1024 });
+}
+function sourceEvidenceValid(v: HostSourcePrivateEvidence): boolean {
+  const w = projectHostSourceWindow(v?.window);
+  let source: Buffer;
+  try { source = hostSourceEvidenceBytes(v); } catch { return false; }
+  return v?.version === 1 && !!w && sha256Text(source.toString("utf8")) === w.sourceSha && w.evidenceRef === null && typeof v.worker === "string" && sha256Text(v.worker) === w.workerSha
+    && Array.isArray(v.recipe) && sha256Text(canonicalJson(v.recipe)) === w.recipeSha && Array.isArray(v.windows)
+    && v.windows.length === w.slices.length && v.windows.every((s, i) => s.id === w.slices[i]!.id && s.sha256 === w.slices[i]!.sha256
+      && (s.window === null ? s.sha256 === null : typeof s.window.text === "string" && Number.isSafeInteger(s.window.startByte) && s.window.startByte >= 0
+        && s.window.endByte === s.window.startByte + Buffer.byteLength(s.window.text) && sha256Text(s.window.text) === s.sha256
+        && source.subarray(s.window.startByte, s.window.endByte).toString("utf8") === s.window.text));
+}
+/** Private, content-addressed attachments of the EXISTING provenance journal.
+ * No source text/path is placed in OBS, CLI, Web, comments or notifications. */
+export async function readHostSourceEvidence(root: string, ref: string): Promise<HostSourcePrivateEvidence | null> {
+  if (!SHA.test(ref)) throw Error("source-evidence-invalid");
+  const directory = join(hostBundlesDir(root), "source-evidence");
+  if (!await isRealDir(directory)) return null;
+  await assertSafeDirectory(directory);
+  const fd = await open(join(directory, `${ref}.json`), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+    .catch(e => { if (e.code === "ENOENT") return null; throw e; });
+  if (!fd) return null;
+  try {
+    const s = await fd.stat();
+    if (!s.isFile() || s.nlink !== 1 || s.uid !== process.getuid?.() || (s.mode & 0o077) || s.size > HOST_SOURCE_EVIDENCE_MAX_BYTES) throw Error("source-evidence-invalid");
+    const bytes = Buffer.alloc(HOST_SOURCE_EVIDENCE_MAX_BYTES + 1); let n = 0;
+    while (n < bytes.length) { const r = await fd.read(bytes, n, bytes.length - n, n); if (!r.bytesRead) break; n += r.bytesRead; }
+    const after = await fd.stat(), body = bytes.subarray(0, n).toString("utf8");
+    if (n !== s.size || after.size !== s.size || after.ctimeMs !== s.ctimeMs || sha256Text(body) !== ref) throw Error("source-evidence-changed");
+    const v = JSON.parse(body) as HostSourcePrivateEvidence;
+    if (!sourceEvidenceValid(v)) throw Error("source-evidence-invalid");
+    return v;
+  } finally { await fd.close(); }
+}
+export async function retainHostSourceEvidence(root: string, value: HostSourcePrivateEvidence): Promise<string> {
+  const body = canonicalJson(value), ref = sha256Text(body);
+  if (Buffer.byteLength(body) > HOST_SOURCE_EVIDENCE_MAX_BYTES) throw Error("source-evidence-capacity");
+  if (!sourceEvidenceValid(value)) throw Error("source-evidence-invalid");
+  await assertSafeDirectory(root); await assertSafeDirectory(hostBundlesDir(root), true);
+  const directory = join(hostBundlesDir(root), "source-evidence"); await assertSafeDirectory(directory, true);
+  const existing = await readHostSourceEvidence(root, ref); if (existing) return ref;
+  const files = await readdir(directory);
+  if (files.length >= HOST_SOURCE_EVIDENCE_MAX_FILES) throw Error("source-evidence-capacity");
+  let total = 0; for (const name of files) { const s = await lstat(join(directory, name)); if (!s.isFile() || s.isSymbolicLink()) throw Error("source-evidence-invalid"); total += s.size; }
+  if (total + Buffer.byteLength(body) > HOST_SOURCE_EVIDENCE_TOTAL_BYTES) throw Error("source-evidence-capacity");
+  const path = join(directory, `${ref}.json`), temp = join(directory, `.source-${randomUUID()}`);
+  try {
+    await writeProtected(temp, body);
+    const fd = await open(temp, constants.O_RDONLY | constants.O_NOFOLLOW); try { await fd.sync(); } finally { await fd.close(); }
+    await rename(temp, path);
+    const dir = await open(directory, constants.O_RDONLY); try { await dir.sync(); } finally { await dir.close(); }
+    return ref;
+  } finally { await rm(temp, { force: true }); }
+}
+/** Attachments outlive both sides of every retained transition. Unindexed
+ * journal rows cannot be retired. Expired references never resolve to latest. */
+export async function pruneHostSourceEvidence(root: string, journal: HostHealthJournal, extra: (string | null | undefined)[] = [],
+  readPins: () => Promise<readonly string[] | null> = async () => null): Promise<void> {
+  const keep = new Set([...extra, ...journal.receipts.flatMap(r => [r.event.sourceChange?.before?.evidenceRef, r.event.sourceChange?.after?.evidenceRef])].filter(Boolean));
+  const directory = join(hostBundlesDir(root), "source-evidence"); if (!await isRealDir(directory)) return;
+  await assertSafeDirectory(directory);
+  const names = await readdir(directory);
+  if (!names.some(name => name.endsWith(".json") && SHA.test(name.slice(0,-5)) && !keep.has(name.slice(0,-5)))) return;
+  // OBS can outlive the rolling producer journal. Preserve pending/unknown
+  // delivery evidence; an unavailable or truncated pin read forbids deletion.
+  const pins = await readPins(); if (pins === null) return;
+  for (const ref of pins) keep.add(ref);
+  for (const name of names) {
+    const ref = name.endsWith(".json") ? name.slice(0, -5) : "";
+    if (!SHA.test(ref) || keep.has(ref)) continue;
+    const path = join(directory, name), stat = await lstat(path);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.uid !== process.getuid?.() || (stat.mode & 0o077)) throw Error("source-evidence-invalid");
+    await rm(path);
+  }
+}
+
 export type HostHealthRetained = { event: HostHealthEvidence; analysis: StaticAnalysis | null };
 export type HostHealthJournal = { version: 1; installationId: string; nextSequence: number; acknowledgedThrough: number; receipts: HostHealthRetained[] };
 const HEALTH_LIMIT = 64, HEALTH_BYTES = 1024 * 1024;
@@ -207,6 +300,10 @@ export async function retainHostHealthEvidence(root:string,installationId:string
   while(receipts.length>=HEALTH_LIMIT&&receipts.length>1&&receipts[0]!.event.sourceSequence<=(prior?.acknowledgedThrough??-1))receipts.shift();
   if(receipts.length>=HEALTH_LIMIT)throw Error("health-receipt-capacity");
   const document:HostHealthJournal={version:1,installationId,nextSequence:expectedSequence+1,acknowledgedThrough:prior?.acknowledgedThrough??-1,receipts:[...receipts,record]};
+  // Window summaries vary in size. Bound bytes as well as count without ever
+  // deleting an unindexed receipt or the new transition's embedded before side.
+  while (Buffer.byteLength(canonicalJson(document)) + 1 > HEALTH_BYTES && document.receipts.length > 1
+    && document.receipts[0]!.event.sourceSequence <= document.acknowledgedThrough) document.receipts.shift();
   await publishHostHealthJournal(root,document);return document;
 }
 export async function acknowledgeHostHealthEvidence(root:string,installationId:string,sequence:number):Promise<void>{

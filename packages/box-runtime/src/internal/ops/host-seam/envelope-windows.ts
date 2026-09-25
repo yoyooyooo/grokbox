@@ -206,7 +206,9 @@ export function parseEnvelopeWindows(value: unknown): EnvelopeWindows {
   return { sourceSha: value.sourceSha, profileId: value.profileId as string, slices };
 }
 
-function measureOne(source: string, slice: SlicePatch): EnvelopeWindowSlice {
+/** Shared raw recipe-window measurement. The caller owns its declared slice set;
+ * unlike the legacy envelope facade this also supports current partial profiles. */
+export function measureRecipeWindow(source: string, slice: SlicePatch): EnvelopeWindowSlice {
   for (const field of ["id", "startAnchor", "endAnchor", "find"] as const) {
     if (typeof slice[field] !== "string" || slice[field].length === 0) {
       throw new Error(`envelope slice missing ${field}`);
@@ -244,7 +246,7 @@ export function measureEnvelopeWindows(source: string, profile: PatchProfile): E
   const slices = core.map((slice) => {
     if (ids.has(slice.id)) throw new Error(`duplicate envelope slice id ${slice.id}`);
     ids.add(slice.id);
-    return measureOne(source, slice);
+    return measureRecipeWindow(source, slice);
   });
   if (!completeEnvelopeIds(ids)) {
     throw new Error("envelope measure requires the full reviewed envelope");

@@ -2,7 +2,7 @@ import { Effect, Fiber, ManagedRuntime } from "effect";
 import { watch, type FSWatcher } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { describeHostSourceEvolution, type NativeSourceIdentity, HOST_HEALTH_CONTRACT, HOST_CHECK_REQUIREMENTS, hostHealthSummary, type HostHealthEvidence, type HostRuntimeObservation, type HostRuntimeEvidence, type HostWitnessObservation, type HostWitnessEvidence, type StaticAnalysis } from "@grokbox/runtime-kernel/host-health";
+import { describeHostSourceChange, type HostSourceChange, describeHostSourceEvolution, type NativeSourceIdentity, HOST_HEALTH_CONTRACT, HOST_CHECK_REQUIREMENTS, hostHealthSummary, type HostHealthEvidence, type HostRuntimeObservation, type HostRuntimeEvidence, type HostWitnessObservation, type HostWitnessEvidence, type StaticAnalysis } from "@grokbox/runtime-kernel/host-health";
 import { canonicalJson, sha256Text, sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import { HostVerifier } from "../ops/host-health/verifier.port.ts";
 import { hostVerifierLayer } from "../io/host-verifier/client.node.ts";
@@ -21,10 +21,12 @@ import { NATIVE_CHECKPOINT_PAIR } from "../host/native-checkpoint-pair.ts";
 import { applyPatchProfile, preflightProfileRecipe } from "../host/profile.ts";
 import { acquireAdvisoryGate, type AdvisoryGate } from "../io/advisory-gate.node.ts";
 import { openMonitorStore } from "../io/monitor-store.node.ts";
+import { captureHostSourceWindow, retainedHostSourceWindow, readHostSourceEvidencePins } from "../io/host-source-change.node.ts";
+import { hostSourceEpisodeId, pruneHostSourceEvidence } from "../io/provenance.node.ts";
 export type HostHealthStatus = { owner:"management-server"; state:"starting"|"disabled"|"running"|"blocked"|"stopped"; reason:string;
   observedAtMs:number|null; lastAttemptAtMs:number|null; assessment:"blocked"|"unknown"|"degraded"; latest:HostHealthEvidence|null;
   intake:"not-observed"|"committed"|"unavailable"|"gap"; runtime:HostRuntimeObservation|null; witness:HostWitnessObservation|null; runtimeIntake:"not-observed"|"committed"|"unavailable"|"gap"; watch:"active"|"backstop-only"; analyses:number; qualified:false; executionAuthority:false };
-export type HostHealthTestPorts = { enabled?:boolean; paths?:HostArtifactPaths; binaryDirectory?:string; pollMs?:number; backstopMs?:number;
+export type HostHealthTestPorts = { enabled?:boolean; observationEnabled?:()=>boolean|Promise<boolean>; paths?:HostArtifactPaths; binaryDirectory?:string; pollMs?:number; backstopMs?:number;
   afterRetain?:()=>Promise<void>; onSpawn?:(pid:number)=>void; beforeAnalyze?:(sourceSet:string)=>Promise<void>;
   runtime?: CompilationReadPorts & { runRoot?:string; afterRetain?:()=>Promise<void> }; witnessPollMs?:number; afterWitnessRetain?:()=>Promise<void> };
 const local = <A>(work:()=>Promise<A>) => Effect.uninterruptible(Effect.tryPromise({try:work,catch:e=>e}));
@@ -54,7 +56,7 @@ export async function inspectHostHealthSources(paths:HostArtifactPaths,binaryDir
 /** Installation sensing and static computation share one Server owner, not the
  * Bot roster. The two lanes never hold a database transaction across analysis.
  * Reports certify immutable inputs only; no loaded/use authority is inferred. */
-export function startHostHealth(input:{root:string;installationId:string;enabled?:boolean;readWitness?:HostWitnessRead}, ports:HostHealthTestPorts={}) {
+export function startHostHealth(input:{root:string;installationId:string;enabled?:boolean;observationEnabled?:()=>boolean|Promise<boolean>;readWitness?:HostWitnessRead}, ports:HostHealthTestPorts={}) {
   const paths=ports.paths??{source:LIVE_HOST_BUNDLE,worker:join(dirname(LIVE_HOST_BUNDLE),"agent-isolation/agent-store-worker.cjs"),profile:reviewedProfilePath(input.root)};
   const pollMs=ports.pollMs??1000, backstopMs=ports.backstopMs??180000;
   if(!Number.isSafeInteger(pollMs)||pollMs<10||pollMs>30000||!Number.isSafeInteger(backstopMs)||backstopMs<pollMs||backstopMs>600000) throw Error("invalid-health-period");
@@ -64,7 +66,7 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
   const controller=new AbortController();
   let gate:AdvisoryGate|null=null, watchers:FSWatcher[]=[], dirty=true, lastHashAt=0, closed=false, enabled=false;
   let generation=0, currentKey:string|null=null, analyzedKey:string|null=null, retryAt=0, failures=0;
-  type Pending={artifacts:HostArtifacts;generation:number;key:string;buildId:string|null;reference:NativeSourceIdentity};
+  type Pending={artifacts:HostArtifacts;generation:number;key:string;buildId:string|null;reference:NativeSourceIdentity;change:HostSourceChange;controller:AbortController};
   let pending:Pending|null=null, active:Pending|null=null;
   const cache=new Map<string,StaticAnalysis>();
   const orderedRecipe=[...HOST_RECIPE.core,...HOST_RECIPE.checkpoint,...HOST_RECIPE.currentState];
@@ -114,16 +116,40 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
     } catch {status={...status,intake:"unavailable"};}
   }
   async function replay(){await serial(async()=>intake(await readHostHealthJournal(input.root,input.installationId)));}
-  function publish(a:HostArtifacts|null, analysis:StaticAnalysis|null, code:string|null, phase:HostHealthEvidence["analysis"], expectedGeneration:number,reference:NativeSourceIdentity=NATIVE_CHECKPOINT_PAIR) {
+  function publish(a:HostArtifacts|null, analysis:StaticAnalysis|null, code:string|null, phase:HostHealthEvidence["analysis"], expectedGeneration:number,reference:NativeSourceIdentity=NATIVE_CHECKPOINT_PAIR, change?:HostSourceChange) {
     return serial(async()=>{
       if(closed||!enabled)return false;
-      const current=expectedGeneration===generation&&(!a||await a.current());
+      let current=expectedGeneration===generation&&(!a||await a.current());
       // Pending/gap evidence must describe the current observation. A complete
       // immutable result may arrive late, but can only be retained as history.
       if(!current&&(!a||!analysis))return false;
       if(!current)dirty=true;
       const journal=await readHostHealthJournal(input.root,input.installationId), sequence=journal?.nextSequence??0;
       const covered=new Set<string>(HOST_CHECK_REQUIREMENTS.flatMap(c=>[...c.slices]));
+      let transition = change;
+      if (!transition) {
+        const latest = journal?.receipts.slice().reverse().find(row => row.event.sourceState !== "snapshot")?.event.sourceChange;
+        const prior = journal?.receipts.slice().reverse().find(row => row.event.sourceState === "stable" && row.event.sourceChange?.after)?.event.sourceChange?.after ?? null;
+        const before = prior ? await retainedHostSourceWindow(input.root, prior) : null;
+        const selectedRecipeSha = a ? sha256Text(canonicalJson(a.profile?.slices ?? orderedRecipe)) : null;
+        // An exact restart/retry keeps the original transition and its before
+        // side; it must not invent A->A or re-dispatch A->B under a fresh ID.
+        if (latest && (a ? latest.after?.sourceSet === a.sourceSet && latest.after.recipeSha === selectedRecipeSha : latest.after === null)) {
+          transition = { ...latest, before: latest.before ? await retainedHostSourceWindow(input.root, latest.before) : null,
+            after: latest.after ? await retainedHostSourceWindow(input.root, latest.after) : null };
+        } else {
+          const after = a ? await captureHostSourceWindow(input.root, a, orderedRecipe) : null;
+          transition = describeHostSourceChange({ episodeId: hostSourceEpisodeId(input.installationId, sequence, before, after), before, after });
+        }
+      }
+      // Private attachment I/O may span another disk update or policy change.
+      // Recheck the original immutable window before publishing it as current.
+      current = current && expectedGeneration === generation && (!a || await a.current());
+      if (closed || !enabled || !current && (!a || !analysis)) return false;
+      if (!current) dirty = true;
+      const running = status.runtime?.state === "current" ? status.runtime.receipt : null;
+      const sourceChange = describeHostSourceChange({ ...transition, staticViolation: phase === "violated",
+        running: running ? { observationId: running.observationId, sourceSha: running.sourceSha, candidateSha: running.candidateSha } : null });
       const event:HostHealthEvidence={name:"host_patch_health",schemaVersion:1,eventId:randomUUID(),at:new Date().toISOString(),installationId:input.installationId,contractRevision:HOST_HEALTH_CONTRACT,
         sourceInstanceId,sourceSequence:sequence,sourceState:a?(current?"stable":"snapshot"):code==="source-changed"?"changed":"unavailable",sourceSet:a?.sourceSet??null,sourceSha:a?.sourceSha??null,
         workerSha:a?.workerSha??null,profileDigest:a?.profileDigest??null,candidateSha:a?.candidate?sha256Bytes(a.candidate):null,checkerBuildId:analysis?.buildId??null,
@@ -131,8 +157,10 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
         requiredChecks:HOST_CHECK_REQUIREMENTS.map(c=>c.id),failedChecks:analysis?.checks.filter(c=>c.state==="violated").map(c=>c.id)??[],
         unsupportedChecks:analysis?.checks.filter(c=>c.state==="unsupported").map(c=>c.id)??[],uncoveredSlices:a?.profile?.slices.map(s=>s.id).filter(id=>!covered.has(id))??[],
         loaded:"not-observed",attachment:"not-observed",exercised:"not-exercised",notificationCoverage:"local-only",detectorCode:code,qualified:false,
-        ...(a?{recipeSha,sourceEvolution:evolution(a,analysis,reference)}:{})};
+        ...(a?{recipeSha,sourceEvolution:evolution(a,analysis,reference)}:{}), sourceChange};
       const next=await retainHostHealthEvidence(input.root,input.installationId,sequence,{event,analysis});
+      await pruneHostSourceEvidence(input.root, next, [active?.change.before?.evidenceRef, active?.change.after?.evidenceRef,
+        pending?.change.before?.evidenceRef, pending?.change.after?.evidenceRef], () => readHostSourceEvidencePins(input.root));
       if(current)status={...status,latest:event,assessment:hostHealthSummary(event),intake:"not-observed"};
       await ports.afterRetain?.(); await intake(next); return true;
     });
@@ -209,13 +237,26 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
       await runtimeIntake(journal);
     });
   }
+  async function pauseObservation(state:"disabled"|"blocked", reason:string) {
+    if(enabled){generation++;currentKey=null;analyzedKey=null;}
+    enabled=false;pending?.controller.abort();active?.controller.abort();pending=null;dirty=true;
+    runtimeKey=null;witnessKey=null;observedRuntimeKey=null;observedWitnessKey=null;
+    for(const watcher of watchers)watcher.close();watchers=[];
+    await serial(async()=>{await gate?.release();gate=null;});
+    status={...status,state,reason,runtime:null,witness:null,runtimeIntake:"not-observed",watch:"backstop-only"};
+  }
   async function tick() {
     if(closed) return;
-    const config=input.enabled===false?null:(await openConfigStore(rootConfigLayout(input.root)).read()).document;
-    if(!config||!config.runtime?.desiredMode||config.runtime.desiredMode==="disabled") {
-      if(enabled){generation++;currentKey=null;analyzedKey=null;}
-      enabled=false;pending=null;dirty=true;runtimeKey=null;witnessKey=null;observedRuntimeKey=null;observedWitnessKey=null;status={...status,state:"disabled",reason:"intent-disabled",runtime:null,witness:null,runtimeIntake:"not-observed"};return;
-    }
+    // Observation is NOT execution intent or notification permission. The
+    // Server owns public configuration; an invalid read fails closed here.
+    let config;
+    try {
+      config=input.enabled===false?null:(await openConfigStore(rootConfigLayout(input.root)).read()).document;
+      const observe = config ? await (input.observationEnabled ?? ports.observationEnabled ?? (()=>true))() : false;
+      if(typeof observe !== "boolean")throw Error("invalid-observation-policy");
+      if(!observe){await pauseObservation("disabled","observation-disabled");return;}
+    } catch {await pauseObservation("blocked","observation-config-unavailable");return;}
+    if(!config)return;
     enabled=true;
     runtimeRoot=ports.runtime?.runRoot??config.daemon?.observation?.runRoot??ephemeralRuntimeRoot();
     if(!gate) {
@@ -256,8 +297,8 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
     // verifier handshake. It cannot be erased by that later analysis failure.
     const previous=status.latest;
     const reference=previous?.sourceSha&&previous.workerSha?{host:previous.sourceSha,worker:previous.workerSha}:NATIVE_CHECKPOINT_PAIR;
-    await publish(a,null,a.failureCode,"pending",generation,reference);
-    pending={artifacts:a,generation,key,buildId,reference};status={...status,state:"running",reason:"analysis-queued"};
+    if(!await publish(a,null,a.failureCode,"pending",generation,reference))return;
+    pending={artifacts:a,generation,key,buildId,reference,change:status.latest!.sourceChange!,controller:new AbortController()};status={...status,state:"running",reason:"analysis-queued"};
   }
   async function analyzePending() {
     if(closed||!enabled||!pending) return;
@@ -269,14 +310,15 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
       if(!analysis) {
         await ports.beforeAnalyze?.(a.sourceSet);
         status={...status,analyses:status.analyses+1};
-        analysis=await runtime.runPromise(analyzeArtifacts(a),{signal:controller.signal});
+        analysis=await runtime.runPromise(analyzeArtifacts(a),{signal:AbortSignal.any([controller.signal,job.controller.signal])});
         if(analysis.buildId!==job.buildId) throw new VerifierFailure("build-changed");
         cache.set(job.key,analysis);while(cache.size>64)cache.delete(cache.keys().next().value!);
       }
-    } catch(error){analysis=null;code=error instanceof VerifierFailure?error.code:"analysis-unavailable";} finally {active=null;}
-    if(closed||!enabled) return;
+    } catch(error){analysis=null;code=error instanceof VerifierFailure?error.code:"analysis-unavailable";}
+    if(closed||!enabled||job.controller.signal.aborted) {active=null;return;}
     const phase=analysis===null?"unavailable":analysis.artifacts.some(s=>!s.valid)||analysis.checks.some(c=>c.state==="violated")?"violated":analysis.checks.some(c=>c.state!=="passed")?"unsupported":"passed";
-    if(!await publish(a,analysis,code,phase,job.generation,job.reference)){dirty=true;return;}
+    try { if(!await publish(a,analysis,code,phase,job.generation,job.reference,job.change)){dirty=true;return;} }
+    finally { active=null; }
     if(job.generation!==generation||!await a.current()){dirty=true;return;}
     if(analysis){analyzedKey=job.key;retryAt=0;failures=0;}
     else {dirty=true;retryAt=Date.now()+Math.min(30000,Math.max(pollMs,250)*2**Math.min(failures++,6));}

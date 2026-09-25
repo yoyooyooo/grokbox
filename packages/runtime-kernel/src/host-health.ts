@@ -2,6 +2,8 @@
 export * from "./host-compilation.ts";
 export * from "./host-witness.ts";
 export * from "./host-source-evolution.ts";
+export * from "./host-source-change.ts";
+import { projectHostSourceChange, type HostSourceChange } from "./host-source-change.ts";
 import { projectHostSourceEvolution, type HostSourceEvolution } from "./host-source-evolution.ts";
 export const HOST_HEALTH_CONTRACT = "host-health-v2";
 export const HOST_CHECK_REQUIREMENTS = [
@@ -25,6 +27,7 @@ export type HostHealthEvidence = {
   /** Additive source-window evidence. Historical v2 receipts remain scoped to
    * their original fields; absence cannot be promoted to new regression proof. */
   recipeSha?:string; sourceEvolution?:HostSourceEvolution;
+  sourceChange?:HostSourceChange;
 };
 const hash=(v:unknown):v is string=>typeof v==="string"&&/^[a-f0-9]{64}$/.test(v);
 const uuid=(v:unknown):v is string=>typeof v==="string"&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(v);
@@ -36,6 +39,8 @@ export function projectHostHealth(value:unknown):HostHealthEvidence|null {
   const keys=["name","schemaVersion","eventId","at","installationId","contractRevision","sourceInstanceId","sourceSequence","sourceState","sourceSet","sourceSha","workerSha","profileDigest","candidateSha","checkerBuildId","companionQualification","applicability","analysis","requiredChecks","failedChecks","unsupportedChecks","uncoveredSlices","loaded","attachment","exercised","notificationCoverage","detectorCode","qualified"];
   const enriched = Object.hasOwn(v,"recipeSha") || Object.hasOwn(v,"sourceEvolution");
   if(enriched)keys.push("recipeSha","sourceEvolution");
+  const hasChange = Object.hasOwn(v, "sourceChange");
+  if (hasChange) keys.push("sourceChange");
   if(Reflect.ownKeys(v).length!==keys.length||Reflect.ownKeys(v).some(k=>typeof k!=="string"||!keys.includes(k)||!("value" in Object.getOwnPropertyDescriptor(v,k)!)))return null;
   // One current contract. Old files remain untouched, but cannot enter the
   // live evidence pipeline by reducing its required proof obligations.
@@ -66,7 +71,11 @@ export function projectHostHealth(value:unknown):HostHealthEvidence|null {
       ||JSON.stringify(evolution.semantics.unsupported.map(c=>c.id))!==JSON.stringify(v.unsupportedChecks)
       ||[...evolution.semantics.failed,...evolution.semantics.unsupported].some(check=>!HOST_CHECK_REQUIREMENTS.some(c=>c.id===check.id&&c.revision===check.revision)))return null;
   }
-  return {...v,...(enriched?{sourceEvolution:projectHostSourceEvolution(v.sourceEvolution)!}:{}),requiredChecks:[...v.requiredChecks],failedChecks:[...v.failedChecks],unsupportedChecks:[...v.unsupportedChecks],uncoveredSlices:[...v.uncoveredSlices]};
+  const sourceChange = hasChange ? projectHostSourceChange(v.sourceChange, v.analysis === "violated") : null;
+  if (hasChange && (!sourceChange || (sourceChange.after === null) !== !["stable", "snapshot"].includes(v.sourceState)
+    || sourceChange.after !== null && (sourceChange.after.sourceSet !== v.sourceSet || sourceChange.after.sourceSha !== v.sourceSha
+      || sourceChange.after.workerSha !== v.workerSha || sourceChange.after.profileDigest !== v.profileDigest))) return null;
+  return {...v,...(hasChange?{sourceChange:sourceChange!}:{}),...(enriched?{sourceEvolution:projectHostSourceEvolution(v.sourceEvolution)!}:{}),requiredChecks:[...v.requiredChecks],failedChecks:[...v.failedChecks],unsupportedChecks:[...v.unsupportedChecks],uncoveredSlices:[...v.uncoveredSlices]};
 }
 /** Persisted analysis is revalidated as a domain record, not trusted because a
  * prior process accepted a protocol report. No source snippets or AST survive. */

@@ -24,14 +24,39 @@ export async function indexHostHealthCondition(db:MonitorSqlite,input:{rootId:st
     const latest = await db.first("SELECT MAX(json_extract(payload,'$.observation.snapshot.sequence')) AS sequence FROM evidence WHERE source_key=? AND ref<>? AND json_extract(payload,'$.name')='host_capability_health' AND json_extract(payload,'$.observation.snapshot.compilation.observationId')=?", [v.sourceInstanceId,input.ref,s.compilation.observationId]);
     if (latest?.sequence != null && Number(latest.sequence) >= s.sequence) return;
   }
+  if (disk?.sourceChange) {
+    // New source episodes are tasks, not the installation-wide fault latch.
+    // Same-shaped changes must reach consumers, while no-intersection updates
+    // cannot wake an Agent merely because an exact profile still pins old SHA.
+    if (disk.sourceState === "snapshot") return;
+    const change = disk.sourceChange;
+    if (change.classification !== "no-intersection") {
+    const key = sha256Text(canonicalJson(["host-source-change-v1", disk.installationId, change.episodeId, change.classification]));
+    // Include resolved occurrences: a replay is not permission to send again.
+    const row = await db.first("SELECT id FROM incidents WHERE scope=? AND rule='host_patch_health' AND occurrence_key=?", [input.rootId, key]);
+    const id = row ? String(row.id) : randomUUID();
+    if (!row) {
+      await db.run("INSERT INTO incidents(id,scope,agent_id,rule,status,first_seen,last_seen,revision,occurrence_key,category,summary_json) VALUES(?,?,NULL,'host_patch_health','recorded',?,?,1,?,'occurrence',?)",
+        [id, input.rootId, input.at, input.at, key, canonicalJson([disk])]);
+      await input.opened(id, null);
+    } else await db.run("UPDATE incidents SET last_seen=MAX(last_seen,?),summary_json=? WHERE id=?", [input.at, canonicalJson([disk]), id]);
+    await db.run("INSERT OR IGNORE INTO incident_evidence(incident_id,event_ref) VALUES(?,?)", [id, input.ref]);
+    }
+    // Continue the original fault/recovery latches. They retain actual static
+    // failures and positive repairs, but source-event delivery owns the wakeup;
+    // maintaining a latch must not produce a duplicate task for this episode.
+  }
   const conditions=disk?hostHealthConditions(disk):witness?[{cause:"attachment",result:hostWitnessCondition(witness)},{cause:"witness-reader",result:hostWitnessDetectorCondition(witness)},{cause:"managed-context-lease",result:hostLeaseOpportunityCondition(witness)}]:[{cause:"compilation",result:hostRuntimeCondition(runtime!)}];
   for(const condition of conditions){
+    // No-intersection is not a fault and not a repair by itself. Independent
+    // exact positive evidence may still settle a prior source/analysis gap.
+    if (disk?.sourceChange?.classification === "no-intersection" && condition.result !== "passed") continue;
     const key=sha256Text(canonicalJson(["host-health",v.installationId,disk?.contractRevision??"host-runtime-v1",condition.cause]));
     const row=await db.first("SELECT id,last_seen,summary_json FROM incidents WHERE scope=? AND rule='host_patch_health' AND occurrence_key=? AND status='open'",[input.rootId,key]);
     if(condition.result==="failed"){
       let id=row?String(row.id):randomUUID();
       if(!row){await db.run("INSERT INTO incidents(id,scope,agent_id,rule,status,first_seen,last_seen,revision,occurrence_key,category,summary_json) VALUES(?,?,NULL,'host_patch_health','open',?,?,1,?,'condition',?)",
-        [id,input.rootId,runtime?.observation.receipt?Date.parse(runtime.observation.receipt.at):input.at,input.at,key,canonicalJson([v])]);await input.opened(id,null);}
+        [id,input.rootId,runtime?.observation.receipt?Date.parse(runtime.observation.receipt.at):input.at,input.at,key,canonicalJson([v])]);if(!disk?.sourceChange)await input.opened(id,null);}
       else await db.run("UPDATE incidents SET last_seen=MAX(last_seen,?),summary_json=? WHERE id=?",[input.at,canonicalJson([v]),id]);
       await db.run("INSERT OR IGNORE INTO incident_evidence(incident_id,event_ref) VALUES(?,?)",[id,input.ref]);
     }else if(condition.result==="passed"&&row){
