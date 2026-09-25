@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -38,6 +38,51 @@ async function fixture() {
   return { directory, root, run, config, document, install, read, reads: () => reads, append, close: () => rm(directory, { recursive: true, force: true }) };
 }
 
+test("default Host observation owns one private installation intake on a protected 0755 root and restarts without Bot calls", async () => {
+  const f = await fixture(); let service: ReturnType<typeof startMonitorService> | undefined;
+  try {
+    await chmod(f.root, 0o755);
+    const configBytes = await readFile(f.config);
+    service = startMonitorService({ durableRoot: f.root, read: f.read }, { pollMs: 10 });
+    await until(async () => service!.status(), s => s.state === "running");
+    const store = openMonitorStore(f.root), first = await store.snapshot();
+    expect(service.status()).toMatchObject({ targets: 0, ownershipState: "not_observed", createsDatabase: true });
+    expect(first.collectorRecordedRunning).toBe(true); expect(first.agents).toEqual([]); expect(f.reads()).toBe(0);
+    expect((await lstat(f.root)).mode & 0o777).toBe(0o755);
+    expect((await lstat(join(f.root, "observability"))).mode & 0o777).toBe(0o700);
+    expect((await lstat(store.path)).mode & 0o777).toBe(0o600);
+    await service.close();
+    service = startMonitorService({ durableRoot: f.root, read: f.read }, { pollMs: 10 });
+    await until(async () => service!.status(), s => s.state === "running");
+    const next = await store.snapshot(); expect(next.databaseId).toBe(first.databaseId); expect(next.collectorEpoch).not.toBe(first.collectorEpoch);
+    expect(await readFile(f.config)).toEqual(configBytes); expect(f.reads()).toBe(0);
+    await writeFile(f.config, JSON.stringify({ ...f.document, ops: { observation: { enabled: false } } }), { mode: 0o600 });
+    await until(async () => service!.status(), s => s.state === "not_configured");
+    expect((await store.snapshot()).collectorRecordedRunning).toBe(false);
+    await service.close(); service = undefined;
+    const stopped = await readFile(store.path); await delay(40); expect(await readFile(store.path)).toEqual(stopped);
+  } finally { await service?.close(); await f.close(); }
+});
+
+test("default intake does not replace a damaged existing ledger or acquire a live collector's epoch", async () => {
+  for (const scenario of ["missing-ledger", "competing-owner"] as const) {
+    const f = await fixture(); let service: ReturnType<typeof startMonitorService> | undefined;
+    try {
+      const store = openMonitorStore(f.root); await store.initialize();
+      const epoch = randomUUID();
+      if (scenario === "missing-ledger") await rm(store.path);
+      else await store.begin(epoch, Date.now(), []);
+      service = startMonitorService({ durableRoot: f.root, read: f.read }, { pollMs: 10 });
+      await until(async () => service!.status(), s => s.state === "blocked");
+      expect(f.reads()).toBe(0);
+      if (scenario === "missing-ledger") expect(await readdir(join(f.root, "observability"))).toEqual([]);
+      else expect((await store.snapshot()).collectorEpoch).toBe(epoch);
+      await service.close(); service = undefined;
+      if (scenario === "competing-owner") await store.finish(epoch, Date.now());
+    } finally { await service?.close(); await f.close(); }
+  }
+});
+
 test("install preview is read-only; exact config CAS publishes only collector intent without turning on notifications", async () => {
   const f = await fixture();
   try {
@@ -74,14 +119,16 @@ test("a replayed install never recreates a lost evidence database, and mismatche
   } finally { await f.close(); }
 });
 
-test("unconfigured daemon child is inert and bad/disabled configuration never initializes a database or calls native sources", async () => {
-  const f = await fixture(); const service = startMonitorService({ durableRoot: f.root, read: f.read }, { pollMs: 10 });
+test("explicitly withdrawn Host observation and bad/disabled configuration never initialize a database or call native sources", async () => {
+  const f = await fixture();
+  await writeFile(f.config, JSON.stringify({ ...f.document, ops: { observation: { enabled: false } } }), { mode: 0o600 });
+  const service = startMonitorService({ durableRoot: f.root, read: f.read }, { pollMs: 10 });
   try {
     await delay(35); expect(service.status().state).toBe("not_configured"); expect(f.reads()).toBe(0);
     await writeFile(f.config, "{PRIVATE_BAD_CONFIGURATION", { mode: 0o600 });
     await until(async () => service.status(), s => s.state === "blocked");
     expect(JSON.stringify(service.status())).not.toContain("PRIVATE_BAD"); expect(f.reads()).toBe(0);
-    await writeFile(f.config, JSON.stringify({ ...f.document, daemon: { observation: { runRoot: f.run, agentIds: [AGENT] } }, ops: { monitor: { enabled: false } } }), { mode: 0o600 });
+    await writeFile(f.config, JSON.stringify({ ...f.document, daemon: { observation: { runRoot: f.run, agentIds: [AGENT] } }, ops: { observation: { enabled: false }, monitor: { enabled: false } } }), { mode: 0o600 });
     await until(async () => service.status(), s => s.state === "disabled");
     expect(await readdir(f.root)).toEqual(["config.json"]);
   } finally { await service.close(); await f.close(); }
@@ -157,7 +204,7 @@ test("unsafe source and too many targets cannot be installed, and no missing-sou
     await expect(configureMonitorService({ durableRoot: f.root, runRoot: link, agentIds: [AGENT] })).rejects.toBeDefined();
     await expect(configureMonitorService({ durableRoot: f.root, runRoot: join(f.directory, "absent"), agentIds: [AGENT] })).rejects.toBeDefined();
     expect(() => validateConfig({ ...f.document, daemon: { observation: { runRoot: f.run, agentIds: Array.from({ length: 33 }, () => randomUUID()) } } })).toThrow();
-    expect(await readMonitorServiceConfiguration(f.root)).toBeNull();
+    expect(await readMonitorServiceConfiguration(f.root)).toMatchObject({ mode: "installation", agentIds: [], runRoot: f.root });
     expect(await readdir(f.root)).toEqual(["config.json"]);
   } finally { await f.close(); }
 });

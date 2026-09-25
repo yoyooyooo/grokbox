@@ -12,7 +12,7 @@ canonical runRoot/目标集合及daemon所属collector已接通，原生run-obse
 
 必要存储维护另已接入实际modeld listener的子Scope，不再仅依赖本collector；其固定回执、闲置日志回收和真实Node/退出证明归[OBS-04](OBS-04-bounded-observation-storage.md)与[回执](../reports/2026-09-18-modeld-storage-lifetime.md)。这不是把modeld变成新collector，也没有因此完成目标集合、原生告警或通知投递。
 
-`runtime monitor install`仍仅经明确确认初始化观测库并提交统一`daemon.observation`配置，不启动服务。新架构下，已运行的管理 Server 按该配置持有原 collector 的 Scope；旧 daemon 接线和 `runtime monitor service` 已退出，状态由 `system service get server` 读取。当前 Node 管理集成验证启动、竞争、关闭取消和恢复，见 [CLI-05](CLI-05-implementation-follow-through.md)。原 daemon 窗口的 CLI 退出后采集、强杀恢复及无晚写证据保留在[固定回执](../reports/2026-09-19-pre-e2e-observation.md)，不迁为新版现场通过。
+`runtime monitor install`仍用于显式配置 Bot 目标和 Host/control journal，不启动服务。已有有效安装配置的管理 Server 在 `ops.observation.enabled=true` 时，使用同一个 collector owner 提供零 Bot、零原生 RPC 的安装级 intake；因此 Host 变化不再等待 Bot monitor 配置才能进入 OBS。仅全新观测目录可初始化原 SQLite，旧目录缺库/损坏/旧 schema 不重建、不迁移；0755 安装根不被擅自 chmod，私有观测子目录与文件仍要求 0700/0600。显式 Bot monitor 生效时由同一 Scope 替换为对应目标/journal，旧 owner 先结算；关闭 Host 观察与关闭 Bot 观察分别生效。旧 daemon 接线和 `runtime monitor service` 已退出，状态由 `system service get server` 读取。当前 Node 管理集成验证启动、竞争、关闭取消和恢复，见 [CLI-05](CLI-05-implementation-follow-through.md)。原 daemon 窗口的 CLI 退出后采集、强杀恢复及无晚写证据保留在[固定回执](../reports/2026-09-19-pre-e2e-observation.md)，不迁为新版现场通过。
 
 ## HOST-01 新架构接入（2026-09-20）
 
@@ -48,7 +48,7 @@ canonical runRoot/目标集合及daemon所属collector已接通，原生run-obse
 
 私有材料仍归 provenance：`host-bundles/source-evidence/<evidenceRef>.json` 内容寻址、0700/0600、原子发布，保存压缩的固定 Host 来源、实际窗口/配方和 worker。`readHostSourceEvidence(root, ref)` 核对摘要与范围，`hostSourceEvidenceBytes` 解压原来源；只读精确引用，不以当前磁盘替代丢失材料。公开事件/CLI/Web/通知不带源码、私有路径或 worker 正文。
 
-附件最多 68 份、单份 8 MiB、合计 64 MiB；原 receipt journal 仍按 64 项和 1 MiB 双界滚动，仅退役已索引旧项。GC 同时保护 journal 前后两侧、活动/排队分析及原 outbox 固定 revision 引用；先筛选有效工作/证据租约再应用 200 项上界，过期历史不永久阻断清理。活动引用不可读或上界不能证明完整时不删材料，容量不足留下 `unknown`。已提交观察先入 OBS，清理错误或缺 pin 不阻断 intake；不变来源也重试延期清理。附件暂时失败只对匹配全部不可变窗口的当前 AFTER 重取并产生新观察，同 episode 的旧缺失记录不改，历史 BEFORE 不被最新来源冒名替代。这是有限保全，不保证永久全局 exactly-once，也不新建 pin/通知数据库。
+Host 正文使用异步 gzip level 6，避免实际 27 MB 来源在快速压缩后单是 base64 已超过附件限制；保持同一内容寻址格式、原字节读回与容量，不在管理事件循环同步压缩大来源。附件最多 68 份、单份 8 MiB、合计 64 MiB；原 receipt journal 仍按 64 项和 1 MiB 双界滚动，仅退役已索引旧项。GC 同时保护 journal 前后两侧、活动/排队分析及原 outbox 固定 revision 引用；先筛选有效工作/证据租约再应用 200 项上界，过期历史不永久阻断清理。活动引用不可读或上界不能证明完整时不删材料，容量不足留下 `unknown`。已提交观察先入 OBS，清理错误或缺 pin 不阻断 intake；不变来源也重试延期清理。附件暂时失败只对匹配全部不可变窗口的当前 AFTER 重取并产生新观察，同 episode 的旧缺失记录不改，历史 BEFORE 不被最新来源冒名替代。这是有限保全，不保证永久全局 exactly-once，也不新建 pin/通知数据库。
 
 `startHostHealth` 提供动态 `observationEnabled` 端口：只读观察不再由 `runtime.desiredMode` 控制，明确停止观察才撤销采样、分析和所属 gate；配置读取失败为 `observation-config-unavailable`，不回退启用。AH-143 拥有公共 `ops.observation.enabled` schema/配置入口、`server.ts` 回调接线以及通知/接收者/outbox；双方已在同候选验证实际配置开/关/读取失败及取消，没有另写配置。该观察许可不授予自动采用、修复、Bot 唤醒或外发权限。
 

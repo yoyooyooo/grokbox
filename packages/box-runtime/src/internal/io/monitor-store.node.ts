@@ -19,6 +19,7 @@ import { retireObservationDetails, sqlitePhysicalUsage } from "./observation-ret
 import { capMonitorDatabase, monitorDatabaseBytes, monitorWriteAdmission, monitorAuxiliaryUsage } from "./monitor-storage.node.ts";
 import { notificationOutbox, NOTIFICATION_SCHEMA } from "./notification-outbox.node.ts";
 import { MONITOR_SCHEMA_VERSION } from "./monitor-schema.node.ts";
+import { assertSafeDirectory } from "./config-layout.node.ts";
 import type { NativeRunHealth } from "@grokbox/runtime-kernel/observation";
 import { DiagnosticBudgetError, withDiagnosticAdmission } from "../host/diagnostic-budget.node.ts";
 const VERSION=MONITOR_SCHEMA_VERSION;
@@ -145,7 +146,9 @@ export function openMonitorStore(root:string,options:MonitorStoreOptions={}){
   ...notificationOutbox({rootId,maxDatabaseBytes,read,mutate}),
   path:file,
   async initialize(){return admission("monitor-initialize",async()=>{
-   await mkdir(root,{recursive:true,mode:0o700});await privateMonitorDirectory(resolve(root));
+   // The installation root may be owner-controlled 0755. Only the private
+   // observation directory and its files need 0700/0600; do not chmod the root.
+   await assertSafeDirectory(resolve(root),true);
    const reopen=async()=>{
     await privateMonitorDirectory(directory);
     if(!await lstat(file).catch(e=>{if(!missing(e))throw e;return null;}))throw error("monitor_store_unavailable");

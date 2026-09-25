@@ -9,7 +9,7 @@ import { readStorageConfiguration } from "./storage-configuration.node.ts";
 import { openMonitorStore } from "./monitor-store.node.ts";
 
 export type MonitorServiceConfiguration = {
-  state: "configured"; runRoot: string; agentIds: string[]; enabled: boolean; notificationsEnabled: boolean;
+  state: "configured"; mode: "installation" | "agents"; runRoot: string; agentIds: string[]; enabled: boolean; notificationsEnabled: boolean;
   intervalMs: number; revision: string; configRevision: string;
 };
 export async function validateMonitorRoot(path: string): Promise<string> {
@@ -18,16 +18,21 @@ export async function validateMonitorRoot(path: string): Promise<string> {
   if (!info.isDirectory() || info.isSymbolicLink() || process.getuid && info.uid !== process.getuid()) throw new ConfigError("config_invalid", "monitor_unsafe_run_root");
   return normalized;
 }
-/** Canonical configuration only; neither HOME nor a transient shell variable is
- * an installation contract. Missing/malformed policy never starts collection. */
+/** Host sensing needs an installation intake even without configured Bot targets.
+ * Use the existing collector owner with zero native reads. Explicit observation
+ * withdrawal disables this default; missing/malformed config never enables it. */
 export async function readMonitorServiceConfiguration(durableRoot: string): Promise<MonitorServiceConfiguration | null> {
   const snapshot = await openConfigStore(rootConfigLayout(durableRoot)).read();
+  if (!snapshot.exists) return null;
   const installation = snapshot.document.daemon?.observation;
-  if (!installation) return null;
   const ops = effectiveOps(snapshot.document.ops), monitor = ops.monitor as Record<string, unknown>;
-  const enabled = monitor.enabled === true;
+  const hostObservation = (ops.observation as Record<string, unknown>).enabled === true;
+  if (!installation && !hostObservation) return null;
+  const botsEnabled = !!installation && monitor.enabled === true;
+  const mode = botsEnabled ? "agents" as const : "installation" as const;
   const notifications = ops.notifications as Record<string, unknown>;
-  const policy = { runRoot: resolve(installation.runRoot), agentIds: monitorTargets(installation.agentIds,true), enabled,
+  const policy = { mode, runRoot: botsEnabled ? resolve(installation!.runRoot) : resolve(durableRoot),
+    agentIds: botsEnabled ? monitorTargets(installation!.agentIds,true) : [], enabled: botsEnabled || hostObservation,
     notificationsEnabled: ops.enabled === true && notifications.mode !== "off", intervalMs: monitorInterval(Number(monitor.intervalMs)) };
   // The storage domain is captured by each collector lifetime. Policy changes
   // require a settled replacement. Only the notification enable boundary is

@@ -234,10 +234,17 @@ test("continuous versions coalesce pending work, retain late fixed results and n
  }finally{releaseA();releaseC();await f.close();}
 });
 
-test("unconfigured OBS leaves local-only evidence and does not silently initialize an observation database",async()=>{
+test("default Host observation reaches the original OBS without configuring any Bot collector",async()=>{
  const f=await hostHealthFixture(origin,{noMonitor:true});try{
-  const v=await until(()=>health(f),v=>v.data.latest?.analysis==="passed"&&v.data.intake==="unavailable");
-  assert.equal(v.data.latest!.notificationCoverage,"local-only");await assert.rejects(f.observations.snapshot());assert.equal(f.state.nativeCalls,0);
+  const v=await until(()=>health(f),v=>v.data.latest?.analysis==="passed"&&v.data.intake==="committed");
+  const snapshot=await f.observations.snapshot();
+  assert.equal(snapshot.collectorRecordedRunning,true);assert.deepEqual(snapshot.agents,[]);
+  assert.equal(v.data.latest!.notificationCoverage,"local-only");assert.equal(f.state.nativeCalls,0);
+  assert.equal((await changes(f)).length,1);assert.ok((await f.observations.notificationWork()).length>0);
+  const ids=(await changes(f)).map(r=>r.id),databaseId=snapshot.databaseId;
+  await f.restart();await until(()=>health(f),v=>v.data.intake==="committed");
+  assert.equal((await f.observations.snapshot()).databaseId,databaseId);
+  assert.deepEqual((await changes(f)).map(r=>r.id),ids);assert.equal(f.state.nativeCalls,0);
  }finally{await f.close();}
 });
 

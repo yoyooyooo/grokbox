@@ -34,7 +34,7 @@ export function managementService(value: unknown): value is ManagementServiceVie
     && (worker.reason === null || label(worker.reason)) && (worker.desiredRevision === null || revision(worker.desiredRevision))
     && (worker.collectorEpoch === null || id(worker.collectorEpoch)) && time(worker.startedAtMs) && maybeTime(worker.lastReceiptAtMs)
     && time(worker.replacements) && time(worker.targets) && worker.targets <= 32
-    && worker.createsDatabase === false && worker.notifiesDirectly === false && worker.bootInstalled === false;
+    && typeof worker.createsDatabase === "boolean" && worker.notifiesDirectly === false && worker.bootInstalled === false;
   if (!observation) return false;
   if (value.workers !== undefined) {
     if (!Array.isArray(value.workers) || value.workers.length !== 3) return false;

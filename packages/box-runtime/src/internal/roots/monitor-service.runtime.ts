@@ -3,6 +3,8 @@ import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
 import type { OwnershipReader } from "../io/ownership-admission.node.ts";
 import { readMonitorServiceConfiguration, validateMonitorRoot } from "../io/monitor-installation.node.ts";
 import { monitorProgram, type MonitorRunOptions, type JournalSourceProgress } from "./monitor.runtime.ts";
+import { openMonitorStore } from "../io/monitor-store.node.ts";
+import { readStorageConfiguration } from "../io/storage-configuration.node.ts";
 
 export type MonitorServiceStatus = {
   state: "not_configured" | "disabled" | "starting" | "running" | "degraded" | "blocked" | "stopping" | "stopped";
@@ -11,12 +13,14 @@ export type MonitorServiceStatus = {
   ownershipState: "not_observed" | "observed" | "unavailable";
   targets: number; sources: JournalSourceProgress[]; notificationsEnabled: boolean | null;
   nativeRunHealth: NonNullable<Parameters<MonitorRunOptions["publish"]>[0]["nativeRunHealth"]>;
-  owner: "management-server"; createsDatabase: false; notifiesDirectly: false; bootInstalled: false;
+  owner: "management-server"; createsDatabase: boolean; notifiesDirectly: false; bootInstalled: false;
 };
 export type MonitorServiceInput = { durableRoot: string; read: OwnershipReader };
 /** One management-Server-owned Scope. Configuration polling is local-only; there is at most
  * one collector and its real source/DB writes settle before replacement. Reads
- * do not initialize or migrate storage, invoke a model or start another daemon. */
+ * never migrate storage, invoke a model or start another daemon. When Host
+ * observation is enabled without Bot monitoring, this same owner initializes
+ * only a fresh installation intake. Existing damaged/history stores still fail. */
 export function startMonitorService(input: MonitorServiceInput, testPorts: { pollMs?: number } = {}) {
   const pollMs = testPorts.pollMs ?? 5000;
   if (!Number.isSafeInteger(pollMs) || pollMs < 1 || pollMs > 5000) throw new Error("monitor_invalid_service_interval");
@@ -26,7 +30,7 @@ export function startMonitorService(input: MonitorServiceInput, testPorts: { pol
     owner: "management-server", createsDatabase: false, notifiesDirectly: false, bootInstalled: false };
   const signal = new AbortController();
   let child: Fiber.Fiber<void, unknown> | undefined, childSignal: AbortController | undefined;
-  let finished = false, failures = 0, nextAttemptAt = 0, expectedSourceCount = 0;
+  let finished = false, failures = 0, nextAttemptAt = 0, expectedSourceCount = 0, installationOnly = false;
   const stopChild = Effect.gen(function* () {
     if (!child) return;
     childSignal?.abort();
@@ -37,10 +41,10 @@ export function startMonitorService(input: MonitorServiceInput, testPorts: { pol
     const sources = receipt.journal?.sources ?? state.sources;
     const sourceComplete = sources.length === expectedSourceCount && sources.every(source => source.state === "observed");
     const nativeRunHealth = receipt.nativeRunHealth ?? state.nativeRunHealth;
-    state = { ...state, state: receipt.state === "observed" && sourceComplete && nativeRunHealth.state === "observed_window" ? "running" : "degraded",
-      reason: receipt.state !== "observed" ? "ownership_source_unavailable" : !sourceComplete ? "journal_coverage_partial"
+    state = { ...state, state: installationOnly || receipt.state === "observed" && sourceComplete && nativeRunHealth.state === "observed_window" ? "running" : "degraded",
+      reason: installationOnly ? null : receipt.state !== "observed" ? "ownership_source_unavailable" : !sourceComplete ? "journal_coverage_partial"
         : nativeRunHealth.state !== "observed_window" ? "native_run_health_unavailable" : null, nativeRunHealth,
-      collectorEpoch: receipt.collectorEpoch, lastReceiptAtMs: Date.now(), ownershipState: receipt.state,
+      collectorEpoch: receipt.collectorEpoch, lastReceiptAtMs: Date.now(), ownershipState: installationOnly ? "not_observed" : receipt.state,
       sources };
     failures = 0;
   };
@@ -53,7 +57,7 @@ export function startMonitorService(input: MonitorServiceInput, testPorts: { pol
       if (inactive) {
         yield* stopChild;
         state = { ...state, state: inactive === "configuration_unavailable" ? "blocked" : inactive as "disabled" | "not_configured",
-          reason: inactive, desiredRevision: configuration?.revision ?? null, collectorEpoch: null, targets: configuration?.agentIds.length ?? 0,
+          reason: inactive, desiredRevision: configuration?.revision ?? null, collectorEpoch: null, targets: configuration?.agentIds.length ?? 0, createsDatabase: false,
           sources: [], ownershipState: "not_observed", lastReceiptAtMs: null, notificationsEnabled: configuration?.notificationsEnabled ?? null,
           nativeRunHealth: { state: "not_observed", observedAtMs: null, tasks: 0 } };
       } else if (configuration) {
@@ -69,13 +73,25 @@ export function startMonitorService(input: MonitorServiceInput, testPorts: { pol
             state = { ...state, state: "blocked", reason: root.failure };
           } else {
             childSignal = new AbortController(); finished = false;
-            expectedSourceCount = root.success === input.durableRoot ? 1 : 2;
+            installationOnly = configuration.mode === "installation";
+            expectedSourceCount = installationOnly ? 0 : root.success === input.durableRoot ? 1 : 2;
             state = { ...state, state: "starting", reason: null, collectorEpoch: null, sources: [], ownershipState: "not_observed", lastReceiptAtMs: null,
-              notificationsEnabled: configuration.notificationsEnabled,
+              notificationsEnabled: configuration.notificationsEnabled, createsDatabase: installationOnly,
               nativeRunHealth: { state: "not_observed", observedAtMs: null, tasks: 0 }, replacements: state.replacements + 1 };
-            const run = monitorProgram({ durableRoot: input.durableRoot, runRoot: root.success, agentIds: configuration.agentIds,
-              read: input.read, signal: childSignal.signal, intervalMs: configuration.intervalMs, includeControlJournal: true,
-              ...(configuration.notificationsEnabled ? {} : { notifications: "off" as const }), publish });
+            const collectorSignal = childSignal.signal, initialize = installationOnly;
+            const run = Effect.gen(function* () {
+              if (initialize) {
+                const storage = yield* Effect.tryPromise({ try: () => readStorageConfiguration(input.durableRoot), catch: error => error });
+                // The original initializer preserves every existing database and
+                // rejects a missing ledger inside an already-owned directory.
+                yield* Effect.uninterruptible(Effect.tryPromise({
+                  try: () => openMonitorStore(input.durableRoot, storage.monitor).initialize(), catch: error => error,
+                }));
+              }
+              yield* monitorProgram({ durableRoot: input.durableRoot, ...(!initialize ? { runRoot: root.success } : {}), agentIds: configuration.agentIds,
+                read: input.read, signal: collectorSignal, intervalMs: configuration.intervalMs, includeControlJournal: !initialize,
+                ...(configuration.notificationsEnabled ? {} : { notifications: "off" as const }), publish });
+            });
             child = yield* Effect.forkScoped(run.pipe(Effect.onExit(exit => Effect.sync(() => {
               finished = true;
               if (Exit.isSuccess(exit)) {

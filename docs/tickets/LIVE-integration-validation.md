@@ -4,7 +4,11 @@
 
 ### 2026-09-24 受控迁移与双 Bot 窗口
 
-[固定报告](../reports/2026-09-24-controlled-dual-bot.md)记录同一授权窗口的历史与当前状态。2026-09-25，原失败操作已完成同 ID 物理恢复，后续 `d15cf498` 固定安装的受控接管及 loaded/committed 对齐实际成功。**双 Bot 验收仍未完成：第一只 Temporal Bot 创建进入 `effect_unknown`，未取得可验证的原生身份回执；没有重发或另换 ID，B/C 未提交，模型/DM/tool/compact/follow-up 未执行。** 当前现场已回官方 Host、desired disabled，实验 modeld 正式停止；49 个原有本机 Bot 身份/harness、模型字节和原 controller 行保留。controller 有 7 条 unknown，产品创建台账另有一条 unknown，均未清除。最新父会话修复未追加独立审查；历史审查仍绑定原范围。原生 40 项及有限静态/模型链资格不扩成完整 E2E、J3/J4、模型矩阵或持久运行通过。
+[固定报告](../reports/2026-09-24-controlled-dual-bot.md)记录同一授权窗口的历史与当前状态。2026-09-25，原失败操作已完成同 ID 物理恢复，后续 `e5979b98` 固定安装在 10:55 UTC 的受控接管及 loaded/committed 对齐实际成功。随后官方磁盘来源从 `83be8f81` 变为 `99eb6cd3`，原进程消失、现役 Host 无 preload，相关运行条件已失效；不能据此重开已完成的旧恢复，也不能把旧时点成功当当前采用许可。创建全局围栏已在 e597 收窄为相同声明/精确目标，独立 B/C 并未被原 A unknown 全局禁止。**双 Bot 验收仍未完成：第一只 Temporal Bot 创建进入 `effect_unknown`，未取得可验证的原生身份回执；没有重发或另换 ID，B/C 未提交，模型/DM/tool/compact/follow-up 未执行。** 当前现场已回官方 Host、desired disabled，实验 modeld 正式停止；49 个原有本机 Bot 身份/harness、模型字节和原 controller 行保留。controller 有 7 条 unknown，产品创建台账另有一条 unknown，均未清除。最新父会话修复未追加独立审查；历史审查仍绑定原范围。原生 40 项及有限静态/模型链资格不扩成完整 E2E、J3/J4、模型矩阵或持久运行通过。
+
+### 安装级观察恢复（2026-09-25）
+
+接手时正式读面确认 Host 变化已识别，但无 Bot collector 配置使 OBS intake 不可用，64 条 health 记录未确认；实际来源的快速压缩附件也超过原 8 MiB。已实现默认安装级本地 intake、0755 安装根下私有观测存储和异步标准压缩，源码与实际来源存储读回检查见[定向修正](../reports/2026-09-25-host-intake-recovery.md)。此处尚未签现役新制品替换或真实积压排空；没有新增 Bot/模型/创建重放或 Host 采用。
 
 ### AH-188 Host 更新分级待验窗口（2026-09-25）
 

@@ -1,0 +1,25 @@
+# Host 更新现场断链：安装级 intake 与实际来源保全
+
+## 起点与产品修正
+
+接手 `e5979b98` 后，正式管理读面实际显示：Host 来源变化已观察到，但 OBS collector 为 `not_configured`，health journal 有 64 条未确认记录，latest 停在 sequence 63；通知接收者未配置。不是 Host 更新没有发生，也不是需要更多资格脚本，而是安装级来源观察被错误地绑在 Bot monitor 配置之后。
+
+同一现场的 27,689,642-byte Host 来源使用 gzip level 1 后，单独 base64 已达 9,724,080 bytes，超过原 8 MiB 附件总额。因此前后 evidenceRef 一直为空；保全重试又在未运行的 intake 前累积。实际来源只读测量不执行 Host，也不证明新版业务兼容。
+
+本次修正复用原 owner，不增加 watcher、数据库或修复 Agent：
+
+- 有效安装配置下，Host 观察默认由原管理 Server collector 提供安装级 intake，零 Bot 目标、不读原生名册、不调用模型。已有 Bot 监控仍用同一个 Scope 串行替换；无配置文件、坏配置或明确关闭观察不会隐式启用默认路径。
+- 只初始化全新观测目录；既有目录缺库、损坏、旧 schema 或活跃其他 collector 继续拒绝，不以重建历史解决问题。允许 owner 控制、不可由他人写入的 0755 安装根；私有观测子目录/文件仍为 0700/0600。
+- 大来源改为异步 gzip level 6，不扩大附件配额或改格式。真实来源经原 capture/read/decompress 路径，保存为 7,778,658 bytes，原字节准确读回；临时材料随后清理，未写现役来源或 profile。
+
+## 已执行的检查与范围
+
+声明工具链 Bun 1.3.14、Node 22.22.0。根/Web 类型、完整构建、runtime boundaries、文档检查通过；安装级生命周期与来源保全 17 个用例通过，包含 0755 根、新初始化、关闭/重启、旧 ledger 缺失拒绝及活跃 epoch 不被夺取。原 OBS 管理 15、Host 健康 19、通知管理 48、运行见证 26、handover 20 个真实 Node 内层用例通过；外层包装不重复相加。原 packed collector 退出/重启及 monitor store 检查通过。
+
+最初 OBS 管理回归暴露默认 collector 与手动 fixture seed 竞争；修正通用自有 fixture 的明确 observation=false 和不存在配置不启动规则后，保留原读只读/身份/游标断言重验通过。一次全来源 Python 差异比较超时，未视为兼容性结论；随后使用有界原 Git diff 获取实际变化范围，未扩大检查或改写源码。
+
+本轮按用户指令不派发 subagent；实现者自测不冒充独立复核。这里首先记录源码和原生来源存储范围，不签新 Host 可采用、真实 Bot 回合、普通用户通知、自动冷启动待办接续或整个双 Bot E2E。当前实际运行结果只回填原 LIVE。
+
+## 接回主线
+
+原操作物理恢复已完成，历史 unknown 不重开。当前 Host 无补丁与其准确来源资格分别处理；已有合格候选的重新加载不应等待 Agent 修改补丁。新来源的 codec/worker 与运行前提仍需针对受影响契约核对，不能从窗口无变化推造整 Host 语义等价。A 原创建 unknown 保留，B/C 独立声明不再受旧全局创建围栏阻挡；实际身份、模型、DM、compact 与非目标收场继续按原场景记录。

@@ -1,11 +1,14 @@
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { projectHostHealth, type HostSourceWindow } from "@grokbox/runtime-kernel/host-health";
-import { gzipSync } from "node:zlib";
+import { gzip } from "node:zlib";
+import { promisify } from "node:util";
 import { openMonitorStore } from "./monitor-store.node.ts";
 import type { HostArtifacts } from "./host-artifact-source.node.ts";
 import { retainHostSourceEvidence, readHostSourceEvidence } from "./provenance.node.ts";
 import { preflightProfileRecipe, type SlicePatch } from "../host/profile.ts";
 import { measureRecipeWindow } from "../ops/host-seam/envelope-windows.ts";
+
+const compressSource = promisify(gzip);
 
 /** Capture from the SAME stable source set as analysis. No new read/watch owner,
  * recipe publication or full-Host semantic claim. The whole worker is a known
@@ -28,7 +31,7 @@ export async function captureHostSourceWindow(root: string, artifacts: HostArtif
     coverage: "recipe-windows-and-worker", slices: measured.map(({ id, sha256 }) => ({ id, sha256 })), evidenceRef: null };
   // Private material is bounded by the provenance owner. Failure is represented
   // by evidenceRef=null and therefore unknown, not silently replaced by live bytes.
-  try { value.evidenceRef = await retainHostSourceEvidence(root, { version: 1, window: value, recipe: slices, windows: measured, sourceGzip: gzipSync(artifacts.source, { level: 1 }).toString("base64"), worker }); }
+  try { value.evidenceRef = await retainHostSourceEvidence(root, { version: 1, window: value, recipe: slices, windows: measured, sourceGzip: (await compressSource(artifacts.source, { level: 6 })).toString("base64"), worker }); }
   catch { /* finite evidence-unavailable classification, never execution success */ }
   return value;
 }

@@ -156,7 +156,7 @@ export async function startManagementServer(options: ManagementServerOptions, te
     return { component: "server", state: failed ? "failed" : stopped ? "stopped" : closing ? "stopping" : "running",
       observation: { owner: worker.owner, state: worker.state, reason: worker.reason, desiredRevision: worker.desiredRevision,
         collectorEpoch: worker.collectorEpoch, startedAtMs: worker.startedAtMs, lastReceiptAtMs: worker.lastReceiptAtMs,
-        replacements: worker.replacements, targets: worker.targets, createsDatabase: false, notifiesDirectly: false, bootInstalled: false },
+        replacements: worker.replacements, targets: worker.targets, createsDatabase: worker.createsDatabase, notifiesDirectly: false, bootInstalled: false },
       workers,
       effectivePolicy: {
         observation: { enabled: worker.desiredRevision !== null && worker.state !== "disabled" && worker.state !== "not_configured",

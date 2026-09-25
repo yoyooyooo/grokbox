@@ -24,7 +24,7 @@ export type ManagementServiceView = {
     state: "not_configured" | "disabled" | "starting" | "running" | "degraded" | "blocked" | "stopping" | "stopped";
     reason: string | null; desiredRevision: string | null; collectorEpoch: string | null;
     startedAtMs: number; lastReceiptAtMs: number | null; replacements: number; targets: number;
-    createsDatabase: false; notifiesDirectly: false; bootInstalled: false;
+    createsDatabase: boolean; notifiesDirectly: false; bootInstalled: false;
   };
   /** Present on current servers; optional for older authenticated clients. */
   workers?: ManagedWorkerView[];

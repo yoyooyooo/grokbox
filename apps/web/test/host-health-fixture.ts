@@ -21,7 +21,7 @@ export async function hostHealthFixture(origin:string, settings:{disabled?:boole
   const writeProfile=async(text=source, selected:readonly SlicePatch[]=slices)=>publishConfigFile(paths.profile,profileFromSource(text,selected,"public-health-fixture"));
   await writeFile(paths.source,source,{mode:0o600});await writeFile(paths.worker,"// Independent companion.\nmodule.exports = {};\n",{mode:0o600});await writeProfile();
   if(settings.badRecipe)await writeFile(paths.source,source+"\n// source drift\n",{mode:0o600});
-  const config=validateConfig({...defaultConfig(),runtime:{desiredMode:settings.disabled?"disabled":"identity",continuity:{enabled:false}}});
+  const config=validateConfig({...defaultConfig(),...(settings.ports?.enabled===false?{ops:{observation:{enabled:false}}}:{}),runtime:{desiredMode:settings.disabled?"disabled":"identity",continuity:{enabled:false}}});
   await publishConfigFile(join(root,"config.json"),config);
   const state={nativeCalls:0,pids:[] as number[],grants:[{principalId:"owner",tokenSha256:digest(H_OWNER),capabilities:[...CAPABILITIES]},
     {principalId:"reader",tokenSha256:digest(H_READER),capabilities:["bots.read","console.grants.create"]}] as AccessGrant[]};

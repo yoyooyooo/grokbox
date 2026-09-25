@@ -4,7 +4,7 @@
 
 ## 范围与能力现状
 
-`ops.observation.enabled` 独立控制 Host 的只读兼容性观察，默认 `true`；它不从 `runtime.desiredMode`、`ops.enabled` 或用户通知模式推导。安装所有者通过原 `system config` 的 ops 域修改，配置提交不等于运行采用。Server 向 Host-health 的 `observationEnabled` 端口按轮读取当前配置；读取失败不回退到默认启用。这个字段不参与接收者投递指纹，关闭观察不会伪造撤销、重新配对或新的发送授权。生产者端的动态控制由 HOST-01/AH-188 提供，实际运行验证仍归原 LIVE。
+`ops.observation.enabled` 独立控制 Host 的只读兼容性观察，默认 `true`；它不从 `runtime.desiredMode`、`ops.enabled` 或用户通知模式推导。安装所有者通过原 `system config` 的 ops 域修改，配置提交不等于运行采用。Server 向 Host-health 的 `observationEnabled` 端口按轮读取当前配置；读取失败不回退到默认启用。这个字段不参与接收者投递指纹，关闭观察不会伪造撤销、重新配对或新的发送授权。生产者端的动态控制由 HOST-01/AH-188 提供。已有有效安装配置且观察开启时，管理 Server 复用原 collector 建立安装级本地 intake；不要求先配置 Bot 名单、接收者或启用自定义模型。它只在全新观测目录初始化原 SQLite，已有目录缺库、损坏或旧 schema 继续拒绝；不迁移/替换历史。安装根可以是 owner 控制的 0755，观测子目录/文件仍为 0700/0600。显式 Bot monitor 保留自己的目标与 journal，关闭 Bot monitor 不默认关闭 Host 观察。`createsDatabase` 只说明该本地模式能初始化新库，不代表任何用户通知、Bot 身份或模型资格；GET 自身仍不初始化。实际运行验证归原 LIVE。
 
 三条行为链分开：自动通知默认只提醒并结束；用户明确委托后，原生 Bot 可在任务范围内自主取证、操作和核验；独立预授权维护还需对应能力/预算/原生安全门。通知模式不是所有 Bot 的永久只读 persona，也不是诊断/重启/公开授权。
 

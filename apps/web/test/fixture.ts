@@ -47,6 +47,7 @@ export async function webFixture(origin: string) {
   let server = await startManagementServer(options, testPorts);
   options.port = Number(new URL(server.url).port);
   const config = defaultConfig();
+  config.ops = { ...config.ops, observation: { enabled: false } };
   config.client.profiles = { default: { serverUrl: server.url, daemonTokenRef: "env:SYNTHETIC_MANAGEMENT_CREDENTIAL", installationId: INSTALLATION } };
   config.client.currentProfile = "default";
   await publishConfigFile(join(root, "config.json"), config);
