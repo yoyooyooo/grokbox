@@ -106,6 +106,7 @@ const rule = object({
 }, ["id", "when", "action"]);
 export const OPS_SCHEMA = object({
   enabled: boolean, preset: enumeration("user", "maintainer"), presetRevision: { type: "integer", enum: [1] },
+  observation: object({ enabled: boolean }),
   monitor: object({ enabled: boolean, deepReplay: boolean, upstreamAdvisory: boolean, intervalMs: integer(10_000, 300_000) }),
   notifications: object({ mode: enumeration("off", "actionable-user"), channel: enumeration("bot-webhook"),
     maxAutomaticWakeupsPerDay: integer(0, 1000), criticalReservePerDay: integer(0, 100),
@@ -247,6 +248,7 @@ export function validateDaemonIntent(value: unknown): DaemonIntent {
 
 const DEFAULT_OPS: JsonObject = {
   enabled: true, preset: "user", presetRevision: 1,
+  observation: { enabled: true },
   monitor: { enabled: true, deepReplay: false, upstreamAdvisory: false, intervalMs: 30_000 },
   notifications: { mode: "actionable-user", channel: "bot-webhook", maxAutomaticWakeupsPerDay: 2, criticalReservePerDay: 1, digest: false, allowDuplicateDelivery: false },
   diagnostics: { mode: "on-request" }, canary: { enabled: false }, maintenance: { mode: "off" },

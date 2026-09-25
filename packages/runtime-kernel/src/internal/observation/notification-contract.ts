@@ -23,6 +23,14 @@ export type NotificationTarget = { alias: string; agentId: string; routineKey: s
 export type NotificationRoute = { state: "selected"; target: NotificationTarget } | { state: "blocked"; reason:
   "notifications_off" | "routing_unsupported" | "mode_unsupported" | "target_missing" | "target_disabled" | "target_unconfigured" | "intent_not_allowed" | "data_policy_unsupported" };
 
+/** Observation does not grant, revoke, or change the fixed recipient policy.
+ * Excluding this new independent field also preserves pre-existing notice
+ * fingerprints; a read-only switch must not require paid receivers to rebind. */
+export function notificationPolicyRevision(ops: unknown): string {
+  const { observation: _observation, ...delivery } = ops as Record<string, unknown>;
+  return sha256Text(canonicalJson(delivery));
+}
+
 /** Takes the already validated effective ops domain, never anything in an event
  * payload. Only the default single-target path is admitted; no fallback or LLM. */
 export function selectNotificationTarget(ops: unknown): NotificationRoute {
@@ -44,7 +52,7 @@ export function selectNotificationTarget(ops: unknown): NotificationRoute {
   if (!limit(installationLimit) || !limit(targetLimit)) return fail();
   // The reserve is never borrowed by this first lane. All attempts use the
   // ordinary cap, counted across aliases of the same actual Agent identity.
-  return { state: "selected", target: { alias: name, agentId, routineKey, policyRevision: sha256Text(canonicalJson(ops)),
+  return { state: "selected", target: { alias: name, agentId, routineKey, policyRevision: notificationPolicyRevision(ops),
     dataPolicy: "safe-summary", installationLimit, targetLimit } };
 }
 export function validateNotificationTarget(v: NotificationTarget): NotificationTarget {

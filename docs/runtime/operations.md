@@ -4,6 +4,8 @@
 
 ## 范围与能力现状
 
+`ops.observation.enabled` 独立控制 Host 的只读兼容性观察，默认 `true`；它不从 `runtime.desiredMode`、`ops.enabled` 或用户通知模式推导。安装所有者通过原 `system config` 的 ops 域修改，配置提交不等于运行采用。Server 向 Host-health 的 `observationEnabled` 端口按轮读取当前配置；读取失败不回退到默认启用。这个字段不参与接收者投递指纹，关闭观察不会伪造撤销、重新配对或新的发送授权。生产者端的动态控制由 HOST-01/AH-188 提供，实际运行验证仍归原 LIVE。
+
 三条行为链分开：自动通知默认只提醒并结束；用户明确委托后，原生 Bot 可在任务范围内自主取证、操作和核验；独立预授权维护还需对应能力/预算/原生安全门。通知模式不是所有 Bot 的永久只读 persona，也不是诊断/重启/公开授权。
 
 源码提供 incident/evidence、管理 Server 所属 collector/sender、Routine 管理/provision、私有配对、接收者预检、显式发送和持续通知授权。collector/sender 已复用原实现移入管理 Server Scope，旧 daemon 不再启动二者；采集状态由 `system service get server`、通知安全状态由 `notification status` 读取，具体接线与证据范围见 [CLI-05](../tickets/CLI-05-implementation-follow-through.md)。已安装的诊断 writer 共享写前容量接纳；执行历史、compact 和 provision 由原 owner 压缩已结算明细并保留拒绝旧操作的标记。`runtime services`只对已证明可用且启用 linger 的 systemd 用户管理器注册精确 daemon/modeld 单元，预览/状态不安装，确认也不修改原生 Host。目标机器的启动管理器、当前制品采用、实际原生提醒与 unknown 对账需各自资格，不能由源码存在或已注册单元推导整条无人值守交付。

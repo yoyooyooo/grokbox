@@ -1,6 +1,6 @@
 import { canonicalJson, sha256Text } from "../../hash.ts";
 import { observationOwn as own } from "../contract/provider-observation.ts";
-import { validateNotificationTarget, type NotificationTarget, type NotificationScope } from "./notification-contract.ts";
+import { notificationPolicyRevision, validateNotificationTarget, type NotificationTarget, type NotificationScope } from "./notification-contract.ts";
 import { routineAgentId, routineId, routineRevision, type RoutineView, type RoutineSnapshot } from "../../routines.ts";
 import { automaticAuthorizationView, type NoticeAuthorization } from "./notification-activation.ts";
 
@@ -26,7 +26,7 @@ export function pairingTarget(ops: unknown, name: string): NotificationTarget {
   if (own(t, "dataPolicy") !== "safe-summary" || !Array.isArray(intents) || !intents.includes("brief-notice")
     || own(t, "modelChangePolicy") !== "require-rebind") return pairingFail("unsupported_target");
   try { return validateNotificationTarget({ alias: name, agentId: own(t, "agentId") as string, routineKey: own(t, "routineKey") as string,
-    policyRevision: sha256Text(canonicalJson(ops)), dataPolicy: "safe-summary",
+    policyRevision: notificationPolicyRevision(ops), dataPolicy: "safe-summary",
     installationLimit: own(notifications, "maxAutomaticWakeupsPerDay") as number,
     targetLimit: (own(t, "maxAutomaticWakeupsPerDay") ?? own(notifications, "maxAutomaticWakeupsPerDay")) as number }); }
   catch { return pairingFail("unsupported_target"); }

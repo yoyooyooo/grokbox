@@ -4,8 +4,8 @@ import { Effect, Fiber, ManagedRuntime, Scope } from "effect";
 import { API_VERSION, ManagementClientError, REQUEST_MAX_BYTES, RESPONSE_MAX_BYTES, UUID, type ApiReply, type ModelOperation, type ManagementServiceView, type Capability } from "@grokbox/client/contract";
 import { ModelManagementError } from "@grokbox/runtime-kernel/model-management";
 import { BoxRuntimeError } from "@grokbox/runtime-kernel/contract";
-import { parseConfigJson } from "@grokbox/runtime-kernel/config";
-import { ManagementSourceError, modelConfigurationLayer, startMonitorService, startOpsNotificationWorker, type AutomaticNoticeWorkerStatus, type MonitorServiceStatus, type RuntimeStore } from "@grokbox/box-runtime/runtime";
+import { effectiveOps, parseConfigJson } from "@grokbox/runtime-kernel/config";
+import { ManagementSourceError, modelConfigurationLayer, openConfigStore, rootConfigLayout, startMonitorService, startOpsNotificationWorker, type AutomaticNoticeWorkerStatus, type MonitorServiceStatus, type RuntimeStore } from "@grokbox/box-runtime/runtime";
 import { application, type ApplicationOptions } from "./application.ts";
 import type { LifecycleDomain } from "./lifecycle.ts";
 import type { ContextDomain } from "./context.ts";
@@ -428,7 +428,16 @@ export async function startManagementServer(options: ManagementServerOptions, te
       worker=>Effect.promise(()=>worker.close()),
     ).pipe(Effect.provideService(Scope.Scope,runtime.scope)));
     hostHealth = await runtime.runPromise(Effect.acquireRelease(
-      Effect.sync(()=>startHostHealth({root:options.store.root,installationId,enabled:testPorts.hostHealth?.enabled,readWitness:options.native.readHostWitness},testPorts.hostHealth)),
+      Effect.sync(() => {
+        // This is current intent, not a captured startup snapshot or runtime
+        // adoption permission. A read failure reaches the observer as failure.
+        const input = { root: options.store.root, installationId, enabled: testPorts.hostHealth?.enabled,
+          readWitness: options.native.readHostWitness, observationEnabled: async () => {
+            const snapshot = await openConfigStore(rootConfigLayout(options.store.root)).read();
+            return (effectiveOps(snapshot.document.ops).observation as { enabled: boolean }).enabled;
+          } };
+        return startHostHealth(input, testPorts.hostHealth);
+      }),
       worker=>Effect.promise(()=>worker.close()),
     ).pipe(Effect.provideService(Scope.Scope,runtime.scope)));
     const address = server.address();
