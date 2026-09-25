@@ -59,7 +59,7 @@ function notificationRetryView(value: Record<string, unknown>): boolean {
   const retry = value.retry, history = value.attemptHistory;
   if (!record(retry) || !exact(retry, ["state", "reason", "attempts", "notBeforeMs"])
     || !["not_retryable", "waiting", "ready"].includes(String(retry.state))
-    || !["not_attempted", "explicit_or_test_owned", "not_definitely_rejected", "retry_limit", "clock_reversed", "expired", "definite_rejection", "receiver_reported"].includes(String(retry.reason))
+    || !["not_attempted", "explicit_or_test_owned", "not_definitely_rejected", "retry_limit", "clock_reversed", "expired", "definite_rejection", "receiver_reported", "work_outcome_unknown"].includes(String(retry.reason))
     || !number(retry.attempts) || retry.attempts > 3 || !Array.isArray(history) || history.length !== retry.attempts) return false;
   const seen = new Set<string>();
   let previousSettled = 0;
@@ -77,8 +77,9 @@ function notificationRetryView(value: Record<string, unknown>): boolean {
   const last = history.at(-1);
   if (value.attempt === null ? history.length !== 0 : !record(value.attempt) || !last || last.attemptId !== value.attempt.attemptId
     || last.state !== value.attempt.state || last.reservedAtMs !== value.attempt.reservedAtMs || last.settledAtMs !== value.attempt.settledAtMs) return false;
+  if (retry.reason === "work_outcome_unknown" && value.state !== "unknown") return false;
   if (retry.state === "not_retryable") return retry.notBeforeMs === null && retry.reason !== "definite_rejection";
-  return value.purpose === "incident" && retry.reason === "definite_rejection" && history.length > 0 && history.length < 3
+  return value.state !== "unknown" && value.purpose === "incident" && retry.reason === "definite_rejection" && history.length > 0 && history.length < 3
     && last.state === "definitely-not-accepted" && number(retry.notBeforeMs, 1)
     && retry.notBeforeMs > last.settledAtMs && retry.notBeforeMs < Number(value.expiresAtMs);
 }

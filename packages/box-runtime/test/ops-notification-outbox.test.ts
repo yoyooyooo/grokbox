@@ -118,6 +118,33 @@ test("a rejected attempt does not permit a changed model or a restored older rej
   } finally { await f.close(); }
 });
 
+test("restoring an older rejection quarantines the later unknown dispatch and releases the queue for new work", async () => {
+  const f = await fixture();
+  try {
+    const workId = await f.work(), floor = f.now() - 1, replayFence = createNoticeReplayFence(floor); let calls = 0;
+    const driver = driverFor(f, async () => ++calls === 1
+      ? { state: "definitely-not-accepted", reason: "native_rejected" }
+      : { state: "unknown", reason: "acknowledgement_lost" });
+    const input = { durableRoot: f.root, workId, driver, now: f.now, replayFence, automaticRetry: true as const };
+    expect(await runOpsNotificationDelivery(input)).toMatchObject({ state: "definitely-not-accepted" });
+    f.advance(30000); const rejected = await readFile(f.store.path);
+    expect(await runOpsNotificationDelivery(input)).toMatchObject({ state: "unknown" });
+    await writeFile(f.store.path, rejected, { mode: 0o600 });
+    const restored = await f.store.notificationDelivery(workId, undefined, f.now());
+    expect(restored.retry?.state).toBe("ready");
+    expect(replayFence.priorAttempt(restored.occurrenceIdentity!, f.now(), { workId, attemptId: restored.attempt!.attemptId })).toBe("prior_lifetime_attempt");
+    expect(await f.store.quarantineRestoredNotification(workId, restored.occurrenceIdentity!)).toEqual({ state: "quarantined" });
+    expect(await f.store.notificationDelivery(workId, undefined, f.now())).toMatchObject({ state: "unknown",
+      attemptHistory: [{ state: "definitely-not-accepted" }], retry: { state: "not_retryable", reason: "work_outcome_unknown" } });
+    expect(await f.store.nextAutomaticNotification(floor, f.now())).toBeNull();
+    f.advance(1); const next = await f.work();
+    expect(await f.store.nextAutomaticNotification(floor, f.now())).toBe(next);
+    const accepted = driverFor(f, async () => { calls++; return { state: "native-accepted" }; });
+    expect(await runOpsNotificationDelivery({ ...input, workId: next, driver: accepted })).toMatchObject({ state: "native-accepted" });
+    expect(calls).toBe(3);
+  } finally { await f.close(); }
+});
+
 test("single delivery commits its fixed body and budget before network; DB and config locks are free during transport", async () => {
   const f = await fixture();
   try {

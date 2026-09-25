@@ -98,11 +98,12 @@ async function attemptHistory(db: MonitorSqlite, workId: string) {
   return { rows, records };
 }
 function retryStatus(history: Awaited<ReturnType<typeof attemptHistory>>, expiresAtMs: number, nowMs: number,
-  separatelyOwned: boolean): RetryStatus {
+  separatelyOwned: boolean, workUnknown = false): RetryStatus {
   const attempts = history.rows.length, base = { attempts, notBeforeMs: null };
   const last = history.rows.at(-1), record = history.records.at(-1);
+  if (record?.taskReceipt) return { ...base, state: "not_retryable", reason: "receiver_reported" };
+  if (workUnknown) return { ...base, state: "not_retryable", reason: "work_outcome_unknown" };
   if (!last || !record) return { ...base, state: "not_retryable", reason: "not_attempted" };
-  if (record.taskReceipt) return { ...base, state: "not_retryable", reason: "receiver_reported" };
   if (separatelyOwned || record.frozen.incidentId === null) return { ...base, state: "not_retryable", reason: "explicit_or_test_owned" };
   if (last.state !== "definitely-not-accepted" || record.result?.state !== "definitely-not-accepted"
     || record.result.reason !== "native_rejected") return { ...base, state: "not_retryable", reason: "not_definitely_rejected" };
@@ -329,10 +330,17 @@ export function notificationOutbox(access: Access) {
           JOIN incidents i ON i.id=w.incident_id WHERE w.id=?`, [workId]);
         if (!work || sha256Text(canonicalJson([work.scope, work.rule, work.occurrence_key, work.first_seen])) !== occurrenceIdentity)
           return { state: "unavailable" as const };
-        if (await db.first("SELECT 1 FROM notification_attempts WHERE work_id=?", [workId])) return { state: "already_attempted" as const };
-        // A live sender remembers the occurrence, but the restored database has
-        // lost its attempt. Preserve unknown instead of fabricating acceptance
-        // or letting this oldest work starve unrelated new notifications.
+        const history = await attemptHistory(db, workId);
+        // The database may retain an OLD rejected attempt while losing the live
+        // sender's later uncertain dispatch. That stale prefix is no more
+        // authority to retry than a completely missing attempt history.
+        if (history.rows.some((row, index) => {
+          const record = history.records[index]!;
+          return row.state !== "definitely-not-accepted" || record.result?.state !== "definitely-not-accepted"
+            || record.result.reason !== "native_rejected" || record.taskReceipt !== undefined;
+        })) return { state: "already_attempted" as const };
+        // Preserve the original rejected prefix, record uncertainty on its work,
+        // and stop it starving unrelated work. Do not invent the lost attempt.
         if (["ready", "blocked", "preparing"].includes(String(work.state)))
           await db.run("UPDATE notification_work SET state='unknown',last_reason='live_attempt_missing_after_restore' WHERE id=?", [workId]);
         return { state: "quarantined" as const };
@@ -364,7 +372,7 @@ export function notificationOutbox(access: Access) {
             envelopeDigest: decoded.frozen.envelopeDigest, envelopeBytes: decoded.frozen.envelopeBytes,
             reservedAtMs: Number(attempt.reserved_at), settledAtMs: attempt.settled_at === null ? null : Number(attempt.settled_at), result: decoded.result } : null,
           task: decoded?.frozen.task ?? null, taskReceipt: decoded?.taskReceipt ?? null,
-          retry: retryStatus(history, Number(work.expires_at), nowMs, test !== null || manual !== null),
+          retry: retryStatus(history, Number(work.expires_at), nowMs, test !== null || manual !== null, work.state === "unknown"),
           attemptHistory: history.rows.map((row, index) => ({ attemptId: String(row.id), state: state(row.state),
             reservedAtMs: Number(row.reserved_at), settledAtMs: row.settled_at === null ? null : Number(row.settled_at),
             result: history.records[index]!.result })),

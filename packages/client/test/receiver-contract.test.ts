@@ -60,7 +60,11 @@ test("retry views bind bounded history to the exact latest attempt and reject un
     retry: { state: "ready", reason: "definite_rejection", attempts: 1, notBeforeMs: 30003 },
     attemptHistory: [{ attemptId: B, state: "definitely-not-accepted", reservedAtMs: 2, settledAtMs: 3 }] };
   expect((await client(() => value).api.notification(value.notificationRef)).data).toEqual(value);
+  const quarantined: NotificationView = { ...value, state: "unknown", retry: { state: "not_retryable", reason: "work_outcome_unknown", attempts: 1, notBeforeMs: null } };
+  expect((await client(() => quarantined).api.notification(value.notificationRef)).data).toEqual(quarantined);
+  await expect(client(() => ({ ...quarantined, state: "blocked" })).api.notification(value.notificationRef)).rejects.toMatchObject({ code: "protocol_error" });
   for (const patch of [
+    { state: "unknown" },
     { retry: { ...value.retry, attempts: 4 } }, { retry: { ...value.retry, notBeforeMs: 100001 } },
     { attemptHistory: [{ ...value.attemptHistory![0], state: "unknown" }] },
     { attemptHistory: [{ ...value.attemptHistory![0], body: "private" }] },
