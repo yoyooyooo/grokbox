@@ -7,6 +7,7 @@ import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import { LIVE_HOST_BUNDLE, LIVE_SLICE_PATCHES } from "../host/live-slices.ts";
 import { HOST_RECIPE } from "../host/source-recipes.ts";
 import { nativeCheckpointPair } from "../host/native-checkpoint-pair.ts";
+import { refreshCurrentStateSourceBindings } from "../host/native-current-state-slices.ts";
 import { parseProfileCapability, upgradeProfileCapability, type CapabilityUpgradeReceipt, type ProfileCapability } from "../host/profile-capabilities.ts";
 import { acquireAdvisoryGate } from "../io/advisory-gate.node.ts";
 import {
@@ -80,7 +81,8 @@ export type ProfileWriteRefusal =
   | "capability_baseline_changed"
   | "refresh_baseline_invalid"
   | "refresh_baseline_changed"
-  | "source_pair_unqualified";
+  | "source_pair_unqualified"
+  | "source_binding_review_required";
 
 export type WriteEnvelopeReceipt = {
   bootstrap: boolean;
@@ -100,7 +102,7 @@ export type WriteReviewedProfileReceipt = {
   unretained_source?: true;
   envelope?: WriteEnvelopeReceipt;
   capabilityUpgrade?: CapabilityUpgradeReceipt;
-  sourceRefresh?: { baselineProfileSha256: string; previousSourceSha256: string; preservedIds: SliceId[] };
+  sourceRefresh?: { baselineProfileSha256: string; previousSourceSha256: string; preservedIds: SliceId[]; reboundIds: SliceId[] };
 };
 
 export function profileWriteUnretainedNext(fromPath: string): string {
@@ -595,12 +597,19 @@ export async function writeReviewedProfileFromCopy(
     slices = authoringSlices(selected.slices);
   }
   const refreshing = refresh ? sourceRefreshBaseline(resolve(lineage!.root), input.expectedReviewedSha!) : undefined;
+  let reboundIds: SliceId[] = [];
   if (refreshing) {
     if (resolve(refreshing.path) !== profilePath) invalid("Source refresh must use the reviewed profile's canonical destination.");
     slices = authoringSlices(refreshing.profile.slices);
-    if (slices.some(slice => slice.id.startsWith("continuity-native-")) && !nativeCheckpointPair(diskSha))
-      refuse("source_pair_unqualified", "The preserved native checkpoint/current-state capability requires qualification of this new source pair before publication.",
+    if (slices.some(slice => slice.id.startsWith("continuity-native-"))) {
+      const pair = nativeCheckpointPair(diskSha);
+      if (!pair) refuse("source_pair_unqualified", "The preserved native checkpoint/current-state capability requires qualification of this new source pair before publication.",
         "grokbox system host health");
+      try { const rebound = refreshCurrentStateSourceBindings(slices, refreshing.profile.sourceSha256, pair);
+        slices = rebound.slices; reboundIds = rebound.reboundIds;
+      } catch { refuse("source_binding_review_required", "A source-bound registration differs from its reviewed template; an explicit recipe change is required.",
+        profileRecipeFailureNext(hostBundle)); }
+    }
   }
   const inspected = preflightProfileRecipe(source, slices, profileId);
   if (!inspected.ok) {
@@ -708,7 +717,7 @@ export async function writeReviewedProfileFromCopy(
     ...(envelope ? { envelope } : {}),
     ...(selected ? { capabilityUpgrade: selected.receipt } : {}),
     ...(refreshing ? { sourceRefresh: { baselineProfileSha256: refreshing.sha, previousSourceSha256: refreshing.profile.sourceSha256,
-      preservedIds: refreshing.profile.slices.map(slice => slice.id) } } : {}),
+      preservedIds: refreshing.profile.slices.map(slice => slice.id), reboundIds } } : {}),
   };
 }
 

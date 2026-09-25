@@ -36,7 +36,7 @@
 
 ## 保留完整配方的新来源刷新
 
-进一步实施 `--refresh-reviewed`：原发布者在一个原子写中把现有全部审核切片绑定到新 retained source，校验原 reviewed 文件摘要并在 gate 内重核，不先发布 core 再补回其余能力。原窗口 drift 的准确 slice review、原生 pair 资格、源码/输出摘要要求保留；该命令不改 recipe、checkpoint 业务数据或运行状态，也不冒充自动维护授权。
+进一步实施 `--refresh-reviewed`：原发布者在一个原子写中把现有全部审核切片绑定到新 retained source，校验原 reviewed 文件摘要并在 gate 内重核，不先发布 core 再补回其余能力。原窗口 drift 的准确 slice review、原生 pair 资格、源码/输出摘要要求保留。两个 current-state 注册切片内嵌来源身份；仅完整旧模板吻合时重绑这两个声明槽位，并明确返回 reboundIds，其余切片字节不变。模板有额外修改则要求显式 recipe review，不做任意哈希替换。实际原 61 切片经两处重绑后，与本次通过原生资格的完整配方相同；该命令不改业务逻辑、checkpoint 数据或运行状态，也不冒充自动维护授权。
 
 `8aeda5f9/0378b9f4` 的原生隔离组 40/0（native Node 22.14.0）、原生接收模型与持久化后切换两项通过；这些与 CLI 本身的声明 Bun/Node 验证分开。CLI 实际解析→原发布者的完整刷新、错误摘要拒绝、全部切片保留，以及 gate 内并发写入拒绝已测试。新绑定不是任意未来 Host 的资格；完整 Agent 自动修复/策略授权仍属原 AH-189/AH-190。
 

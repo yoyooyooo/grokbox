@@ -151,4 +151,26 @@ export function nativeCurrentStateSlices(pair: NativeCheckpointPair): readonly S
   },
 ];
 }
+/** Source identity is qualification data, not a new recipe. Refresh exactly the
+ * two declared registration slots only when the entire old template matches;
+ * never rewrite arbitrary hashes or overwrite a separately reviewed change. */
+export function refreshCurrentStateSourceBindings(slices: readonly SlicePatch[], previousSourceSha: string, pair: NativeCheckpointPair): {
+  slices: SlicePatch[]; reboundIds: SlicePatch["id"][];
+} {
+  if (!/^[a-f0-9]{64}$/.test(previousSourceSha) || !/^[a-f0-9]{64}$/.test(pair.host)) throw Error("source-binding-invalid");
+  const ids = new Set(["continuity-native-created-owner", "continuity-native-session-owner"]);
+  const before = new Map(nativeCurrentStateSlices({ ...pair, host: previousSourceSha }).map(slice => [slice.id, slice]));
+  const after = new Map(nativeCurrentStateSlices(pair).map(slice => [slice.id, slice]));
+  const reboundIds: SlicePatch["id"][] = [];
+  const next = slices.map(slice => {
+    if (!ids.has(slice.id)) return { ...slice };
+    const expected = before.get(slice.id)!;
+    if ((["startAnchor", "endAnchor", "find", "replacement"] as const).some(key => slice[key] !== expected[key]))
+      throw Error("source-binding-recipe-review-required");
+    const updated = after.get(slice.id)!;
+    if (updated.replacement !== slice.replacement) reboundIds.push(slice.id);
+    return { ...updated };
+  });
+  return { slices: next, reboundIds };
+}
 export const NATIVE_CURRENT_STATE_SLICES = nativeCurrentStateSlices(NATIVE_CHECKPOINT_PAIR);

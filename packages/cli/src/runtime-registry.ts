@@ -398,7 +398,7 @@ export const RUNTIME_COMMANDS: readonly LeafCommand[] = [
       { flags: "--confirm", description: "Required with --from --allow-unretained" },
       { flags: "--slice-review <id...>", description: "Exact rejecting envelope slice ids (windowSha/count/find.inWindow)" },
       { flags: "--capability <name>", description: "Upgrade the selected ownership-local or current-state capability and dependencies; requires --sha and an applicable baseline" },
-      { flags: "--refresh-reviewed", description: "Bind every existing reviewed slice to the retained source in one publication; no capability or replacement changes" },
+      { flags: "--refresh-reviewed", description: "Preserve reviewed capabilities and refresh only declared source-identity slots in one retained-source publication" },
       { flags: "--expected-reviewed-sha <sha>", description: "Required with --capability or --refresh-reviewed: exact prior reviewed file digest; rejects intervening changes" },
     ]),
     stdin: "none",

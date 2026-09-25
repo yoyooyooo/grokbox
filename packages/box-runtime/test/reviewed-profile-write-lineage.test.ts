@@ -52,7 +52,7 @@ test("source refresh preserves all approved slices in one publication, without a
   expect(await readFile(f.profilePath,"utf8")).toBe(f.original);
   const result=await writeReviewedProfileFromCopy(f.input);
   expect(result.profile.sourceSha256).toBe(f.afterSha);expect(result.profile.slices).toEqual(f.before.profile.slices);
-  expect(result.sourceRefresh).toEqual({baselineProfileSha256:sha256Text(f.original),previousSourceSha256:f.beforeSha,preservedIds:f.before.profile.slices.map(s=>s.id)});
+  expect(result.sourceRefresh).toEqual({baselineProfileSha256:sha256Text(f.original),previousSourceSha256:f.beforeSha,preservedIds:f.before.profile.slices.map(s=>s.id),reboundIds:[]});
   expect(result.envelope?.rejectingIds).toEqual([]);expect(result.capabilityUpgrade).toBeUndefined();
   expect(await readFile(retainedGenerationSourcePath(f.root,f.beforeSha),"utf8")).toBe(f.before.source);
  }finally{await rm(f.root,{recursive:true,force:true});}
