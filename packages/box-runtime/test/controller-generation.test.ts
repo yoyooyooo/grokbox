@@ -2,7 +2,7 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { expectedCompileReceipt } from "../src/internal/host/compile-receipt.ts";
 import { profileFromSource } from "../src/internal/host/profile.ts";
 import {
-  commitObservedAdopt, type ObservedAdoptState,
+  commitObservedAdopt, recoverControllerOperationState, type ObservedAdoptState,
   controllerOperationId,
   observeControllerHostGeneration,
   observedAdoptCommitEligible,
@@ -253,6 +253,14 @@ async function interruptedFixture(fault?: string) {
     prepareInterruptedObservedCommit({ boxRoot: f.root, runRoot: f.root, snapshot, processes, classify }) } };
 }
 (process.platform === "linux" ? describe : describe.skip)("observed adoption shares the original identity lease", () => {
+  test("loaded completion selects the original operation and cannot be combined with retirement", async () => {
+    const f = await interruptedFixture();
+    expect(await recoverControllerOperationState({ boxRoot: f.root, ephemeralRoot: f.root, completeLoaded: "different-operation" }))
+      .toMatchObject({ outcome: "blocked", reason: "loaded-original-marker-mismatch", signaled: false, replayAuthorized: false });
+    await expect(recoverControllerOperationState({ boxRoot: f.root, ephemeralRoot: f.root, completeLoaded: marker.operationId,
+      restoreOperation: marker.operationId, confirm: true })).rejects.toThrow("separately from restoration");
+    expect(await authority.readAttestation(f.root)).toBeNull();
+  });
   test("interrupted exact child can finish current adoption without changing the original unknown", async () => {
     const f = await interruptedFixture();
     const original = await readFile(f.storePath, "utf8");

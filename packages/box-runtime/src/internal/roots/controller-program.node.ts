@@ -557,8 +557,6 @@ async function applyLiveControllerAdopt(command: FrozenControllerCommand, signal
 
   const tryCommitObserved = () => commitObservedAdopt({
     operationId: command.operationId, ephemeralRoot, signal,
-    prepareInterrupted: snapshot => prepareInterruptedObservedCommit({ boxRoot: command.boxRoot, runRoot: ephemeralRoot,
-      snapshot, processes: ports.processes, classify: ports.classify }),
     observe: () => {
       const identities = uniqueObservedAdoptIdentities(ports.processes, ports.classify);
       const currentProfile = loadDurableReviewedProfile(command.boxRoot);
@@ -786,7 +784,8 @@ export type OperationRecoveryReport = {
   process: "operation-recovery";
   restoration?: ReturnType<typeof prepareOriginalRestoration>["receipt"];
   restorationHistorical?: true;
-  outcome: "clear" | "ready" | "blocked" | "recovered" | "restored" | "recorded";
+  loadedCompletion?: { operationId: string; state: "eligible" | "committed" | "not-proven"; originalOutcome: "unknown"; preloadSha256: string; hostPid: number };
+  outcome: "clear" | "ready" | "blocked" | "recovered" | "restored" | "recorded" | "completed-loaded";
   reason: string | null;
   locks: Array<OperationLeaseObservation & { name: "controller" | "identity" }>;
   operations: { running: number; unknown: number; terminal: number };
@@ -827,19 +826,68 @@ async function operationRecoveryFacts(boxRoot: string, runRoot: string) {
   return { paths, snapshots, loaded, running, report };
 }
 
-/** Metadata-only recovery, not a second adopt executor. Both physical gates
- * remain owned by this Effect Scope. A partial metadata commit leaves unknown,
- * never a fabricated attestation or permission to replay business work.
- */
-export async function recoverControllerOperationState(input: { boxRoot: string; ephemeralRoot?: string; confirm?: boolean; signal?: AbortSignal; restoreOperation?: string; restorationQualification?: string }, restorationPorts?: RestorationPorts): Promise<OperationRecoveryReport> {
+async function completeInterruptedLoadedAdoption(input: { boxRoot: string; runRoot: string; operationId: string; confirm: boolean; signal?: AbortSignal }, report: OperationRecoveryReport): Promise<OperationRecoveryReport> {
+  const markerPath = join(input.runRoot, "state/preload-marker.json");
+  const marker = readMarkerFile(markerPath);
+  const refuse = (reason: string): OperationRecoveryReport => ({ ...report, outcome: "blocked", reason });
+  if (!marker || marker.operationId !== input.operationId) return refuse("loaded-original-marker-mismatch");
+  const env = readNamedProcEnv(marker.pid, ["NODE_OPTIONS", "GROKBOX_OPERATION_ID"]);
+  const preload = /^--require=(\/[^\s]+\/preload\.cjs)$/.exec(env.NODE_OPTIONS ?? "")?.[1];
+  if (!preload || env.GROKBOX_OPERATION_ID !== input.operationId) return refuse("loaded-original-preload-unproven");
+  const ports = createLiveH3AdoptPorts({ markerPath, preloadNeedle: preload,
+    overlayPath: join(input.runRoot, "state/launch-env.json"), execPath: "/exec-daemon/node", hostBundle: LIVE_HOST_BUNDLE });
+  const observe = (): ObservedAdoptState | null => {
+    const identities = uniqueObservedAdoptIdentities(ports.processes, ports.classify);
+    const profile = loadDurableReviewedProfile(input.boxRoot), currentMarker = readMarkerFile(markerPath), digest = diskPreloadSha256(preload);
+    if (!identities || !profile || !currentMarker || !digest || currentMarker.operationId !== input.operationId
+      || !isDeepStrictEqual(readNamedProcEnv(identities.host.pid, ["NODE_OPTIONS", "GROKBOX_OPERATION_ID"]), env)
+      || !isDeepStrictEqual(ports.processes.inspect(identities.host.pid), identities.host)
+      || !isDeepStrictEqual(ports.processes.inspect(identities.supervisor.pid), identities.supervisor)) return null;
+    return { ...identities, profile, marker: currentMarker, preloadSha256: digest, diskSha256: liveDiskSha(),
+      gatewayPid: ports.readGatewayPid(), hasGrokboxPreload: ports.hasGrokboxPreload(identities.host),
+      supervisorPreloaded: ports.hasGrokboxPreload(identities.supervisor) };
+  };
+  const prepare = (snapshot: ObservedAdoptState) => prepareInterruptedObservedCommit({ boxRoot: input.boxRoot,
+    runRoot: input.runRoot, snapshot, processes: ports.processes, classify: ports.classify });
+  const current = observe();
+  if (!current || !observedAdoptCommitEligible(current)) return refuse("loaded-original-generation-mismatch");
+  const completion = { operationId: input.operationId, originalOutcome: "unknown" as const,
+    preloadSha256: current.preloadSha256, hostPid: current.host.pid };
+  if (!await prepare(current)) return refuse("loaded-original-evidence-unproven");
+  if (!input.confirm) return { ...report, outcome: "ready", loadedCompletion: { ...completion, state: "eligible" },
+    next: `grokbox runtime operation-recovery --complete-loaded ${input.operationId} --confirm` };
+  const locked = await acquireOperationLease(lockPath(input.boxRoot), input.operationId);
+  if (!locked.ok) return refuse("operation_busy");
+  try {
+    const result = await commitObservedAdopt({ operationId: input.operationId, ephemeralRoot: input.runRoot, signal: input.signal,
+      observe, prepareInterrupted: prepare, modeldReady: () => probeModeldHealth(input.runRoot, 80, input.signal) });
+    return { ...report, outcome: result?.ok ? "completed-loaded" : "blocked", reason: result?.ok ? null : result?.code ?? "loaded-original-evidence-unproven",
+      loadedCompletion: { ...completion, state: result?.ok ? "committed" : "not-proven" }, next: "grokbox runtime status --json" };
+  } finally { await locked.lock.release(); }
+}
+
+/** Metadata recovery and explicit completion of one already loaded child share
+ * the original leases and publishers. Neither path signals or replays work. */
+export async function recoverControllerOperationState(input: { boxRoot: string; ephemeralRoot?: string; confirm?: boolean; signal?: AbortSignal; restoreOperation?: string; restorationQualification?: string; completeLoaded?: string }, restorationPorts?: RestorationPorts): Promise<OperationRecoveryReport> {
   const runRoot = input.ephemeralRoot ?? ephemeralRuntimeRoot();
   if (!isAbsolute(input.boxRoot) || !isAbsolute(runRoot)) throw new BoxRuntimeError("invalid_usage", "Operation recovery requires absolute local roots.");
+  if (input.completeLoaded && (input.restoreOperation || input.restorationQualification || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(input.completeLoaded)))
+    throw new BoxRuntimeError("invalid_usage", "Loaded completion requires one original operation, separately from restoration.");
   if (input.restorationQualification && (!input.restoreOperation || !isAbsolute(input.restorationQualification))) throw new BoxRuntimeError("invalid_usage", "A current qualification requires an original operation and an absolute protected file path.");
   // acquireRelease deliberately masks interruption until resource ownership is
   // registered. Refuse an already-cancelled caller before that acquisition starts.
   if (input.signal?.aborted) throw new BoxRuntimeError("invalid_usage", "Operation metadata recovery was cancelled before inspection; no recovery was attempted.",
     { next: "grokbox runtime operation-recovery --json" });
   const program = Effect.gen(function* () {
+    if (input.completeLoaded) {
+      const facts = yield* Effect.tryPromise(() => operationRecoveryFacts(input.boxRoot, runRoot));
+      if (facts.report.reason || facts.report.outcome !== "clear") return { ...facts.report, outcome: "blocked" as const, reason: facts.report.reason ?? "metadata-recovery-required" };
+      return yield* Effect.callback<OperationRecoveryReport, unknown>((resume, signal) => {
+        const work = completeInterruptedLoadedAdoption({ boxRoot: input.boxRoot, runRoot, operationId: input.completeLoaded!, confirm: input.confirm === true, signal }, facts.report);
+        void work.then(result => resume(Effect.succeed(result)), error => resume(Effect.fail(error)));
+        return Effect.promise(async () => { await work.catch(() => undefined); });
+      });
+    }
     if (input.confirm !== true) {
       const facts = yield* Effect.tryPromise(() => operationRecoveryFacts(input.boxRoot, runRoot));
       if (!input.restoreOperation) return facts.report;

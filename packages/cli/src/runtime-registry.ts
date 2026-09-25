@@ -412,11 +412,12 @@ export const RUNTIME_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["runtime", "operation-recovery"],
-    usage: "grokbox runtime operation-recovery [--confirm] [--restore-operation <id>] [--restoration-qualification <path>]",
+    usage: "grokbox runtime operation-recovery [--confirm] [--complete-loaded <id> | --restore-operation <id>] [--restoration-qualification <path>]",
     summary: "Inspect controller/identity leases; explicitly recover proven stale metadata without Host signals or replay.",
     arguments: [],
     options: options([
-      { flags: "--confirm", description: "Recover proven stale metadata or publish an original-operation physical restoration receipt; does not adopt or replay" },
+      { flags: "--complete-loaded <id>", description: "Preview or confirm the exact interrupted child already loaded; commit current adoption without restart, upgrade, or resolving the original unknown" },
+      { flags: "--confirm", description: "Confirm the selected metadata, current loaded completion, or physical restoration; no Host signals or replay" },
       { flags: "--restoration-qualification <path>", description: "Protected current maintainer qualification of historical scope and required resource inventory; modeld must already be stopped, with fresh observation and --confirm" },
       { flags: "--restore-operation <id>", description: "Inspect the historical restoration receipt for this exact failed operation; --confirm publishes it under recovery guards without resolving unknowns" },
     ]),

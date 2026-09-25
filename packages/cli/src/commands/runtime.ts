@@ -296,10 +296,10 @@ export async function runRuntimeReAdopt(deps: CliDeps, confirmed: boolean | unde
   }
 }
 
-export async function runRuntimeOperationRecovery(deps: CliDeps, confirmed: boolean | undefined, restoreOperation?: string, restorationQualification?: string): Promise<void> {
+export async function runRuntimeOperationRecovery(deps: CliDeps, confirmed: boolean | undefined, restoreOperation?: string, restorationQualification?: string, completeLoaded?: string): Promise<void> {
   try {
     const runtime = store(deps);
-    writeSuccess(deps.stdout, await recoverControllerOperationState({ boxRoot: runtime.root, ephemeralRoot: runtimeRunRoot(deps), confirm: confirmed === true, restoreOperation, restorationQualification, signal: deps.signal }));
+    writeSuccess(deps.stdout, await recoverControllerOperationState({ boxRoot: runtime.root, ephemeralRoot: runtimeRunRoot(deps), confirm: confirmed === true, restoreOperation, restorationQualification, completeLoaded, signal: deps.signal }));
   } catch (error) { rethrow(error); }
 }
 

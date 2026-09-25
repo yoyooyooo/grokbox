@@ -95,6 +95,7 @@ import { runSkillsGet, runSkillsList } from "./skills.ts";
 
 type CliOptions = ProfileOptions & ConfigCommandOptions & ManagementCommandOptions & {
   restoreOperation?: string;
+  completeLoaded?: string;
   restorationQualification?: string;
   agent?: string;
   requestId?: string;
@@ -328,7 +329,7 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
         expectedReviewedSha: options.expectedReviewedSha,
       }),
     "runtime re-adopt": async (deps, _args, options) => await runRuntimeReAdopt(deps, options.confirm),
-    "runtime operation-recovery": async (deps, _args, options) => await runRuntimeOperationRecovery(deps, options.confirm, options.restoreOperation, options.restorationQualification),
+    "runtime operation-recovery": async (deps, _args, options) => await runRuntimeOperationRecovery(deps, options.confirm, options.restoreOperation, options.restorationQualification, options.completeLoaded),
     "runtime watchdog run": async (deps) => await runRuntimeWatchdog(deps),
     "runtime modeld run": async (deps) => await runRuntimeModeld(deps),
     "runtime modeld status": async (deps) => await runRuntimeModeldStatus(deps),
