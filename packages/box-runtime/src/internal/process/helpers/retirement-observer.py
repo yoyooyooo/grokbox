@@ -94,16 +94,34 @@ def context(anchor, clock):
     return {'bootId': read('/proc/sys/kernel/random/boot_id').decode().strip(), **ns, 'anchor': anchor, 'clock': clock}, digest(canonical(found))
 
 
+def process_gone(pid):
+    try:
+        fd = os.pidfd_open(pid)
+    except ProcessLookupError:
+        return True
+    try:
+        poll = select.poll()
+        poll.register(fd, select.POLLIN)
+        return bool(poll.poll(0))
+    finally:
+        os.close(fd)
+
+
 def census():
     names = sorted(int(p) for p in os.listdir('/proc') if p.isdigit())
     rows = []
     for pid in names:
-        before = lifetime(pid)
-        fields = dict(line.split(':', 1) for line in read(f'/proc/{pid}/status').decode().splitlines() if ':' in line)
-        nspid, nstgid = [list(map(int, fields[key].split())) for key in ('NSpid', 'NStgid')]
-        require(nspid and nstgid and nspid[0] == pid and nstgid[0] == pid and lifetime(pid) == before)
-        rows.append({**before, 'nspid': nspid, 'nstgid': nstgid})
-    require(names == sorted(int(p) for p in os.listdir('/proc') if p.isdigit()))
+        try:
+            before = lifetime(pid)
+            fields = dict(line.split(':', 1) for line in read(f'/proc/{pid}/status').decode().splitlines() if ':' in line)
+            nspid, nstgid = [list(map(int, fields[key].split())) for key in ('NSpid', 'NStgid')]
+            after = lifetime(pid)
+            require(nspid and nstgid and nspid[0] == pid and nstgid[0] == pid and same(after, before))
+            rows.append({**after, 'nspid': nspid, 'nstgid': nstgid})
+        except FileNotFoundError:
+            # Account for a listed task's kernel-confirmed exit, not arbitrary
+            # unreadability. New births cannot be the original bounded lifetimes.
+            require(process_gone(pid))
     return rows
 
 
@@ -291,13 +309,15 @@ def observe(request):
     first = census()
     scope = q['hostScope']
     targets = request['targets']
-    selected = [row for row in first if any(s['retirement'] == 'node-image-or-absence' and s['lowerInclusive'] <= row['start'] <= s['upper']['start'] and row['pid'] != s['upper']['pid'] for s in q['resources']['scopes'])
+    def selected(rows):
+        return [row for row in rows if any(s['retirement'] == 'node-image-or-absence' and s['lowerInclusive'] <= row['start'] <= s['upper']['start'] and row['pid'] != s['upper']['pid'] for s in q['resources']['scopes'])
                 or any(same(row, host) for host in targets['hosts'])
                 or targets['markerPid'] in row['nspid'] or targets['markerPid'] in row['nstgid']
                 or (scope['lowerInclusive'] <= row['start'] <= scope['upper']['start']
                     and row['pid'] != scope['upper']['pid'] and row['pgid'] == row['sid'] == row['pid'])]
+    cohort = selected(first)
     candidates = []
-    for row in selected:
+    for row in cohort:
         pfd = os.pidfd_open(row['pid'])
         try:
             poll = select.poll()
@@ -310,25 +330,40 @@ def observe(request):
             candidates.append({'lifetime': {'pid': row['pid'], 'start': row['start']}, 'image': current, 'descriptors': fds, 'relevantPreload': preload})
         finally:
             os.close(pfd)
+    current = census()
+    require(cohort == selected(current))
     holders = []
-    for row in first:
+    for row in current:
         # Qualified independent owners are already outside the required holder
         # set. Candidate/image/descriptor checks above are never skipped for them.
         # Observer-owned fds are closed before returning, never survivors.
         if row['pid'] == os.getpid() or any(same(row, owner) for owner in q['resources']['independentOwners']):
             continue
-        if exited_fd_table(row):
-            continue
         found = False
-        for name in os.listdir(f'/proc/{row["pid"]}/fd'):
-            path = f'/proc/{row["pid"]}/fd/{name}'
-            target, s = os.readlink(path), os.stat(path)
-            found |= relevant(target, s, q['resources'])
+        try:
+            if exited_fd_table(row):
+                continue
+            for name in os.listdir(f'/proc/{row["pid"]}/fd'):
+                path = f'/proc/{row["pid"]}/fd/{name}'
+                try:
+                    target, s = os.readlink(path), os.stat(path)
+                except FileNotFoundError:
+                    continue  # This descriptor closed; selected candidates stay strict.
+                found |= relevant(target, s, q['resources'])
+        except FileNotFoundError:
+            require(process_gone(row['pid']))
+            continue
+        except PermissionError:
+            try:
+                require(exited_fd_table(row))  # Exit may occur after the first status read.
+            except FileNotFoundError:
+                require(process_gone(row['pid']))
+            continue
         if found:
             holders.append({'pid': row['pid'], 'start': row['start']})
-    require(first == census() and (before, mount) == context(q['view']['anchor'], q['view']['clock']))
+    require((before, mount) == context(q['view']['anchor'], q['view']['clock']))
     modeld_absent(q['resources']['modeld'])
-    return {'version': 1, 'view': before, 'procMountSha256': mount, 'census': first, 'candidates': candidates, 'resourceHolders': holders, 'modeld': None}
+    return {'version': 1, 'view': before, 'procMountSha256': mount, 'census': current, 'candidates': candidates, 'resourceHolders': holders, 'modeld': None}
 
 
 def main():

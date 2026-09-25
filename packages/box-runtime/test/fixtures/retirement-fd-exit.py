@@ -54,6 +54,12 @@ try:
         raise AssertionError('owned child did not exit')
     assert Path(f'/proc/{pid}/stat').exists()
     assert observer['exited_fd_table'](row)
+    actual_listdir = os.listdir
+    try:
+        os.listdir = lambda path: [str(pid), str(os.getpid())] if path == '/proc' else actual_listdir(path)
+        assert any(item['pid'] == pid for item in observer['census']())
+    finally:
+        os.listdir = actual_listdir
     fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
 finally:
     os.close(ready_read)
@@ -62,4 +68,13 @@ finally:
         os.close(probe)
     waited, status = os.waitpid(pid, 0)
     assert waited == pid and os.waitstatus_to_exitcode(status) == 0
+actual_listdir = os.listdir
+try:
+    # The enumeration can name a task which exits before its stat is read.
+    # Its kernel-confirmed absence is accounted for; the live row is retained.
+    os.listdir = lambda path: [str(pid), str(os.getpid())] if path == '/proc' else actual_listdir(path)
+    rows = observer['census']()
+    assert [row['pid'] for row in rows] == [os.getpid()]
+finally:
+    os.listdir = actual_listdir
 print(json.dumps({'liveOwnerChecked': True, 'zombieStillInCensus': True, 'lockReleasedBeforeReap': True, 'ownedJoined': True, 'signals': 0}))

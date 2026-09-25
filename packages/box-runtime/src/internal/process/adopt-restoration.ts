@@ -181,13 +181,28 @@ export function prepareOriginalRestoration(input: {
     cancelled();
     if (qualification) await verify(current);
     await recheckOwnership(); cancelled();
-    // Exclusive link is the publication CAS: a concurrent or uncertain receipt
-    // is preserved, never overwritten. No await separates each final check/link.
-    const staging = `${path}.${randomUUID()}.tmp`, bytes = Buffer.from(`${JSON.stringify({ ...receipt, publication: "prepared", physicallyRestored: false })}\n`);
-    const fd = openSync(staging, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-    try { writeFileSync(fd, bytes); fsyncSync(fd); } finally { closeSync(fd); }
-    cancelled(); current?.assertModeldAbsent(); recheck();
-    linkSync(staging, path);
+    // A prepared record is negative evidence. Resume its exact bytes only when
+    // fresh proof, original evidence, qualification and official chain all agree.
+    const previous = restorationSnapshot(path, true);
+    let bytes: Buffer;
+    if (previous.bytes) {
+      const prior = JSON.parse(previous.bytes.toString());
+      const observedAt = prior?.proof?.observedAt;
+      const expected = { ...receipt, publication: "prepared", physicallyRestored: false };
+      if (typeof observedAt !== "string" || !Number.isFinite(Date.parse(observedAt)) || Date.parse(observedAt) > Date.now()
+        || !isDeepStrictEqual({ ...prior, proof: { ...prior.proof, observedAt: receipt.proof.observedAt } }, expected)) {
+        throw Error("restoration-preparation-conflict");
+      }
+      receipt.proof.observedAt = observedAt;
+      bytes = previous.bytes;
+    } else {
+      const staging = `${path}.${randomUUID()}.tmp`;
+      bytes = Buffer.from(`${JSON.stringify({ ...receipt, publication: "prepared", physicallyRestored: false })}\n`);
+      const fd = openSync(staging, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+      try { writeFileSync(fd, bytes); fsyncSync(fd); } finally { closeSync(fd); }
+      cancelled(); current?.assertModeldAbsent(); recheck();
+      linkSync(staging, path);
+    }
     const directory = openSync(dirname(path), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
     try { fsyncSync(directory); } finally { closeSync(directory); }
     if (!restorationSnapshot(path).bytes?.equals(bytes)) throw new Error("restoration-readback-unproven");

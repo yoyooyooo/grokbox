@@ -93,6 +93,30 @@ for (const holdsRequiredResource of [false, true]) test(`unrelated process churn
   expect(await Promise.all(f.files.map(path => readFile(path)))).toEqual(before);
 });
 
+for (const conflict of [false, true]) test(`prepared current recovery ${conflict ? "preserves conflicting evidence" : "resumes exact bytes after an interrupted observation"}`, async () => {
+  const f = await fixture(true), observe = f.ports.current!.observe;
+  let reads = 0;
+  f.ports.current!.observe = async (...args) => {
+    if (++reads === 2) throw Error("restoration-observation-unproved");
+    return observe(...args);
+  };
+  await expect(recoverControllerOperationState(f.input, f.ports)).rejects.toMatchObject({ code: "invalid_usage" });
+  const path = restorationReceiptPath(f.runRoot, "original"), prepared = await readFile(path);
+  expect(JSON.parse(prepared.toString()).physicallyRestored).toBe(false);
+  expect(unresolvedAdoption(f.runRoot)).toBe("original");
+  f.ports.current!.observe = observe;
+  if (conflict) {
+    f.q.qualifiedAt = "2000-01-01T00:00:00.000Z"; await f.save();
+    await expect(recoverControllerOperationState(f.input, f.ports)).rejects.toMatchObject({ code: "invalid_usage" });
+    expect(unresolvedAdoption(f.runRoot)).toBe("original");
+    expect(restorationSnapshot(`${path}.complete.json`, true).bytes).toBeNull();
+  } else {
+    expect((await recoverControllerOperationState(f.input, f.ports)).outcome).toBe("restored");
+    expect(unresolvedAdoption(f.runRoot)).toBeNull();
+  }
+  expect(await readFile(path)).toEqual(prepared);
+});
+
 for (const message of ["restoration-observation-unproved", "private-input-value-must-not-escape"]) test(`recovery exposes only a fixed diagnostic code: ${message.startsWith("restoration-")}`, async () => {
   const f = await fixture();
   f.ports.current!.observe = async () => { throw Error(message); };
