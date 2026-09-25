@@ -38,8 +38,10 @@ export const CONTEXT_MAINTENANCE_SLICES: readonly SlicePatch[] = [
     id: "context-manual-no-business-settlement",
     startAnchor: "function createTurnRunShell(host) {",
     endAnchor: "var SandAgentRunner = class _SandAgentRunner {",
-    find: "        if (!aborted2 && !pausedForUpgrade) {\n          await settle.settleCompletedTurn({\n",
-    replacement: "        if (!aborted2 && !pausedForUpgrade && __grokbox_context_op === undefined) {\n          await settle.settleCompletedTurn({\n",
+    // Gate the whole unique business-settlement branch, including native work
+    // inserted before settleCompletedTurn. Manual compaction owns none of it.
+    find: "        if (!aborted2 && !pausedForUpgrade) {\n",
+    replacement: "        if (!aborted2 && !pausedForUpgrade && __grokbox_context_op === undefined) {\n",
   },
   {
     id: "context-manual-summary-owner",

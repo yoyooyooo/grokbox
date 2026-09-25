@@ -102,7 +102,7 @@ export function nativeCurrentStateSlices(pair: NativeCheckpointPair): readonly S
   {
     id: "continuity-native-session-owner",
     startAnchor: "var SandSessionMaterialization = class {",
-    endAnchor: "// src/host/extensions/session/session-mutations.ts\nvar import_node_fs88 =",
+    endAnchor: "// src/host/extensions/session/session-mutations.ts\nvar import_node_fs87 =",
     find: `    const maintenance = this.host.maintenanceHost();
     if (db.get("latestRootBlobId").length === 0) {
       await recoverConversationIfRootMissing(maintenance, dbPath, db, agentStore);
@@ -122,7 +122,7 @@ export function nativeCurrentStateSlices(pair: NativeCheckpointPair): readonly S
       scheduleConversationSizeMaintenance(maintenance, dbPath, db);
     }
     __grokbox_current?.register(agentId, { store: agentStore, metadata: db, ctx: this.host.ctx,
-      material: { memory: this.host.memory().createAgentStore((0, import_node_path139.dirname)(dbPath)), history: db },
+      material: { memory: this.host.memory().createAgentStore((0, import_node_path140.dirname)(dbPath)), history: db },
       rootId: SAND_CONVERSATION_ROOT_SLOT_ID,
       source: { hostSourceSha: "${pair.host}", nativeSchema: "${pair.schema}" },
       valid: () => db.isClosed !== true });
