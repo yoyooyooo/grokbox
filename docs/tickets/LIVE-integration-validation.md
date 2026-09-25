@@ -4,9 +4,11 @@
 
 ### 2026-09-24 受控迁移与双 Bot 窗口
 
-[历史窗口](../reports/2026-09-24-controlled-dual-bot.md)中的原失败操作已完成同 ID 物理恢复；`e5979b98` 在 10:55 UTC 曾实际接管，随后官方换代使其运行条件失效。当前后续见[实施与现场回执](../reports/2026-09-25-host-intake-recovery.md)：`433184fb` 已在 `8aeda5f9/0378b9f4` 重新实际采用，完整 61 切片与 loaded/committed 对齐 verified；最后读回 Host/runtime intake committed，运行代与 witness current，modeld ready 且 accepted/completed/active 为零。当前 desired 为 route，不再沿用此前“已回官方/停止 modeld”的旧状态。
+[历史窗口](../reports/2026-09-24-controlled-dual-bot.md)的 AH-124 原恢复不重开。当前事实见[实施与现场回执](../reports/2026-09-25-host-intake-recovery.md#13740-实际加载c-结果与收场)：本地窗口将 `d47f879b` 固定安装并对齐 Server/Web/modeld，13740/0378 来源的完整 62 切片已实际加载。re-adopt 调用遭本地工具超时中断后，固定 `f1803f06` CLI 经原 observed-adopt publisher 对同一已加载 child 补交当前采用事实，没有再次重启 Host，原操作仍为 unknown。
 
-**双 Bot 验收仍未完成。** A 原创建保持 effect_unknown/result null，未重发。B 在首次提交前正式纠正为 Box/deferStart，取得明确原生 ID，但返回 Temporal/mismatch；这是已结算的目标不符，不是 unknown，不再提交原 B。C 未提交；模型、DM、工具、compact 与 follow-up 未执行。新增显式 Box 意图切片及 `native-creation` 能力追加入口已实施/固定安装，最后服务切换被工具层拦截，切换脚本尚无 admitted 记录，现役仍是 433 的 61 切片，不把未加载的新修复当通过。原 49 个 Bot ID/harness 和模型字节保留，原 7 条 controller unknown 逐行未变；新增 B 当前空闲但尚未清理。全局 CLI shim 仍 e597，使用本窗口的固定安装入口，不借越过工具文件范围改 shim。按用户指令未派发 subagent；所有隔离/来源检查不代签真实 Box 创建、完整 E2E、J3/J4 或长期运行。
+**AH-186 未通过。** A 原创建仍 effect_unknown/result null；B 的已知 Temporal/mismatch 保留；C 经原请求 not_found 后首次 Box/deferStart 提交，仍 complete/Temporal/mismatch，独立登记为 confirmed_temporal，未重放。最后完整名册 51 个 Bot 全部报告 Temporal，原 50 个 ID/harness 与模型字节保持，七条旧 controller unknown 未改；本次新增的一条 unknown 也保留。C 仍静默，D/E 未创建，没有两只 Box 工作者，模型/DM/工具/compact/follow-up 均未执行。没有本次实际出站网络请求证据，不将原因直接签为服务端限制。
+
+收场的正式 host stop 返回 replacement-gateway-unproven，随后独立读回确认未补丁官方 Host；desired disabled，modeld 已按准确 epoch 正常停止。退出 journal 仍在 deactivate-term，B/C 空闲对象尚未删除，不能签完整收场。Server/Web 仍为 d47 固定包的正式前台入口；f180 固定 CLI 已安装，全局旧 shim 未改。未派发子 Agent、未声称独立审查或 J3/J4。现有 Linear CLI 不可用，票状态未回填。
 
 ### 安装级观察恢复（2026-09-25）
 

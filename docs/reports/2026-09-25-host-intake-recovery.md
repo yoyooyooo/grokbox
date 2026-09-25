@@ -1,5 +1,7 @@
 # Host 更新现场断链：安装级 intake 与实际来源保全
 
+**2026-09-25 本地窗口最后状态：AH-186 未通过。** `d47f879b` 的 13740 来源与创建修复已经固定安装并实际加载；静默 C 首次 Box/deferStart 创建仍返回 Temporal/mismatch，官方登记读回 confirmed_temporal。随后使用固定 `f1803f06` CLI 补交同一已加载 child 的当前采用回执，并尝试正式退出。最后独立读回为未补丁官方 Host、desired disabled、modeld 已停止；退出 journal 仍停在 deactivate-term，因此不是完整退出验收通过。详情见本报告末节；下方旧版本状态仅属于各自时点。
+
 ## 起点与产品修正
 
 接手 `e5979b98` 后，正式管理读面实际显示：Host 来源变化已观察到，但 OBS collector 为 `not_configured`，health journal 有 64 条未确认记录，latest 停在 sequence 63；通知接收者未配置。不是 Host 更新没有发生，也不是需要更多资格脚本，而是安装级来源观察被错误地绑在 Bot monitor 配置之后。
@@ -71,3 +73,19 @@
 62 个配方切片均准确应用。原发布者的完整 61 切片刷新无 required envelope drift，两个注册身份槽按原模板重绑；管理 API、模型选择相关九个原生声明字节未变。本次只更新精确 native tuple 与独立测试 pin，不扩大为未来来源放行。静态 verifier 四项正例和四项合法语义反例通过；原 native-pair 中 39 项通过，剩余一项因新增创建切片后仍预期 61 而失败，修正为 62 后单独复验通过。另有创建参数链、接收模型和原 AgentStore/worker 持久化后模型切换共六项通过，根类型检查与构建通过。工具链为 Bun 1.3.14，原生 Node 22.14.0。
 
 这些是有限隔离资格，尚不代表固定安装、Host 实际加载或真实 Box 创建/业务通过。本轮不派发子 Agent，未声称独立审查；AH-124 不重开。C 仍为静默对照，业务工作者须使用独立明确声明。
+
+## 13740 实际加载、C 结果与收场
+
+`d47f879b` 已线性合回 v2，打包 98 个文件并独立安装；tarball SHA256 为 `91fe2d44814f88cdfc3bd09cda55f6cf16c07a36fc24d4bb4a6fbede0945e1a7`。Server/Web/modeld 实际切换到该固定包。原 publisher 刷新全部 61 项，并在同源完整 baseline 上只追加 native-create-box-harness；最终 source 为 13740b50、candidate 为 4c2a50b5、profile digest 为 3e6a55d2。实时 compilation 与 witness 都确认该代已加载，包括创建切片；这不证明切片被真实创建调用执行。
+
+本地操作者错误地给 re-adopt 使用了会终止调用进程的 60 秒工具等待，留下当前 child 已加载、原调用 journal 停在 spawn-temp 的状态。原 metadata recovery 清除死 owner 锁，将这次原操作记为 unknown，旧七条 unknown 不变。现有 observed-adopt 机制被 blanket unresolved 门挡住，正式 host stop 也先因 stale attestation 拒绝；没有手工改账本或杀 Host。
+
+`ec2dbd9a` 和 `f1803f06` 沿原 publisher 修复这一精确中断边界，并提供显式 `runtime operation-recovery --complete-loaded <original-id>`。只有原 unknown/dead controller、匹配 birth/parent/journal/compilation/launch、已退出临时 owner、同一实际 Host/Gateway 和 modeld ready 都成立才可补交。补交前保留原证据，不改变原 unknown，不信号、不启动或重放。固定 f180 包已安装；实际命令返回 completed-loaded，绑定的是仍在运行的 d47 preload，而非冒称 f180 Host 已加载。原生 Host 未因此再次重启。定向控制器/CLI 66 项、类型检查、文档 16 项及构建通过；未派发独立审查，不代签整体恢复资格。
+
+C 在原请求 not_found、严格 Box/deferStart 预览后只首次提交一次。回执 complete/native returned，但 readBack mismatch、harness temporal；独立官方归属也是 confirmed_temporal。C 保持静默，未发送业务，未把它改成工作者。B 的旧 mismatch 与 A 的 effect_unknown/result null 保留。原生 schema 接受 box，已检查的 enum 映射也将其映射为 BOX；没有本次实际出站网络请求证据，故不能断言服务端拒绝、策略强制迁移或某个本地分支就是最终原因。未为诊断反复创建替身；D/E 未创建。
+
+最后完整名册为 51 个 Bot（nextCursor=null），全部报告 Temporal；原 50 个 ID/harness 保持，新增只有 C。B/C 均 running=false、runningTurn=false；没有两只可用 Box 工作者。DeepSeek 精确模型读取支持工具/high，但 model list 另返回 protocol_error，未以该列表故障阻挡明确模型读取。本轮模型/DM/工具/compact/follow-up 均未发送，modeld accepted/completed/active 为零。
+
+正式 host stop 已执行，但在等待 replacement Gateway 时返回 replacement-gateway-unproven；随后独立 system host get/runtime status 确认官方 supervisor 管理的未补丁 Host。原 runtime writer 将 desired 改为 disabled，正式 modeld stop 对准确 epoch 返回 stopped/socketAbsent/historyPreserved，未重放旧请求。退出 journal 的 deactivate-term 保留，不能抹成完整退出成功。Server/Web 仍在 d47 固定包，使用正式前台入口的调用 Scope；固定 f180 CLI 可用，全局旧 shim 未改，不宣称开机持久。
+
+A 原请求、七条旧 controller unknown 与模型文件字节最终复核保持；本次采用增加的一条 unknown 也未改成成功。B/C 的明确空闲对象与各自请求证据继续保留，尚未删除；非目标资料未操作。完整业务、测试对象清理、退出 journal 收束和独立审查均未通过。现有 Linear CLI 在本机不可用，未安装工具或回填票状态；AH-186 仍为未完成主线，AH-124 不重开。
