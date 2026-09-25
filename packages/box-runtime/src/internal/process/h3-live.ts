@@ -360,7 +360,9 @@ export function createLiveH3AdoptPorts(input: {
       return port.list().find((ident) => classify(ident) === "host" && ident.pid !== oldHostPid) ?? null;
     },
     readGatewayPid: () => gatewayPid(),
-    guardianDeadlineMs: waitMs,
+    // One bounded cutover includes retiring the previous Host and starting its
+    // replacement. A slow but valid shutdown must not consume startup's budget.
+    guardianDeadlineMs: 2 * waitMs,
     waitBudgetMs: waitMs,
     adoptProveMs: waitMs,
   };
