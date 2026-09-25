@@ -63,3 +63,11 @@
 ## 接回主线
 
 原操作物理恢复已完成，历史 unknown 不重开。当前 Host 无补丁与其准确来源资格分别处理；已有合格候选的重新加载不应等待 Agent 修改补丁。新来源的 codec/worker 与运行前提仍需针对受影响契约核对，不能从窗口无变化推造整 Host 语义等价。A 原创建 unknown 保留，B/C 独立声明不再受旧全局创建围栏阻挡；实际身份、模型、DM、compact 与非目标收场继续按原场景记录。
+
+## 本地接手：13740 来源资格
+
+本地正式入口重新确认 Host `13740b50`、worker `0378b9f4`，Server/Web 仍 433，modeld 已 071；原 A effect_unknown、B complete/Temporal/mismatch、C not_found。当前完整名册恢复可读，原 49 个 ID/harness 与七条 controller unknown 保持，模型字节与接手基线一致。
+
+62 个配方切片均准确应用。原发布者的完整 61 切片刷新无 required envelope drift，两个注册身份槽按原模板重绑；管理 API、模型选择相关九个原生声明字节未变。本次只更新精确 native tuple 与独立测试 pin，不扩大为未来来源放行。静态 verifier 四项正例和四项合法语义反例通过；原 native-pair 中 39 项通过，剩余一项因新增创建切片后仍预期 61 而失败，修正为 62 后单独复验通过。另有创建参数链、接收模型和原 AgentStore/worker 持久化后模型切换共六项通过，根类型检查与构建通过。工具链为 Bun 1.3.14，原生 Node 22.14.0。
+
+这些是有限隔离资格，尚不代表固定安装、Host 实际加载或真实 Box 创建/业务通过。本轮不派发子 Agent，未声称独立审查；AH-124 不重开。C 仍为静默对照，业务工作者须使用独立明确声明。
