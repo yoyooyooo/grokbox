@@ -897,10 +897,20 @@ export async function recoverControllerOperationState(input: { boxRoot: string; 
     }));
   });
   try { return await Effect.runPromise(Effect.scoped(program), { signal: input.signal }); }
-  catch {
+  catch (error) {
+    // Report only our fixed diagnostic namespace; arbitrary exception text can
+    // contain private paths or inputs. This does not claim that nothing committed.
+    let reason: string | undefined, cause: unknown = error;
+    for (let depth = 0; depth < 8 && cause && typeof cause === "object"; depth++) {
+      const value = cause as { message?: unknown; cause?: unknown };
+      if (typeof value.message === "string" && /^(?:restoration-[a-z-]+|advisory_gate_[a-z_]+|daemon_socket_[a-z_]+)$/.test(value.message)) {
+        reason = value.message; break;
+      }
+      cause = value.cause;
+    }
     // Cancellation before commit has no mutation; cancellation during the short
     // uninterruptible commit may follow a metadata commit. Never promise rollback.
-    throw new BoxRuntimeError("invalid_usage", "Operation metadata recovery did not return a completion receipt; metadata may already have changed. Inspect again before any adopt; no Host signal or business replay was requested.",
+    throw new BoxRuntimeError("invalid_usage", "Operation metadata recovery did not return a completion receipt; metadata may already have changed. Inspect again before any adopt; no Host signal or business replay was requested." + (reason ? ` Reason: ${reason}.` : ""),
       { next: "grokbox runtime operation-recovery --json" });
   }
 }

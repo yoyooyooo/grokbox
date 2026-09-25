@@ -273,6 +273,16 @@ def relevant_preload(pid):
                for item in entries if b'=' in item for key, value in [item.split(b'=', 1)])
 
 
+def exited_fd_table(row):
+    status = dict(line.split(':', 1) for line in read(f'/proc/{row["pid"]}/status').decode().splitlines() if ':' in line)
+    # A zombie leader with other threads is not a retired process. Keep every
+    # lifetime in the census; only the last exited thread has no fd table to scan.
+    if status['State'].strip().split()[0] in ('Z', 'X') and int(status['Threads']) == 1:
+        require(same(lifetime(row['pid']), row))
+        return True
+    return False
+
+
 def observe(request):
     q = request['qualification']
     before, mount = context(q['view']['anchor'], q['view']['clock'])
@@ -306,6 +316,8 @@ def observe(request):
         # set. Candidate/image/descriptor checks above are never skipped for them.
         # Observer-owned fds are closed before returning, never survivors.
         if row['pid'] == os.getpid() or any(same(row, owner) for owner in q['resources']['independentOwners']):
+            continue
+        if exited_fd_table(row):
             continue
         found = False
         for name in os.listdir(f'/proc/{row["pid"]}/fd'):

@@ -14,6 +14,14 @@ async function run(command: string, args: string[]) {
   return { code, stdout, stderr };
 }
 
+(process.platform === "linux" && process.arch === "x64" ? test : test.skip)("an exited last thread has no fd table while its zombie remains in the census", async () => {
+  const repo = fileURLToPath(new URL("../../../", import.meta.url));
+  const result = await run("python3", ["-I", "-S", join(repo, "packages/box-runtime/test/fixtures/retirement-fd-exit.py"),
+    join(repo, "packages/box-runtime/src/internal/process/helpers/retirement-observer.py")]);
+  expect(result.code, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({ liveOwnerChecked: true, zombieStillInCensus: true, lockReleasedBeforeReap: true, ownedJoined: true, signals: 0 });
+}, 15000);
+
 (process.platform === "linux" && process.arch === "x64" ? test : test.skip)("socket credential origin may exit while an owned socket remains live", async () => {
   const repo = fileURLToPath(new URL("../../../", import.meta.url));
   const result = await run("python3", ["-I", "-S", join(repo, "packages/box-runtime/test/fixtures/retirement-peer-origin.py"),

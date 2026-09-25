@@ -93,6 +93,17 @@ for (const holdsRequiredResource of [false, true]) test(`unrelated process churn
   expect(await Promise.all(f.files.map(path => readFile(path)))).toEqual(before);
 });
 
+for (const message of ["restoration-observation-unproved", "private-input-value-must-not-escape"]) test(`recovery exposes only a fixed diagnostic code: ${message.startsWith("restoration-")}`, async () => {
+  const f = await fixture();
+  f.ports.current!.observe = async () => { throw Error(message); };
+  const error = await recoverControllerOperationState(f.input, f.ports).catch(error => error);
+  expect(error.code).toBe("invalid_usage");
+  if (message.startsWith("restoration-")) expect(error.message).toContain(message);
+  else expect(error.message).not.toContain(message);
+  expect(restorationSnapshot(restorationReceiptPath(f.runRoot, "original"), true).bytes).toBeNull();
+  expect(unresolvedAdoption(f.runRoot)).toBe("original");
+});
+
 test("current observation cancellation joins work before releasing recovery gates and cannot publish", async () => {
   const f = await fixture(); const cancellation = new AbortController();
   let entered!: () => void, release!: () => void;
