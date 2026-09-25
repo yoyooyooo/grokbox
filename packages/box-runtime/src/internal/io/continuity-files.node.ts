@@ -13,9 +13,10 @@ export function continuityIoFailure(error: unknown): ContinuityFailure {
     : ["SQLITE_FULL", "ENOSPC", "EDQUOT"].includes(code) ? "capacity"
     : ["ELOOP", "EPERM", "EACCES"].includes(code) ? "unsafe_path" : "unavailable");
 }
-/** Ancestors may be shared system directories, but none may redirect through a
- * symlink. The actual owned roots must be private and owned by this UID. This
- * is not isolation against an adversarial process running as the same user. */
+/** The existing installation root may be readable, but must be owned and not
+ * writable by other users. CONT's own directories/files remain owner-private.
+ * No ancestor may redirect through a symlink. Same-UID adversaries are outside
+ * this filesystem boundary. */
 export async function checkContinuityRoot(root: string): Promise<void> {
   const path = resolve(root); let at = parse(path).root;
   for (const segment of relative(at, path).split(/[\\/]/).filter(Boolean)) {
@@ -23,7 +24,7 @@ export async function checkContinuityRoot(root: string): Promise<void> {
     if (!st.isDirectory() || st.isSymbolicLink()) return failContinuity("unsafe_path");
   }
   const st = await lstat(path);
-  if ((st.mode & 0o077) || process.getuid && st.uid !== process.getuid()) return failContinuity("unsafe_path");
+  if ((st.mode & 0o022) || process.getuid && st.uid !== process.getuid()) return failContinuity("unsafe_path");
 }
 export async function continuityPrivateDirectory(path: string, create = false): Promise<void> {
   if (create) {
@@ -65,7 +66,7 @@ export function continuityFiles(directory: string) {
     if (!isContinuityUuid(requestId) || !isContinuityHash(hash)) return failContinuity("invalid_material");
     return join(staging, `${requestId}-${hash}.part`);
   };
-  const check = async () => { await checkContinuityRoot(directory); await continuityPrivateDirectory(objects); await continuityPrivateDirectory(staging); };
+  const check = async () => { await checkContinuityRoot(directory); await continuityPrivateDirectory(directory); await continuityPrivateDirectory(objects); await continuityPrivateDirectory(staging); };
   const read = async (hash: string, bytes: number): Promise<Uint8Array> => {
     await check(); const path = objectPath(hash), st = await checkContinuityFile(path);
     if (!Number.isSafeInteger(bytes) || bytes < 0 || st!.size !== bytes) return failContinuity("integrity_failure");

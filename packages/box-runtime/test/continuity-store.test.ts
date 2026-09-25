@@ -42,6 +42,24 @@ test("construction and GET never initialize; explicit private initialization is 
   } finally { await f.close(); }
 });
 
+test("CONT stays private inside a protected readable installation root", async () => {
+  const f = await fixture(); try {
+    await chmod(f.root, 0o755);
+    expect(await f.store.initialize()).toEqual({ initialized: true, created: true });
+    const material = materialFixture("protected-root", 100);
+    expect((await f.store.publish(material)).state).toBe("published");
+    expect((await f.reopen().readSnapshot(material.requestId)).nativeImportProven).toBe(false);
+    expect((await stat(f.root)).mode & 0o777).toBe(0o755);
+    expect((await stat(join(f.root, "continuity"))).mode & 0o777).toBe(0o700);
+    expect((await stat(f.file)).mode & 0o777).toBe(0o600);
+    await chmod(join(f.root, "continuity"), 0o755);
+    await expect(f.store.status()).rejects.toThrow("continuity_unsafe_path");
+    await chmod(join(f.root, "continuity"), 0o700);
+    await chmod(f.root, 0o775);
+    await expect(f.store.status()).rejects.toThrow("continuity_unsafe_path");
+  } finally { await f.close(); }
+});
+
 test("valid bytes and complete declared graph survive reopening; a fixed native slot is not a version", async () => {
   const f = await fixture(); try {
     await f.store.initialize(); const first = materialFixture("first", 100), second = materialFixture("second", 200);
