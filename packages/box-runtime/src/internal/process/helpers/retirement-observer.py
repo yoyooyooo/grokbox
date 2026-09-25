@@ -256,32 +256,8 @@ def descriptors(pid, pfd, resources):
     return rows
 
 
-def modeld_peer(modeld):
-    if modeld['kind'] == 'absent':
-        require(not os.path.lexists(modeld['socketPath']))
-        return None
-    before = os.stat(modeld['socketPath'], follow_symlinks=False)
-    require(stat.S_ISSOCK(before.st_mode))
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-        # Same timeout as the existing modeld observation port; this is our own
-        # query connection, never a duplicated application descriptor.
-        sock.settimeout(0.5)
-        sock.connect(modeld['socketPath'])
-        pid, uid, gid = struct.unpack('iII', sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
-        owner = lifetime(pid)
-        require(same(owner, modeld['owner']) and uid == os.getuid())
-        argv = read(f'/proc/{pid}/cmdline').split(b'\0')
-        require(modeld['codePath'].encode() in argv)
-        with opened(modeld['codePath']) as code:
-            stamp = file_stamp(code)
-            require(stat.S_ISREG(stamp[5]) and stamp[2] <= 64 * 1024 * 1024)
-            code_digest = digest(os.pread(code, stamp[2], 0))
-            require(file_stamp(code) == stamp and code_digest == modeld['codeSha256'])
-        require(same(lifetime(pid), owner))
-    after = os.stat(modeld['socketPath'], follow_symlinks=False)
-    require((before.st_dev, before.st_ino) == (after.st_dev, after.st_ino))
-    return {'owner': {'pid': pid, 'start': owner['start']}, 'codeSha256': code_digest,
-            'socketSha256': digest(canonical([before.st_dev, before.st_ino, before.st_mode]))}
+def modeld_absent(modeld):
+    require(not os.path.lexists(modeld['socketPath']))
 
 
 def relevant_preload(pid):
@@ -296,7 +272,7 @@ def observe(request):
     q = request['qualification']
     before, mount = context(q['view']['anchor'], q['view']['clock'])
     require(before == q['view'])
-    peer = modeld_peer(q['resources']['modeld'])
+    modeld_absent(q['resources']['modeld'])
     first = census()
     scope = q['hostScope']
     targets = request['targets']
@@ -332,8 +308,8 @@ def observe(request):
         if found:
             holders.append({'pid': row['pid'], 'start': row['start']})
     require(first == census() and (before, mount) == context(q['view']['anchor'], q['view']['clock']))
-    require(modeld_peer(q['resources']['modeld']) == peer)
-    return {'version': 1, 'view': before, 'procMountSha256': mount, 'census': first, 'candidates': candidates, 'resourceHolders': holders, 'modeld': peer}
+    modeld_absent(q['resources']['modeld'])
+    return {'version': 1, 'view': before, 'procMountSha256': mount, 'census': first, 'candidates': candidates, 'resourceHolders': holders, 'modeld': None}
 
 
 def main():

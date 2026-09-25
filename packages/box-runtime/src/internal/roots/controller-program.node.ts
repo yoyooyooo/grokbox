@@ -862,12 +862,12 @@ export async function recoverControllerOperationState(input: { boxRoot: string; 
       })));
       if (prepared._tag === "Failure") return { ...facts.report, outcome: "blocked" as const, reason: "restoration-evidence-unproven" };
       const current = prepared.success.qualification ? restorationPorts?.current
-        ?? (yield* acquireCurrentRestorationPorts(prepared.success.qualification, input.boxRoot, runRoot)) : undefined;
+        ?? (yield* acquireCurrentRestorationPorts(prepared.success.qualification, runRoot)) : undefined;
       return yield* Effect.callback<OperationRecoveryReport, unknown>(resume => {
         const cancellation = new AbortController();
         const work = (async (): Promise<OperationRecoveryReport> => {
           for (const snapshot of facts.snapshots) await recheckOperationLease(snapshot);
-          // All original work is joined before the observer, modeld fence or
+          // All original work is joined before the observer, modeld service gate or
           // either physical gate releases. Only the synchronous links publish.
           const restoration = await prepared.success.publish(current, cancellation.signal, async () => {
             for (const snapshot of facts.snapshots) await recheckOperationLease(snapshot);

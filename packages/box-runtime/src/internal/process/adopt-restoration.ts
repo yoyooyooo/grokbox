@@ -14,7 +14,7 @@ import { restorationSnapshot, restorationReceiptPath, readCompletedRestoration, 
 import { parseCurrentRestorationQualification, validateRetirementObservation, type CurrentRestorationQualification } from "./current-restoration.ts";
 import type { RetirementObserver } from "./retirement-observer.node.ts";
 export { restorationSnapshot, restorationReceiptPath } from "./restoration-proof.ts";
-export type CurrentRestorationPorts = RetirementObserver & { recoveryOwner: { pid: number; start: number }; recheckModeld: () => Promise<void>; assertModeldFence: () => void };
+export type CurrentRestorationPorts = RetirementObserver & { recoveryOwner: { pid: number; start: number }; assertModeldAbsent: () => void };
 
 export type RestorationPorts = {
   current?: CurrentRestorationPorts;
@@ -94,6 +94,16 @@ export function prepareOriginalRestoration(input: {
   if (Object.hasOwn(original.prefix ?? {}, "diagnostic") || Object.hasOwn(journal, "failure")) {
     if (!diagnostic || !journal.failure || !isDeepStrictEqual(diagnostic, journal.failure)) throw Error("restoration-failure-unproven");
   }
+  const diagnosticChild = diagnostic && Object.hasOwn(diagnostic, "child") ? diagnostic.child : undefined;
+  if (diagnostic && Object.hasOwn(diagnostic, "child") && !identity(diagnosticChild)) throw Error("restoration-child-provenance-unavailable");
+  if (journal.host !== null && !identity(journal.host)) throw Error("restoration-child-provenance-unavailable");
+  const hosts = [creation?.host, journal.host, diagnosticChild].filter(identity).map(({ pid, start }) => ({ pid, start }));
+  if (hosts.some(host => !same(host, hosts[0]!) || journal.tempSupervisor && same(host, journal.tempSupervisor))) throw Error("restoration-owner-provenance-conflict");
+  if (qualification) {
+    const excluded = [qualification.hostScope.upper, qualification.view.anchor, qualification.view.clock.anchor,
+      ...qualification.resources.scopes.map(scope => scope.upper), ...qualification.resources.independentOwners];
+    if (hosts.some(host => excluded.some(owner => same(host, owner)))) throw Error("restoration-qualified-scope-conflict");
+  }
   const cleanup = diagnostic?.cleanup ?? [];
   if (!Array.isArray(cleanup) || cleanup.some((row: { role: string; pid: number; start: number }) => !identity(row)
     || !creation || !["host", "temp-supervisor"].includes(row.role) || !same(row, row.role === "host" ? creation.host : creation.tempSupervisor))) throw Error("restoration-owner-provenance-conflict");
@@ -109,7 +119,7 @@ export function prepareOriginalRestoration(input: {
   // shape (temp owner still recorded, no adopting owner) excludes commit ambiguity.
   if (!journal.failure && (!journal.tempSupervisor || journal.adoptingSupervisor)) throw new Error("restoration-commit-unproven");
   const owned = creation ? [creation.tempSupervisor, creation.host, creation.guardian, creation.holder, diagnostic.child, ...cleanup]
-    : [journal.tempSupervisor, journal.host].filter(identity);
+    : [journal.tempSupervisor, ...hosts].filter(identity);
   if (!creation && (!marker.compile || typeof marker.compile.profileId !== "string"
     || ![marker.compile.profileSha256, marker.compile.sourceSha256, marker.compile.transformedSha256, marker.preloadSha256].every(hash))) throw Error("restoration-compilation-provenance-conflict");
   const observe = () => {
@@ -146,7 +156,7 @@ export function prepareOriginalRestoration(input: {
   const receipt: RestorationReceipt = {
     version: 2, operationId: input.operationId, physicallyRestored: true, adopted: false, replayAuthorized: false,
     evidence,
-    proof: { kind: qualification ? "qualified-current-retirement" : "exact-lifetime-absence", observedAt: new Date().toISOString(),
+    proof: { kind: qualification ? "qualified-modeld-absent-retirement" : "exact-lifetime-absence", observedAt: new Date().toISOString(),
       qualificationSha256: qualification ? sources.at(-1)!.sha256 : null, observationSha256: null },
     chain: Object.fromEntries(Object.entries(chain).map(([role, row]) => [role, { pid: row.pid, start: row.start, uid: row.uid, ppid: row.ppid }])),
     gatewayPid: chain.host.pid,
@@ -156,14 +166,13 @@ export function prepareOriginalRestoration(input: {
     recheck();
     if (qualification) {
       if (!current) throw Error("restoration-observer-unavailable");
-      await current.recheckModeld();
-      const hosts = creation ? [creation.host] : journal.host ? [journal.host] : [];
+      current.assertModeldAbsent();
       const absent = creation ? [creation.tempSupervisor, creation.guardian, creation.holder] : journal.tempSupervisor ? [journal.tempSupervisor] : [];
       const observed = await current.observe(qualification, { hosts, markerPid: marker.pid });
       const digest = validateRetirementObservation(qualification, observed, absent, marker.pid, Object.values(chain), current.recoveryOwner, hosts);
       if (receipt.proof.observationSha256 !== null && receipt.proof.observationSha256 !== digest) throw Error("restoration-observation-changed");
       receipt.proof.observationSha256 = digest;
-      await current.recheckModeld();
+      current.assertModeldAbsent();
       recheck();
     }
   };
@@ -177,7 +186,7 @@ export function prepareOriginalRestoration(input: {
     const staging = `${path}.${randomUUID()}.tmp`, bytes = Buffer.from(`${JSON.stringify({ ...receipt, publication: "prepared", physicallyRestored: false })}\n`);
     const fd = openSync(staging, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
     try { writeFileSync(fd, bytes); fsyncSync(fd); } finally { closeSync(fd); }
-    cancelled(); current?.assertModeldFence(); recheck();
+    cancelled(); current?.assertModeldAbsent(); recheck();
     linkSync(staging, path);
     const directory = openSync(dirname(path), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
     try { fsyncSync(directory); } finally { closeSync(directory); }
@@ -195,7 +204,7 @@ export function prepareOriginalRestoration(input: {
     } finally { closeSync(completeFd); }
     await verify(current);
     await recheckOwnership();
-    cancelled(); current?.assertModeldFence(); recheck();
+    cancelled(); current?.assertModeldAbsent(); recheck();
     validateCompletedRestoration(JSON.parse(bytes.toString()), JSON.parse(completed.toString()), input.operationId, sha256Bytes(bytes));
     // No fallible post-publication work can relabel an incomplete proof as complete.
     linkSync(completionStaging, completionPath);

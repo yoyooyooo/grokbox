@@ -14,7 +14,7 @@ async function run(command: string, args: string[]) {
   return { code, stdout, stderr };
 }
 
-(process.platform === "linux" && process.arch === "x64" ? test : test.skip)("owned Linux namespace: same-PID exec, real memory/FD proof, modeld fence and existing recovery owner", async () => {
+(process.platform === "linux" && process.arch === "x64" ? test : test.skip)("owned Linux namespace: same-PID exec, real memory/FD proof, stopped modeld and existing recovery owner", async () => {
   const repo = fileURLToPath(new URL("../../../", import.meta.url)), root = await mkdtemp(join(tmpdir(), "current-restoration-node-"));
   const outfile = join(root, "fixture.mjs"), executable = join(root, "before-exec");
   const compiled = await run("cc", ["-O2", "-Wall", "-Wextra", join(repo, "packages/box-runtime/test/fixtures/retirement-exec.c"), "-o", executable]);
@@ -26,6 +26,6 @@ async function run(command: string, args: string[]) {
   await copyFile(join(repo, "packages/box-runtime/src/internal/process/helpers/retirement-observer.py"), join(root, "retirement-observer.py"));
   const result = await run("unshare", ["--map-current-user", "--pid", "--fork", "--mount", "--mount-proc", "node", outfile, join(root, "owned"), executable]);
   expect(result.code, result.stderr).toBe(0);
-  expect(JSON.parse(result.stdout)).toEqual({ samePidExec: true, oldImageRejected: true, inheritedLockRejected: true, retiredResourcesAccepted: true,
-    originalBytesPreserved: true, modeldFenceReleased: true, privateInputs: false, signals: 0 });
+  expect(JSON.parse(result.stdout)).toEqual({ serviceStartBlockedThroughCompletion: true, serviceStartAfterRelease: true, samePidExec: true, oldImageRejected: true, inheritedLockRejected: true, retiredResourcesAccepted: true,
+    originalBytesPreserved: true, stoppedModeldAbsent: true, privateInputs: false, signals: 0 });
 }, 15000);

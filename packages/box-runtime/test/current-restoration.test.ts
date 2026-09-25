@@ -1,53 +1,16 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { Effect, Fiber } from "effect";
+import { acquireCurrentRestorationPorts } from "../src/internal/process/current-restoration-ports.node.ts";
+import { startModeldProcess } from "../src/internal/roots/modeld.runtime.ts";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
-import { acquireOperationLease } from "../src/internal/io/operation-lease.node.ts";
 import { recoverControllerOperationState } from "../src/internal/roots/controller-program.node.ts";
-import { prepareOriginalRestoration, type RestorationPorts } from "../src/internal/process/adopt-restoration.ts";
 import { restorationSnapshot, restorationReceiptPath } from "../src/internal/process/restoration-proof.ts";
 import { unresolvedAdoption, writeAdoptionOwner } from "../src/internal/process/adopt-evidence.ts";
-import type { CurrentRestorationQualification, RetirementObservation } from "../src/internal/process/current-restoration.ts";
-import { FakeProcessTree } from "./fake-tree.ts";
 
+import { currentRestorationFixture as fixture } from "./current-restoration-fixture.ts";
 const hash = "a".repeat(64);
-async function fixture(replacement = false) {
-  const root = await mkdtemp(join(tmpdir(), "current-retirement-")), runRoot = join(root, "run");
-  await mkdir(join(root, "state")); await mkdir(join(runRoot, "state"), { recursive: true });
-  const tree = new FakeProcessTree(), wrapper = tree.spawn("wrapper"), supervisor = tree.spawn("supervisor", { parent: wrapper }), host = tree.spawn("host", { parent: supervisor });
-  const oldTemp = tree.spawn("temp-supervisor", { parent: wrapper }), markerHost = tree.spawn("extra"), candidate = tree.spawn("extra"), upper = tree.spawn("extra");
-  tree.kill(oldTemp); tree.kill(markerHost); if (!replacement) tree.kill(candidate);
-  const lease = await acquireOperationLease(join(root, "owned.lock"), "original"); if (!lease.ok) throw Error("lease");
-  const leaseOwner = { ...lease.lock.owner, start: String(BigInt(lease.lock.owner.start) + 1n) }; await lease.lock.release();
-  const original = { state: "unknown", fingerprint: "original", leaseOwner, prefix: { signaled: true, spawned: true, guardian: true } };
-  const store = { original, older: { state: "unknown", fingerprint: "older" } };
-  const journal = { launchMode: "transient-adopt", phase: "recovery-required", operationId: "original", tempSupervisor: oldTemp, adoptingSupervisor: null, host: null };
-  const marker = { operationId: "original", pid: markerHost.pid, start: markerHost.start, compiled: true, transformed: true, modeld: false,
-    compile: { profileId: "fixture", profileSha256: hash, sourceSha256: hash, transformedSha256: hash }, preloadSha256: hash };
-  const files = [join(root, "state", "controller-operations.json"), join(runRoot, "state", "adopt-op.json"), join(runRoot, "state", "preload-marker.json")];
-  for (const [i, value] of [store, journal, marker].entries()) await writeFile(files[i]!, JSON.stringify(value), { mode: 0o600 });
-  const ref = (row: { pid: number; start: number }) => ({ pid: row.pid, start: row.start });
-  const q: CurrentRestorationQualification = { version: 1, kind: "maintainer-qualified-current-retirement", operationId: "original", qualifiedAt: new Date().toISOString(), qualifierUid: process.getuid!(),
-    provenance: { supportedWriterSha256: hash, launchSha256: hash, inventorySha256: hash, pidViewSha256: hash, clockCalibrationSha256: hash, allocationSha256: hash },
-    original: { operations: restorationSnapshot(files[0]!).sha256!, journal: restorationSnapshot(files[1]!).sha256!, marker: restorationSnapshot(files[2]!).sha256!, attestation: null, ownerClaim: null, archivedJournal: null, archivedMarker: null },
-    launch: { rootDigest: sha256Text(root), targetDigest: hash, exeDigest: hash, argvDigest: hash, uid: process.getuid!(), mode: "route" },
-    view: { bootId: leaseOwner.bootId, pid: "pid:[1]", time: "time:[1]", mnt: "mnt:[1]", anchor: ref(wrapper), clock: { anchor: ref(wrapper), originalStart: wrapper.start } },
-    hostScope: { lowerInclusive: oldTemp.start - 1, upper: ref(upper), invariant: "detached-session-leader" },
-    resources: { guardian: [], holder: [], delegatedNative: [], delegatedTools: [], restartOwners: [], independentOwners: [], scopes: [], roots: [root, runRoot], inodes: [], modeld: { kind: "absent", owners: [], socketPath: join(runRoot, "modeld.sock") } },
-    replacements: replacement ? [{ lifetime: ref(candidate), imageSha256: hash, librarySha256: [hash], qualificationSha256: hash, descriptors: [{ fd: 0, digest: hash }] }] : [] };
-  const observation: RetirementObservation = { version: 1, view: structuredClone(q.view), procMountSha256: hash, census: tree.list().map(row => ({ ...ref(row), pgid: row.pid === candidate.pid ? row.pid : wrapper.pid, sid: row.pid === candidate.pid ? row.pid : wrapper.pid, nspid: [row.pid], nstgid: [row.pid] })),
-    candidates: replacement ? [{ lifetime: ref(candidate), relevantPreload: false, image: { sha256: hash, libraries: [hash], anchorSha256: hash }, descriptors: [{ fd: 0, digest: hash, relevant: false, locked: false }] }] : [], resourceHolders: [], modeld: null };
-  const qualificationPath = join(root, "qualification.json");
-  const save = async () => writeFile(qualificationPath, JSON.stringify(q), { mode: 0o600 }); await save();
-  let reads = 0;
-  const ports: RestorationPorts = { processes: tree, classify: row => { const role = tree.roles().find(item => item.pid === row.pid)?.role; return role === "extra" ? null : role as never; },
-    gatewayPid: () => host.pid, hasRelevantPreload: () => false,
-    current: { recoveryOwner: ref(wrapper), recheckModeld: async () => {}, assertModeldFence: () => {}, observe: async () => { reads++; return structuredClone(observation); } } };
-  const input = { boxRoot: root, ephemeralRoot: runRoot, confirm: true, restoreOperation: "original", restorationQualification: qualificationPath };
-  const prepare = () => prepareOriginalRestoration({ operationId: "original", runRoot, storePath: files[0]!, expectedOperation: original, ports, qualificationPath });
-  return { root, runRoot, files, q, observation, ports, input, save, prepare, reads: () => reads, candidate, markerHost, journal };
-}
 
 for (const replacement of [false, true]) test(`qualified ${replacement ? "exec replacement" : "complete absence"} discharges only the old resource boundary without inventing historical files`, async () => {
   const f = await fixture(replacement), before = await Promise.all(f.files.map(path => readFile(path)));
@@ -60,7 +23,7 @@ for (const replacement of [false, true]) test(`qualified ${replacement ? "exec r
   await writeAdoptionOwner(f.runRoot, "new-id", "unresolved"); expect(unresolvedAdoption(f.runRoot)).toBe("new-id");
 });
 
-for (const fault of ["lock", "preload", "relevant-fd", "image", "library", "fd", "hidden-pid", "sibling-view", "offset-clock", "new-candidate", "delegated", "inventory", "pending-inventory", "creation", "compile", "absent-owner-appears", "absent-archive-appears", "qualification-change", "census-change", "mount-change", "auxv-change", "fence-loss", "fence-loss-final"] as const) test(`current proof refuses ${fault}`, async () => {
+for (const fault of ["lock", "preload", "relevant-fd", "image", "library", "fd", "hidden-pid", "sibling-view", "offset-clock", "new-candidate", "delegated", "inventory", "pending-inventory", "creation", "compile", "absent-owner-appears", "absent-archive-appears", "qualification-change", "census-change", "mount-change", "auxv-change", "modeld-appears", "modeld-appears-final"] as const) test(`current proof refuses ${fault}`, async () => {
   const f = await fixture(true);
   if (fault === "preload") f.observation.candidates[0]!.relevantPreload = true;
   if (fault === "lock") f.observation.candidates[0]!.descriptors[0]!.locked = true;
@@ -83,8 +46,8 @@ for (const fault of ["lock", "preload", "relevant-fd", "image", "library", "fd",
     f.q.original[fault === "creation" ? "journal" : "marker"] = restorationSnapshot(path).sha256!;
   }
   await f.save();
-  if (fault === "fence-loss-final") { let checks = 0; f.ports.current!.assertModeldFence = () => { if (++checks === 2) throw Error("lost before completion"); }; }
-  if (["absent-owner-appears", "absent-archive-appears", "qualification-change", "census-change", "mount-change", "auxv-change", "fence-loss"].includes(fault)) {
+  if (fault === "modeld-appears-final") { let checks = 0; f.ports.current!.assertModeldAbsent = () => { if (++checks === 8) throw Error("modeld appeared before completion"); }; }
+  if (["absent-owner-appears", "absent-archive-appears", "qualification-change", "census-change", "mount-change", "auxv-change", "modeld-appears"].includes(fault)) {
     let n = 0; const observe = f.ports.current!.observe;
     f.ports.current!.observe = async (...args) => {
       if (++n === 2) {
@@ -94,7 +57,7 @@ for (const fault of ["lock", "preload", "relevant-fd", "image", "library", "fd",
         if (fault === "census-change") f.observation.census[0]!.pgid++;
         if (fault === "mount-change") f.observation.procMountSha256 = "b".repeat(64);
         if (fault === "auxv-change") f.observation.candidates[0]!.image.anchorSha256 = "b".repeat(64);
-        if (fault === "fence-loss") f.ports.current!.recheckModeld = async () => { throw Error("fence-lost"); };
+        if (fault === "modeld-appears") f.ports.current!.assertModeldAbsent = () => { throw Error("fence-lost"); };
       }
       return observe(...args);
     };
@@ -178,5 +141,85 @@ test("historical current-proof inspection never emits unexpected raw evidence fi
   const result = await recoverControllerOperationState({ ...f.input, confirm: false }, f.ports);
   expect(result.reason).toBe("restoration-receipt-unavailable");
   expect(JSON.stringify(result)).not.toContain("PRIVATE_FIXTURE_BODY");
+  expect(unresolvedAdoption(f.runRoot)).toBe("original");
+});
+
+for (const kind of ["live-outside-scope", "upper-endpoint", "zero-start", "independent-owner", "journal-conflict"] as const) test(`partial creation preserves diagnostic child obligation: ${kind}`, async () => {
+  const f = await fixture();
+  const child = kind === "upper-endpoint" ? f.q.hostScope.upper : f.ports.processes.inspect(f.ports.gatewayPid()!)!;
+  const diagnostic = { code: "fixture-child", phase: "spawn-temp", recoveryRequired: true, guardianEnd: "expired",
+    child: { pid: child.pid, start: kind === "zero-start" ? 0 : child.start, exitCode: null, signal: null } };
+  const store = JSON.parse(await readFile(f.files[0]!, "utf8")), journal = JSON.parse(await readFile(f.files[1]!, "utf8"));
+  store.original.prefix.diagnostic = diagnostic; journal.failure = diagnostic;
+  if (kind === "journal-conflict") journal.host = f.candidate;
+  if (kind === "independent-owner") f.q.resources.independentOwners.push({ pid: child.pid, start: child.start });
+  await writeFile(f.files[0]!, JSON.stringify(store)); await writeFile(f.files[1]!, JSON.stringify(journal));
+  f.q.original.operations = restorationSnapshot(f.files[0]!).sha256!; f.q.original.journal = restorationSnapshot(f.files[1]!).sha256!; await f.save();
+  const before = await Promise.all(f.files.map(path => readFile(path))), targets: Array<Array<{ pid: number; start: number }>> = [];
+  const observe = f.ports.current!.observe;
+  f.ports.current!.observe = async (q, target) => { targets.push(target.hosts); return observe(q, target); };
+  const result = await recoverControllerOperationState(f.input, f.ports).catch(() => null);
+  expect(result?.outcome).not.toBe("restored");
+  expect((await recoverControllerOperationState({ ...f.input, confirm: false }, f.ports)).restoration).toBeUndefined();
+  expect(unresolvedAdoption(f.runRoot)).toBe("original");
+  expect(await Promise.all(f.files.map(path => readFile(path)))).toEqual(before);
+  if (kind === "live-outside-scope") { expect(targets).toHaveLength(1); expect(targets[0]).toContainEqual(expect.objectContaining({ pid: child.pid, start: child.start })); }
+  else expect(targets).toHaveLength(0);
+});
+
+test("valid absent diagnostic child remains a proof target without inventing creation metadata", async () => {
+  const f = await fixture(), child = { pid: 90123, start: f.q.hostScope.upper.start + 10 };
+  const diagnostic = { code: "fixture-child", phase: "spawn-temp", recoveryRequired: true, guardianEnd: "expired", child: { ...child, exitCode: null, signal: null } };
+  const store = JSON.parse(await readFile(f.files[0]!, "utf8")), journal = JSON.parse(await readFile(f.files[1]!, "utf8"));
+  store.original.prefix.diagnostic = diagnostic; journal.failure = diagnostic;
+  await writeFile(f.files[0]!, JSON.stringify(store)); await writeFile(f.files[1]!, JSON.stringify(journal));
+  f.q.original.operations = restorationSnapshot(f.files[0]!).sha256!; f.q.original.journal = restorationSnapshot(f.files[1]!).sha256!; await f.save();
+  const before = await Promise.all(f.files.map(path => readFile(path))), observe = f.ports.current!.observe;
+  f.ports.current!.observe = async (q, targets) => { expect(targets.hosts).toContainEqual(expect.objectContaining(child)); return observe(q, targets); };
+  expect((await recoverControllerOperationState(f.input, f.ports)).outcome).toBe("restored");
+  expect(unresolvedAdoption(f.runRoot)).toBeNull();
+  expect(await Promise.all(f.files.map(path => readFile(path)))).toEqual(before);
+});
+
+test("retired live-modeld qualification and completed-proof shape grant no authority", async () => {
+  const f = await fixture();
+  (f.q.resources as unknown as Record<string, unknown>).modeld = { kind: "same-epoch-unused", owner: f.q.view.anchor,
+    socketPath: join(f.runRoot, "modeld.sock"), codePath: "/fixture/entry.js", epoch: f.q.view.bootId, codeSha256: hash, provenanceSha256: hash };
+  await f.save();
+  expect((await recoverControllerOperationState(f.input, f.ports)).reason).toBe("restoration-evidence-unproven");
+  f.q.resources.modeld = { kind: "absent", owners: [], socketPath: join(f.runRoot, "modeld.sock") }; await f.save();
+  expect((await recoverControllerOperationState(f.input, f.ports)).outcome).toBe("restored");
+  const path = restorationReceiptPath(f.runRoot, "original"), row = JSON.parse(await readFile(path, "utf8"));
+  row.proof.kind = "qualified-current-retirement";
+  const bytes = JSON.stringify(row); await writeFile(path, bytes);
+  await writeFile(`${path}.complete.json`, JSON.stringify({ version: 2, operationId: "original", publication: "complete", receiptSha256: sha256Text(bytes) }));
+  expect((await recoverControllerOperationState({ ...f.input, confirm: false }, f.ports)).reason).toBe("restoration-receipt-unavailable");
+  expect(unresolvedAdoption(f.runRoot)).toBe("original");
+});
+
+test("current modeld absence binds the canonical socket and releases its real service gate on cancellation", async () => {
+  const f = await fixture(), canonical = f.q.resources.modeld.socketPath;
+  f.q.resources.modeld.socketPath = join(f.runRoot, "unrelated-empty.sock");
+  await expect(Effect.runPromise(Effect.scoped(acquireCurrentRestorationPorts(f.q, f.runRoot)))).rejects.toBeTruthy();
+  expect(restorationSnapshot(`${canonical}.owner.json`, true).bytes).toBeNull();
+  f.q.resources.modeld.socketPath = canonical;
+  let entered!: () => void;
+  const held = new Promise<void>(resolve => { entered = resolve; });
+  const fiber = Effect.runFork(Effect.scoped(Effect.gen(function* () {
+    yield* acquireCurrentRestorationPorts(f.q, f.runRoot);
+    entered(); yield* Effect.never;
+  })));
+  await held;
+  const start = () => startModeldProcess({ durableRoot: f.root, runRoot: f.runRoot, env: {},
+    fetch: Object.assign(async () => { throw Error("network forbidden"); }, { preconnect: async () => {} }) as typeof fetch });
+  try {
+    await expect(start()).rejects.toMatchObject({ message: expect.stringContaining("daemon_socket_busy") });
+    expect(restorationSnapshot(`${canonical}.owner.json`, true).bytes).toBeNull();
+  } finally { await Effect.runPromise(Fiber.interrupt(fiber)); }
+  const service = await start();
+  try {
+    expect(service.ensure.kind).toBe("owned");
+    await expect(Effect.runPromise(Effect.scoped(acquireCurrentRestorationPorts(f.q, f.runRoot)))).rejects.toBeTruthy();
+  } finally { await service.stop(); }
   expect(unresolvedAdoption(f.runRoot)).toBe("original");
 });

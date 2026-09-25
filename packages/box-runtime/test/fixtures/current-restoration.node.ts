@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { readFileSync, readlinkSync } from "node:fs";
+import fs, { readFileSync, readlinkSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -12,11 +14,33 @@ import { acquireOperationLease } from "../../src/internal/io/operation-lease.nod
 import { restorationSnapshot } from "../../src/internal/process/restoration-proof.ts";
 import { unresolvedAdoption } from "../../src/internal/process/adopt-evidence.ts";
 import { startModeldProcess } from "../../src/internal/roots/modeld.runtime.ts";
-import { probeModeldExecution, probeModeldIdentity } from "../../src/internal/wire/modeld-probe.node.ts";
 import type { CurrentRestorationQualification } from "../../src/internal/process/current-restoration.ts";
 import type { RestorationPorts } from "../../src/internal/process/adopt-restoration.ts";
 import { FakeProcessTree } from "../fake-tree.ts";
 
+if (!isMainThread) {
+  const word = new Int32Array(workerData.shared);
+  let service: Awaited<ReturnType<typeof startModeldProcess>> | undefined;
+  parentPort!.on("message", async message => {
+    if (message === "start") {
+      try {
+        service = await startModeldProcess({ durableRoot: workerData.root, runRoot: workerData.runRoot, env: {},
+          fetch: Object.assign(async () => { throw Error("network forbidden"); }, { preconnect: async () => {} }) as typeof fetch });
+        Atomics.store(word, 0, 2);
+      } catch (error) {
+        Atomics.store(word, 0, error instanceof Error && error.message.includes("daemon_socket_busy") ? 1 : -1);
+      }
+      Atomics.notify(word, 0);
+    } else if (message === "stop") { await service?.stop(); parentPort!.close(); }
+  });
+  parentPort!.postMessage("READY");
+} else if (process.argv[2] === "modeld-child") {
+  const service = await startModeldProcess({ durableRoot: process.argv[3]!, runRoot: process.argv[4]!, env: {},
+    fetch: Object.assign(async () => { throw Error("network forbidden"); }, { preconnect: async () => {} }) as typeof fetch });
+  console.log("MODELD_READY");
+  await new Promise<void>(resolve => process.stdin.once("data", () => resolve()));
+  await service.stop();
+} else {
 const root = process.argv[2]!, executable = process.argv[3]!, runRoot = join(root, "run"), hash = "a".repeat(64);
 assert.equal(process.pid, 1); // This fixture owns its entire procfs/PID view.
 await mkdir(join(root, "state"), { recursive: true }); await mkdir(join(runRoot, "state"), { recursive: true, mode: 0o700 });
@@ -30,7 +54,9 @@ function lines(child: ChildProcessWithoutNullStreams) {
 const candidate = spawn(executable, [join(runRoot, "retained.lock"), join(runRoot, "cloexec.lock")], { detached: true, stdio: ["pipe", "pipe", "pipe"], env: { PATH: process.env.PATH } });
 const next = lines(candidate), candidateJoined = new Promise(resolve => candidate.once("close", resolve));
 let stage = "before", keeper: ChildProcessWithoutNullStreams | undefined, keeperJoined: Promise<unknown> | undefined;
-let modeld: Awaited<ReturnType<typeof startModeldProcess>> | undefined;
+let modeld: ChildProcessWithoutNullStreams | undefined, modeldJoined: Promise<number | null> | undefined;
+let starter: Worker | undefined, starterJoined: Promise<number> | undefined;
+const realLink = fs.linkSync;
 try {
   assert.match(await next(), /^READY /); const originalLifetime = identity(candidate.pid!);
   const oldImage = sha256Bytes(readFileSync(`/proc/${candidate.pid}/exe`));
@@ -52,8 +78,13 @@ try {
   const paths = [join(root, "state", "controller-operations.json"), join(runRoot, "state", "adopt-op.json"), join(runRoot, "state", "preload-marker.json")];
   for (const [i, row] of [store, journal, marker].entries()) await writeFile(paths[i]!, JSON.stringify(row), { mode: 0o600 });
   const before = await Promise.all(paths.map(path => readFile(path)));
-  modeld = await startModeldProcess({ durableRoot: root, runRoot, env: {}, fetch: Object.assign(async () => { throw Error("network forbidden"); }, { preconnect: async () => {} }) as typeof fetch });
-  const service = await probeModeldIdentity(runRoot); assert.ok(service);
+  modeld = spawn(process.execPath, [process.argv[1]!, "modeld-child", root, runRoot], { stdio: ["pipe", "pipe", "pipe"], env: { PATH: process.env.PATH } });
+  modeld.stderr.resume();
+  modeldJoined = new Promise(resolve => modeld!.once("close", resolve));
+  assert.equal(await lines(modeld)(), "MODELD_READY");
+  const modeldOwner = identity(modeld.pid!);
+  modeld.stdin.end("stop\n"); assert.equal(await modeldJoined, 0);
+  const modeldRecord = join(runRoot, "modeld.sock.owner.json"), ownerBytes = await readFile(modeldRecord);
   const q: CurrentRestorationQualification = { version: 1, kind: "maintainer-qualified-current-retirement", operationId: "original", qualifiedAt: new Date().toISOString(), qualifierUid: process.getuid!(),
     provenance: { supportedWriterSha256: hash, launchSha256: hash, inventorySha256: hash, pidViewSha256: hash, clockCalibrationSha256: hash, allocationSha256: hash },
     original: { operations: restorationSnapshot(paths[0]!).sha256!, journal: restorationSnapshot(paths[1]!).sha256!, marker: restorationSnapshot(paths[2]!).sha256!, attestation: null, ownerClaim: null, archivedJournal: null, archivedMarker: null },
@@ -61,7 +92,7 @@ try {
     view: { bootId: leaseOwner.bootId, pid: readlinkSync("/proc/self/ns/pid"), time: readlinkSync("/proc/self/ns/time"), mnt: readlinkSync("/proc/self/ns/mnt"), anchor, clock: { anchor, originalStart: anchor.start } },
     hostScope: { lowerInclusive: temp.start - 1, upper, invariant: "detached-session-leader" },
     resources: { guardian: [], holder: [], delegatedNative: [], delegatedTools: [], restartOwners: [], independentOwners: [], scopes: [], roots: [root, runRoot], inodes: [],
-      modeld: { kind: "same-epoch-unused", owner: { ...anchor }, socketPath: join(runRoot, "modeld.sock"), codePath: process.argv[1]!, codeSha256: sha256Bytes(readFileSync(process.argv[1]!)), epoch: service.generation, provenanceSha256: hash } }, replacements: [] };
+      modeld: { kind: "absent", owners: [modeldOwner], socketPath: join(runRoot, "modeld.sock") } }, replacements: [] };
   const observed = () => Effect.runPromise(Effect.scoped(Effect.gen(function* () { const observer = yield* acquireRetirementObserver(); return yield* Effect.tryPromise(() => observer.observe(q, { hosts: [], markerPid: marker.pid })); })));
   const retained = await observed();
   assert.equal(retained.candidates.length, 1); assert.notEqual(retained.candidates[0]!.image.sha256, oldImage);
@@ -81,25 +112,50 @@ try {
   q.replacements[0]!.imageSha256 = oldImage; await save();
   await assert.rejects(recoverControllerOperationState(input, ports));
   qualify(retired.candidates[0]!);
-  const modeldBinding = q.resources.modeld;
-  assert.equal(modeldBinding.kind, "same-epoch-unused");
-  if (modeldBinding.kind !== "same-epoch-unused") throw Error("fixture binding");
-  const code = modeldBinding.codeSha256;
-  modeldBinding.codeSha256 = hash; await save(); await assert.rejects(recoverControllerOperationState(input, ports));
-  modeldBinding.codeSha256 = code; modeldBinding.owner.start++; await save(); await assert.rejects(recoverControllerOperationState(input, ports));
-  modeldBinding.owner.start--; await save();
+  q.resources.modeld.owners = [anchor]; await save(); await assert.rejects(recoverControllerOperationState(input, ports));
+  q.resources.modeld.owners = [modeldOwner]; await save();
+  const word = new Int32Array(new SharedArrayBuffer(4));
+  starter = new Worker(new URL(import.meta.url), { workerData: { root, runRoot, shared: word.buffer } });
+  starterJoined = new Promise(resolve => starter!.once("exit", resolve));
+  await new Promise<void>((resolve, reject) => { starter!.once("message", () => resolve()); starter!.once("error", reject); });
+  const attemptStart = () => {
+    Atomics.store(word, 0, 0); starter!.postMessage("start");
+    assert.notEqual(Atomics.wait(word, 0, 0, 5000), "timed-out");
+    return Atomics.load(word, 0);
+  };
+  const completion = join(runRoot, "state", "adopt-restoration-original.json.complete.json");
+  let contended = false;
+  fs.linkSync = (from, to) => {
+    if (String(to) === completion) assert.equal(attemptStart(), 1);
+    realLink(from, to);
+    if (String(to) === completion) {
+      // Independent service owner progresses while this event loop cannot run
+      // callbacks. Its actual OFD acquisition must fail even AFTER the link.
+      assert.equal(attemptStart(), 1); contended = true;
+      assert.deepEqual(readFileSync(modeldRecord), ownerBytes);
+    }
+  };
+  syncBuiltinESMExports();
   const recovered = await recoverControllerOperationState(input, ports);
+  fs.linkSync = realLink; syncBuiltinESMExports();
+  assert.ok(contended);
   assert.equal(recovered.outcome, "restored"); assert.equal(recovered.operations.unknown, 2);
   assert.equal(unresolvedAdoption(runRoot), null);
   assert.deepEqual(await Promise.all(paths.map(path => readFile(path))), before);
-  assert.equal((await probeModeldExecution(runRoot))?.execution.admission, "open");
-  console.log(JSON.stringify({ samePidExec: true, oldImageRejected: true, inheritedLockRejected: true, retiredResourcesAccepted: true,
-    originalBytesPreserved: true, modeldFenceReleased: true, privateInputs: false, signals: 0 }));
+  assert.deepEqual(await readFile(modeldRecord), ownerBytes);
+  assert.equal(attemptStart(), 2); // Positive control: the same real starter succeeds after scope release.
+  console.log(JSON.stringify({ serviceStartBlockedThroughCompletion: true, serviceStartAfterRelease: true, samePidExec: true, oldImageRejected: true, inheritedLockRejected: true, retiredResourcesAccepted: true,
+    originalBytesPreserved: true, stoppedModeldAbsent: true, privateInputs: false, signals: 0 }));
 } finally {
-  await modeld?.stop();
+  fs.linkSync = realLink; syncBuiltinESMExports();
+  starter?.postMessage("stop"); if (starterJoined) assert.equal(await starterJoined, 0);
+  if (modeld && modeld.exitCode === null) modeld.stdin.end("stop\n");
+  if (modeldJoined) assert.equal(await modeldJoined, 0);
   if (stage === "before") candidate.stdin.end("xretire\nfinish\n");
   else if (stage === "image") candidate.stdin.end("retire\nfinish\n");
   else candidate.stdin.end("finish\n");
   keeper?.stdin.end("finish\n"); await candidateJoined; await keeperJoined;
   assert.equal(candidate.exitCode, 0); if (keeper) assert.equal(keeper.exitCode, 0);
+}
+
 }

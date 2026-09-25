@@ -19,7 +19,7 @@ export type CurrentRestorationQualification = {
       lowerInclusive: number; upper: Lifetime; qualificationSha256: string; retirement: "absence" | "node-image-or-absence" }>;
     roots: string[]; inodes: Array<{ dev: number; ino: number }>;
     independentOwners: Lifetime[];
-    modeld: { kind: "absent"; owners: Lifetime[]; socketPath: string } | { kind: "same-epoch-unused"; owner: Lifetime; socketPath: string; codePath: string; epoch: string; codeSha256: string; provenanceSha256: string };
+    modeld: { kind: "absent"; owners: Lifetime[]; socketPath: string };
   };
   replacements: Array<{ lifetime: Lifetime; imageSha256: string; librarySha256: string[]; qualificationSha256: string;
     descriptors: Array<{ fd: number; digest: string }> }>;
@@ -64,10 +64,8 @@ export function parseCurrentRestorationQualification(value: unknown, operationId
   requireFact(Array.isArray(resources.inodes) && resources.inodes.length <= 4096 && resources.inodes.every(row => row && Number.isSafeInteger(row.dev)
     && row.dev >= 0 && Number.isSafeInteger(row.ino) && row.ino > 0));
   requireFact(resources.modeld && typeof resources.modeld.socketPath === "string" && resources.modeld.socketPath.startsWith("/"));
-  requireKeys(resources.modeld, resources.modeld.kind === "absent" ? ["kind", "owners", "socketPath"] : ["kind", "owner", "socketPath", "codePath", "epoch", "codeSha256", "provenanceSha256"]);
-  if (resources.modeld.kind === "absent") requireFact(Array.isArray(resources.modeld.owners) && resources.modeld.owners.every(isLifetime));
-  else requireFact(resources.modeld.kind === "same-epoch-unused" && isLifetime(resources.modeld.owner) && /^[a-f0-9-]{36}$/.test(resources.modeld.epoch)
-    && typeof resources.modeld.codePath === "string" && resources.modeld.codePath.startsWith("/") && isDigest(resources.modeld.codeSha256) && isDigest(resources.modeld.provenanceSha256));
+  requireKeys(resources.modeld, ["kind", "owners", "socketPath"]);
+  requireFact(resources.modeld.kind === "absent" && Array.isArray(resources.modeld.owners) && resources.modeld.owners.every(isLifetime));
   requireFact(Array.isArray(q.replacements) && q.replacements.length <= 4096);
   for (const replacement of q.replacements) {
     requireKeys(replacement, ["lifetime", "imageSha256", "librarySha256", "qualificationSha256", "descriptors"]);
@@ -86,22 +84,20 @@ export type RetirementObservation = {
   census: Array<Lifetime & { pgid: number; sid: number; nspid: number[]; nstgid: number[] }>;
   candidates: Array<{ lifetime: Lifetime; relevantPreload: boolean; image: { sha256: string; libraries: string[]; anchorSha256: string };
     descriptors: Array<{ fd: number; digest: string; relevant: boolean; locked: boolean }> }>;
-  resourceHolders: Lifetime[]; modeld: null | { owner: Lifetime; codeSha256: string; socketSha256: string };
+  resourceHolders: Lifetime[]; modeld: null;
 };
 
 /** The native adapter supplies observations, never an authorization boolean. */
 export function validateRetirementObservation(q: CurrentRestorationQualification, observation: RetirementObservation, owners: Lifetime[], markerPid: number,
   official: Lifetime[], recoveryOwner: Lifetime, hosts: Lifetime[] = []): string {
   const o = observation;
-  if (q.resources.modeld.kind === "absent") requireFact(o.modeld === null);
-  else requireFact(o.modeld && sameLifetime(o.modeld.owner, q.resources.modeld.owner)
-    && o.modeld.codeSha256 === q.resources.modeld.codeSha256 && isDigest(o.modeld.socketSha256));
+  requireFact(o?.modeld === null);
   requireFact(o?.version === 1 && isDigest(o.procMountSha256) && isDeepStrictEqual(o.view, q.view) && Array.isArray(o.census) && Array.isArray(o.candidates) && Array.isArray(o.resourceHolders));
   requireFact(o.census.every(row => isLifetime(row) && Array.isArray(row.nspid) && Array.isArray(row.nstgid)
     && row.nspid[0] === row.pid && row.nstgid[0] === row.pid && [...row.nspid, ...row.nstgid].every(pid => Number.isSafeInteger(pid) && pid > 0))
     && new Set(o.census.map(row => row.pid)).size === o.census.length);
   const absent = [...owners, ...q.resources.guardian, ...q.resources.holder, ...q.resources.delegatedNative, ...q.resources.delegatedTools, ...q.resources.restartOwners,
-    ...(q.resources.modeld.kind === "absent" ? q.resources.modeld.owners : [])];
+    ...q.resources.modeld.owners];
   for (const owner of absent) if (o.census.some(row => sameLifetime(row, owner))) throw Error("restoration-required-owner-present");
   const inScope = (row: Lifetime, scope: CurrentRestorationQualification["resources"]["scopes"][number]) => row.start >= scope.lowerInclusive && row.start <= scope.upper.start && row.pid !== scope.upper.pid;
   for (const scope of q.resources.scopes) {
@@ -119,7 +115,7 @@ export function validateRetirementObservation(q: CurrentRestorationQualification
       || current.image.libraries.some(sha => !reviewed.librarySha256.includes(sha)) || current.descriptors.some(fd => fd.relevant || fd.locked)
       || !isDeepStrictEqual(current.descriptors.map(({ fd, digest }) => ({ fd, digest })), reviewed.descriptors)) throw Error("restoration-image-or-resources-unproven");
   }
-  const independent = [...official, recoveryOwner, ...q.resources.independentOwners, ...(q.resources.modeld.kind === "same-epoch-unused" ? [q.resources.modeld.owner] : [])];
+  const independent = [...official, recoveryOwner, ...q.resources.independentOwners];
   if (o.resourceHolders.some(owner => !independent.some(row => sameLifetime(row, owner)))) throw Error("restoration-resource-holder-present");
   // Stable exact census plus image/FD anchors are reobserved before each publication.
   return sha256Text(canonicalJson(o));

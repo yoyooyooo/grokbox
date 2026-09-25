@@ -41,7 +41,7 @@ export function restorationSnapshot(path: string, optional = false) {
 export type RestorationReceipt = {
   version: 2; operationId: string; physicallyRestored: true; adopted: false; replayAuthorized: false;
   evidence: OriginalEvidence;
-  proof: { kind: "exact-lifetime-absence" | "qualified-current-retirement"; observedAt: string;
+  proof: { kind: "exact-lifetime-absence" | "qualified-modeld-absent-retirement"; observedAt: string;
     qualificationSha256: string | null; observationSha256: string | null };
   chain: Record<string, Lifetime & { uid: number; ppid: number }>; gatewayPid: number;
 };
@@ -81,7 +81,7 @@ export function validateCompletedRestoration(row: any, completed: any, id: strin
     || row.adopted !== false || row.replayAuthorized !== false || !e || !proof || !row.chain
     || ![e.operations, e.journal, e.marker].every(isDigest)
     || ![e.attestation, e.ownerClaim, e.archivedJournal, e.archivedMarker].every(value => value === null || isDigest(value))
-    || !["exact-lifetime-absence", "qualified-current-retirement"].includes(proof.kind)
+    || !["exact-lifetime-absence", "qualified-modeld-absent-retirement"].includes(proof.kind)
     || typeof proof.observedAt !== "string" || proof.observedAt.length > 32 || !Number.isFinite(Date.parse(proof.observedAt))
     || (proof.kind === "exact-lifetime-absence" ? proof.qualificationSha256 !== null || proof.observationSha256 !== null
       : !isDigest(proof.qualificationSha256) || !isDigest(proof.observationSha256))) throw Error("restoration-receipt-invalid");
