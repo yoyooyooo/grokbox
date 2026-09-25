@@ -8,7 +8,7 @@
 
 ### AH-188 Host 更新分级待验窗口（2026-09-25）
 
-**`awaiting-integration / not-run`；没有新增现场通过。** [T44 更新事件合同](T44-host-ops-continuous-sensing.md#source-change-events)已实现自有来源 → 原 producer → 固定 provenance → 原 OBS occurrence 的隔离纵切；AH-143 仍负责公共观察配置、通知与接收者接线。合入与源码测试不更换 AH-124 固定候选，不授权部署或修复/采用。
+**`source-integration-verified / not-run`；没有新增现场通过。** [T44 更新事件合同](T44-host-ops-continuous-sensing.md#source-change-events)与 AH-143 公共观察配置、任务投递已在同一候选通过自有来源 → 原 producer → 固定 provenance → OBS/outbox → 自有 HTTP 接收/回执的隔离纵切。准确范围见[联合集成回执](../reports/2026-09-25-host-notification-integration.md)；实际合入提交由原票记录。合入与源码测试不更换 AH-124 固定候选，不授权部署或修复/采用。
 
 同一候选完成 Q 合流与必要复核后，仅沿原 [采集寿命](#live-monitor-persistence)、[通知寿命](#live-ops-observer-lifetime)、[证据](#live-obs-evidence)、[隐私](#live-alert-privacy)及[容量](#live-obs-storage)补验：实际官方来源的窗口外更新零唤醒；相关同形/结构变化/无法判断分别形成可消费事件；连续来源与同 episode 风险升级不被旧 open incident 吞掉；前后固定私有引用可读回且公共面无源码/路径；新磁盘、已验证候选、实际运行代与用户影响不混。核验公共 observation 开关与 execution/notification 开关独立生效，以及真实消费者接收和原 outbox 证据保全。不能以自有 fixture、HTTP 受理或未返回结论的审查代签这些判据。
 
@@ -353,16 +353,16 @@ A `7994b92`与B `dc03066`：配置迁移、所选Provider/工具/Memory/effort�
 <a id="ah-143-delivery-gap"></a>
 ### AH-143 — 固定维护任务已接收口，真实默认出口与现场闭环未完成
 
-**状态仍为 partial / not-run；不是已部署、已合入或整票 Done。** 当前实现合同见 [operations](../runtime/operations.md#maintenance-task-delivery)、[T45](T45-template-webhook-delivery.md)、[T54](T54-ops-targets-and-routing.md)、[T55](T55-custom-receiver-delivery.md)。原有 LIVE-ID 不变，不新增平行现场入口。
+**现场状态仍为 partial / not-run；联合源码已通过组合验证，不是已部署或 AH-143 整票 Done。** 实际合流提交在原票；当前实现合同见 [operations](../runtime/operations.md#maintenance-task-delivery)、[T45](T45-template-webhook-delivery.md)、[T54](T54-ops-targets-and-routing.md)、[T55](T55-custom-receiver-delivery.md)。原有 LIVE-ID 不变，不新增平行现场入口。
 
-2026-09-25 自有隔离证明：原 outbox 有限明确拒绝重试（每 work 最多三次、30秒/120秒、固定身份/到期）、unknown 不重投；专用分析授权与固定任务；实际 Node HTTP 自有 Webhook 接收端先认领再丢 HTTP 确认，原库保留独立 unknown/claim，重启按原 claim 续报而没有第二次 POST。样例在原通知 attempt 边界按 AH-188 最小事件合同构造，不是其真实 producer、原生 Bot 或用户展示的验收。普通 packed 子进程已通过自有 `ops.observation.enabled=false` 明确隔离不相关观察，不靠执行 disabled 推导观察关闭。
+2026-09-25 自有隔离证明：原 outbox 有限明确拒绝重试（每 work 最多三次、30秒/120秒、固定身份/到期）、unknown 不重投；专用分析授权与固定任务；实际 Node HTTP 自有 Webhook 接收端先认领再丢 HTTP 确认，原库保留独立 unknown/claim，重启按原 claim 续报而没有第二次 POST。最初样例仅在原通知 attempt 边界按 AH-188 合同构造；本次联合候选已增加真正生产代码的公开自有来源 producer→原 OBS/outbox→自动 HTTP 投递→授权认领/结果，覆盖无关更新不发、同形与结构变化分流。仍不是官方来源、原生 Bot 或用户展示的验收，完整结果见[联合集成回执](../reports/2026-09-25-host-notification-integration.md)。普通 packed 子进程已通过自有 `ops.observation.enabled=false` 明确隔离不相关观察，不靠执行 disabled 推导观察关闭。
 
 | 原场景 / 阻断 | 仍需的真实或合流证据 |
 | --- | --- |
 | LIVE-OPS-RECEIVERS：默认用户出口 | 最小原生只读核实尚未找到已资格化的任意用户告警写入口。须落实一个未配维护 Bot 也实际可达的出口，并分别记录受理与用户展示；本地页面/文件/HTTP200 不代签。结构风险提醒不能仅靠维护任务替代。 |
 | LIVE-OPS-RECEIVERS：维护任务 | 原现场窗口明确接收 Bot、Routine、实际 automation 模型/工具、费用/数据授权以及委派 `notifications.tasks` 凭据。真实 sourceChange→原 fixed evidence→outbox→Webhook→精确认领/分析结果，回执分列 HTTP、receiver-credential、native turn、用户展示；无权执行修复/采用。 |
 | LIVE-OPS-OBSERVER-LIFETIME / LIVE-NOTICE-REQUALIFICATION | 验证已领取任务重启续报与 unknown 原操作对账；未发送旧 backlog / 不明 reservation 的完整自动冷启动接续仍是实现缺口，不把当前保守不发送宣称已完成。绑定/模型/授权改变不扩大权限，待验受控拒绝重试、额度和故障可见性。 |
-| AH-188 合流 / 公共观察配置 | Q 串行合流生产者后验证真实 episode/classification→此消费者、same-shape 待分析、snapshot/no-intersection 零唤醒、结构升级不被旧任务吞掉；动态配置开/关/读取失败独立于 desiredMode。packed handover 原20项在本分支通过，但未包含AH-188时不签其合流故障已解决，合流候选须原样复验。 |
-| 独立复核与部署 | 未取得本切片独立复核结论；Q 按精确提交完成必要复核和交叉检查。合流不更换 AH-124 固定现场候选，不动现役 Host/modeld/全局 shim；真实通知及模型费用仅在原有效授权窗口执行。 |
+| AH-188 公共观察配置与代码组合 | 已在同一候选验证真实 producer 的 episode/classification→维护消费者、无关更新不发、同形/结构变化分流，以及实际配置开/关/读取失败与取消。Host-health 19、witness 26、notification 48、原 handover 20 项均通过；使用实际 Node/Rust/SQLite/packed 组件和自有来源，不签官方来源或实际 Bot。 |
+| 独立复核与部署 | 分类/任务/授权入口、outbox 恢复及 producer/provenance 必要分段复核与修后复查已取得 Accepted，具体发现及范围见联合报告；早期超时没有计通过。合流不更换 AH-124 固定现场候选，不动现役 Host/modeld/全局 shim；真实通知及模型费用仅在原有效授权窗口执行。 |
 
 本次基线重整没有产生新的现场通过。旧 `RC-E2E-20260919` 的规划与判据见[原清单重整回执](../reports/2026-09-19-live-e2e-checklist-rebaseline.md)，其前置实现见[固定收口证据](../reports/2026-09-19-pre-e2e-closeout.md)；这些不是新版的施工或采用前置。已有历史锚点保留，后续窗口写入[报告目录](../reports/README.md)，本页只替换受影响场景的当前结果。

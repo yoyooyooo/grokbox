@@ -48,13 +48,13 @@ canonical runRoot/目标集合及daemon所属collector已接通，原生run-obse
 
 私有材料仍归 provenance：`host-bundles/source-evidence/<evidenceRef>.json` 内容寻址、0700/0600、原子发布，保存压缩的固定 Host 来源、实际窗口/配方和 worker。`readHostSourceEvidence(root, ref)` 核对摘要与范围，`hostSourceEvidenceBytes` 解压原来源；只读精确引用，不以当前磁盘替代丢失材料。公开事件/CLI/Web/通知不带源码、私有路径或 worker 正文。
 
-附件最多 68 份、单份 8 MiB、合计 64 MiB；原 receipt journal 仍按 64 项和 1 MiB 双界滚动，仅退役已索引旧项。GC 同时保护 journal 前后两侧、活动/排队分析及原 outbox 固定 revision 引用；原工作读取失败、未知或 200 项上界不能证明完整时不删材料，容量不足留下 `unknown`。这是有限保全，不保证永久全局 exactly-once，也不新建 pin/通知数据库。
+附件最多 68 份、单份 8 MiB、合计 64 MiB；原 receipt journal 仍按 64 项和 1 MiB 双界滚动，仅退役已索引旧项。GC 同时保护 journal 前后两侧、活动/排队分析及原 outbox 固定 revision 引用；先筛选有效工作/证据租约再应用 200 项上界，过期历史不永久阻断清理。活动引用不可读或上界不能证明完整时不删材料，容量不足留下 `unknown`。已提交观察先入 OBS，清理错误或缺 pin 不阻断 intake；不变来源也重试延期清理。附件暂时失败只对匹配全部不可变窗口的当前 AFTER 重取并产生新观察，同 episode 的旧缺失记录不改，历史 BEFORE 不被最新来源冒名替代。这是有限保全，不保证永久全局 exactly-once，也不新建 pin/通知数据库。
 
-`startHostHealth` 提供动态 `observationEnabled` 端口：只读观察不再由 `runtime.desiredMode` 控制，明确停止观察才撤销采样、分析和所属 gate；配置读取失败为 `observation-config-unavailable`，不回退启用。AH-143 独占公共 `ops.observation.enabled` schema/配置入口、`server.ts` 回调接线以及通知/接收者/outbox；本票未另写配置，公共配置生效需同候选集成后核验。该观察许可不授予自动采用、修复、Bot 唤醒或外发权限。
+`startHostHealth` 提供动态 `observationEnabled` 端口：只读观察不再由 `runtime.desiredMode` 控制，明确停止观察才撤销采样、分析和所属 gate；配置读取失败为 `observation-config-unavailable`，不回退启用。AH-143 拥有公共 `ops.observation.enabled` schema/配置入口、`server.ts` 回调接线以及通知/接收者/outbox；双方已在同候选验证实际配置开/关/读取失败及取消，没有另写配置。该观察许可不授予自动采用、修复、Bot 唤醒或外发权限。
 
 定向入口为 `test/host-source-change.test.ts`（已进入原 core 清单）及 `test/host-health-management.test.ts`。前者涵盖分级、浏览器公共合同、固定私有输入与失败/容量/GC；后者使用实际 Node Server、packed Rust、原 provenance/OBS 和自有 JS 来源，覆盖连续任务、风险升级、旧故障恢复、重启、迟到结果和开关独立性。它们不代签真实官方来源、用户接收者或部署；现场仅登记原 [LIVE](LIVE-integration-validation.md) 观察/证据/隐私/容量场景。
 
-**本次交付尚未完成合流签收。** 独立 Astra 阶段复核超时且未返回报告，不计通过；受影响 handover 的独立 packed Server 死亡恢复场景出现 `handover_wait:0`，其他 19 项通过，具体根因未确认。该新进程未消费测试端口，还会按默认 Host 路径观察；AH-143 公共观察配置进入同候选后，须在其自有配置根关闭无关观察，再保留原全部断言/超时重验。其他直接安装/packed Server fixture 同样核对来源隔离，不能仅因先前返回通过就认作隔离资格。这是明确的合流检查，不新增修复器、环境变量配置或全局 checker 前置；Q 在原 AH-188/AH-143 评论接收准确失败与提交，未替代现场验收。
+**联合候选已通过本阶段组合检查与必要分段复核。** 公共观察配置与 producer 在同一候选生效，普通与 packed 领域 fixture 分别显式隔离；原 handover 20 项保持原断言/超时通过，先前 `handover_wait:0` 失败保留。新增真实公开来源 producer → OBS/outbox → 自有 HTTP 维护接收端 → 认领/结果回执纵切通过，无关更新零额外投递，相关同形和结构变化分别生成任务。复核提出的保全/清理与恢复队首问题已在原边界修正并复查接受；早期审查超时未计通过。准确提交、测试和原生/现场限制见[联合集成回执](../reports/2026-09-25-host-notification-integration.md)，实际合流由原两票记录，不因此切换现场或签全部用户通知完成。
 
 ## Depends-on / Modules
 

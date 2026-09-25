@@ -36,9 +36,11 @@ bridge receipts明确`transport=unavailable/automaticRetry=false`，本地export
 
 已启用的自动接收者可在原 `workId` 内最多尝试三次，间隔 30 秒/120 秒；仅 `definitely-not-accepted/native_rejected` 可进入下一次，原到期不延长。首次冻结的目标、binding、模型和策略不能变；旧 attempt 不覆盖，安装及实际 Bot 额度按每次 reservation 计数。显式 send 和独立 test 仍单次，unknown、撤销与策略变化没有重投权限。`notification get/list` 的 `retry` / `attemptHistory` 展示有限状态，不推造 Bot 接收或用户展示。
 
-单轮程序没有网络循环。工作进程沿原调度取到期项，原 SQLite 原子预留；进程内 restore fence 保留最新 attempt 身份，只有该 attempt 的明确拒绝完成持久结算后，才允许引用它的下一次尝试。恢复更旧的拒绝快照不能绕过后来 unknown 的效果。当前进程启动前 backlog 仍不自动接续，这与真实 Bot 对账、用户默认出口一样尚未完成，不能以此切片代签整票验收。
+单轮程序没有网络循环。工作进程沿原调度取到期项，原 SQLite 原子预留；进程内 restore fence 保留最新 attempt 身份，只有该 attempt 的明确拒绝完成持久结算后，才允许引用它的下一次尝试。恢复更旧的拒绝快照不能绕过后来 unknown 的效果；即使旧拒绝 attempt 仍在，精确匹配的 work 也会隔离为 unknown，保留旧前缀、不编造丢失 attempt，并释放队首让其他新工作继续。Client 不得将该 work 投影为可重试。当前进程启动前 backlog 仍不自动接续，这与真实 Bot 对账、用户默认出口一样尚未完成，不能以此切片代签整票验收。
 
-定向证据：`ops-notification-outbox.test.ts`（29 项，含真实 SQLite/强杀/回滚）、`notification-restore-fence.test.ts`、`ops-automatic-notification.test.ts`、`ops-native-notification.test.ts`、管理 Node/HTTP/Client 严格响应检查。均使用自有配置根及接收端，不是现役 Bot 或 App 展示证明。
+定向证据：`ops-notification-outbox.test.ts`（30 项，含真实 SQLite/强杀/回滚）、`notification-restore-fence.test.ts`、`ops-automatic-notification.test.ts`、`ops-native-notification.test.ts`、管理 Node/HTTP/Client 严格响应检查。均使用自有配置根及接收端，不是现役 Bot 或 App 展示证明。
+
+联合候选另已从实际公开来源 producer 消费 `sourceChange`，沿原 OBS/outbox 自动投递至自有 HTTP 接收端并完成授权认领/结果。补齐实际事件 `host_compatibility` 的通知校验与安全摘要；HTTP 后结算保留先前 taskReceipt，认领或报告不把未知传输升级为受理。无关更新不发送、相关同形与结构变化分别派工，证据与固定来源见[联合集成回执](../reports/2026-09-25-host-notification-integration.md)。默认普通用户出口、完整旧待发冷启动接续和真实 Bot/App 仍为未完成义务，不由组合通过代签。
 
 ## 单次可靠投递切片（2026-09-18）
 
