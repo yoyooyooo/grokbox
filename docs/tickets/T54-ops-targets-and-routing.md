@@ -1,41 +1,41 @@
-# T54 — 单目标配对与后续有限路由
+# T54 — 固定用途与单目标配对
 
 ## Status / Goal
 
-**Partial：default 目标、私有配对/撤销、接收者预检、显式发送及未来 work 激活授权/daemon sender 已集成；真实接收资格、完整恢复防重放和高级路由仍未关闭。** [Spec §6.3](../roadmap/template-ops-automation-spec.md#bot-routing)。复用ops.targets/defaultTarget，任意用户有权使用的原生Bot可作为接收者，不限模板。
+**Partial：普通提醒与维护分析任务复用原接收者、配对、outbox 和管理 Server sender；维护用途的显式授权、认领/结果接口已有隔离证明。未配置维护 Bot 时的真实默认用户出口、真实 Bot 回合和完整冷启动接续尚未关闭；高级路由不是这些缺口的前置。** [Spec §6.3](../roadmap/template-ops-automation-spec.md#bot-routing)。
 
-## Depends-on / Modules
+## Current Home / 所有者
 
-依T51配置和T43/T53原生port合同；实际bind经T53能力接线。kernel `internal/ops/routing.ts`和policy，box-runtime `ops-bindings.node.ts`、原outbox frozen decision，CLI `commands/ops.ts`。不建router.db或模型目录。
+当前配置和权威边界见 [operations](../runtime/operations.md#maintenance-task-delivery)。AH-143 独占本轮公共 ops schema / Server 配置接线、固定用途、接收者和 outbox；AH-188 独占来源变化分类及原 `host_patch_health` producer。任务消费者读取原 incident 的固定 evidence revision 中 `sourceChange`，不从 SHA、checker 文案或模型输出自行分类。AH-189 的修复执行和 AH-190 的采用控制不在本票内。
 
-## 当前最小接线
+实现复用 `notification-contract.ts`、`pairing-contract.ts`、`ops-bindings.node.ts`、`notification-outbox.node.ts` 和原管理 CLI/API。没有 router.db、第二套事件库、模型目录、修复执行器或另一个 sender。
 
-`selectNotificationTarget`从已校验effective ops选择defaultTarget；routing.enabled=false仍选默认目标，通知off/缺Agent或routineKey/不支持的数据或意图均明确blocked。高级routing、digest、允许重复投递尚不执行，不能静默改用别的目标。`NotificationBinding`约束database/scope、alias/exact Agent/Routine、model/qualification、policy revision和5秒内观察窗口；它必须来自本域配对owner，不是config或告警可提供的授权DTO。
+## 两种固定用途
 
-`runOpsNotificationDelivery`使用受信 `PairedNotificationDriver`，没有合格 binding/授权则 unavailable，不生成 attempt。`ops targets bind` 和私有凭据 capsule 已实现；显式 HTTP 与获准未来 work 的 daemon sender 复用原 outbox 程序，不另造存储。存储按真实 Agent 而非 alias 共同计数；旧预留/unknown 不自动重发。早期 outbox 范围见 [固定回执](../reports/2026-09-18-notification-outbox.md)，后续激活/自动链见 [集成回执](../reports/2026-09-19-automatic-notification.md)。
+普通 `brief-notice` 使用 `ops.routing.defaultTarget`，`routing.enabled=false` 仍选择该目标，`notifications.mode=off` 阻止本用途投递。专用 `diagnose-or-report` 使用 `ops.maintainer.target`；须显式开启 `maintainer.enabled` 和 `diagnostics.mode=automatic-bounded`，目标允许相同 intent，并经过独立分析授权。preset、目标配置、准备配对及 severity 都不是授权。
 
-## 私有配对准备已实现（仍不等于接收资格）
+两种用途各只有一个确切目标，不按消息内容选择或升级目标，不以维护 Bot 替换未知用户提醒。一次原工作对应一个用途；`sourceState=snapshot`、`no-intersection` 不派工，`related-same-shape`、`structural-change`、`unknown` 形成分析任务。结构风险仍须普通用户可达出口，当前不能用维护任务或本地记录代替该验收。
 
-新增Box-local `ops targets list/show/bind/disable/unbind`；target偏好即使通知off也可明确准备，但不会解除off。只有本安装T53管理的disabled Webhook定义可参与，预期revision与scope/代际重核，确认后原生key请求至多一次。私有capsule原子发布、8槽、主/固定暂存各64KiB；状态投影、存储计量和通知查询不返回credential。
+`NotificationBinding` 继续绑定 database/scope、alias/exact Agent/Routine、model/qualification、policy revision 和五秒观察窗口。用途还必须匹配固定 Routine 行为：`notify_then_end` 或 `claim_analyze_report`。共享真实 Bot 的多 alias / 多用途共用目标唤醒额度；安装用途分别限额，每次 reservation 包括未知结果和明确拒绝均消耗额度。
 
-unknown占位、并发撤销/晚到响应、强杀、损坏/丢失/符号链接保护与CLI的早期证明见 [配对回执](../reports/2026-09-18-private-target-pairing.md)。prepared-only 不授权投递；后续 `verify` 只读预检，`activate` 需要确切测试 work、当前绑定/模型与操作人已见提醒的独立声明。它不启用 Routine、不启动 collector、不补旧积压；缺授权时 driver 仍不可用。真实模型/行为/HTTP与重新资格、远端配对、高级路由、持续 collector 安装仍有独立范围，详见 [T46](T46-template-ops-pairing.md)，不能继续将已集成的 activate/sender 记为未实现。
+## 配对与授权
 
-## Minimum Work / 首发出口
+正式入口是 `notification`、`routine` 与 `system config` 管理族；本页历史报告中的 `ops targets` / `ops notifications` 入口已退役，不可按旧报告复活本地 writer。配置提交不会新建/唤醒 Bot、启用 Routine 或变更模型。
 
-一个default或指定alias、routing.enabled=false仍投向default。缺/禁用/未配对返回blocked，不猜名字/最近Bot、不广播/自动新建。bind核对installation/scope/exact Agent/Routine/revision、secretRef、数据/模型/工具与成本指纹，预览后写受保护机器状态；普通config只写偏好。
+原配对 owner 处理确切受管 disabled Webhook 定义、预期 revision、scope/代际和至多一次凭据获取。capsule 仍为单一私有凭据/元数据 owner，8 槽、主/暂存各 64KiB，查询不返回 key。prepared-only 不授予发送；unbind 也不证明在途效果取消或原生 key 已撤销。
 
-command/ID仅向相应已绑定目标披露，默认safe bot-notice。目标无Box执行权限仍能提醒，标注box-local限制。模型分配仍归models/native，不在ops指定provider/key/modelId。改模型/供应商/数据范围要求重绑；禁用阻止新投递，原在途unknown保留对账。
+`notification receiver verify` 只读当前资格。`notification receiver enable` 需要原接收者引用、预期绑定 revision、实际预检的 model revision、持久 request UUID 和 `--confirm`；不再需要 test work 或操作人声明已收到。维护分析另须 `--confirm-analysis`，旧提醒的 enable 请求/authorization capsule 不会升级为分析授权。启用不发送测试、不自动开启原生 Routine、不补旧积压。独立测试不是启用前置。
 
-## Later routing scope
+HTTP accepted、receiver-credential 认领/结果、实际原生 Bot 回合和用户展示分别记录。认领不能清除原 HTTP unknown，更不能授权修复/采用。有限拒绝重试、查询与冷启动界限见 [T45](T45-template-webhook-delivery.md)，实际接收模型/工具/数据资格见 [T55](T55-custom-receiver-delivery.md)。
 
-有序首匹配、枚举AND/数组OR，未命中default；最多8目标/32规则/每规则2显式备用，未知字段/重复ID/不存在引用/循环拒绝。每阶段只一个primary，首命中无权限不试后续规则。T55接高级fallback/交接，本票不以高级全部完成阻塞最小模式。
+## 检查和剩余范围
 
-## Executable acceptance
+`ops-routing.test.ts`、`notification-task.test.ts` 验证固定用途、合同、独立配置及授权；`ops-notification-outbox.test.ts` 验证原 SQLite、预算、明确拒绝重试和未知/备份恢复围栏。`test/notification-management.test.ts` 的真实 Node/HTTP 子套件包含原 CLI/API 以及新任务的认领、丢 HTTP 确认、重启续报和反例。
 
-已新增`packages/runtime-kernel/test/ops-routing.test.ts`，并在`ops-notification-outbox.test.ts`验证实际DB/投递程序/只读CLI。`test/ops-targets-cli.test.ts`及原生bind旅程仍待实现。最小组验证单目标完整旅程、无配对blocked、同真实Bot多alias共享额度、变binding旧attempt不重发、配置不创建Bot/Routine/模型副作用。高级组另验首匹配/遮蔽/循环/未命中/fallback拒绝，不能将其跳过算已支持。
+新任务 HTTP 证明使用自有接收端、隔离安装和符合 AH-188 合同的固定样例，在原安全通知/attempt 边界装载任务；不是已经运行真实 AH-188 producer、官方 Webhook 或模型分析回合的证明。真实 producer 合入 v2 后须验证原分类→固定 evidence→本 outbox→实际目标，不复制兄弟分支未合代码绕过合流。
 
-所有目标状态列requested/effective/blockedReason，route explain纯读取不发HTTP/模型。packed CLI与原生绑定分证，实际接收能力见[LIVE-OPS-RECEIVERS](LIVE-integration-validation.md#live-ops-receivers)。
+高级有序路由、备用、集中 reportTarget 和跨 Bot 交接均后置。unknown 不 fan-out，不猜最近 Bot，不自动换模型、广播或新建接收者。配置/绑定故障必须可查询，不以备用成功掩盖原任务义务。
 
-## Forbidden / Exit evidence
+## Exit evidence
 
-不建立新配置根，不用Bot/Payload控制target/severity来选贵模型，不复制grant，不让路由扩大数据/执行权限。关闭最小部分时明确剩余高级范围；T50只消费首发已证部分。
+待验只归 [LIVE-OPS-RECEIVERS](LIVE-integration-validation.md#live-ops-receivers)、[LIVE-OPS-OBSERVER-LIFETIME](LIVE-integration-validation.md#live-ops-observer-lifetime) 和原索引内 AH-143 段。源码与隔离证明不等于默认出口可达、部署或整票 Done。

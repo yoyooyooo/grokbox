@@ -1,45 +1,45 @@
-# T55 — 接收者资格、故障域与有限交接
+# T55 — 接收者资格、固定分析任务与故障域
 
 ## Status / Goal
 
-**Partial：固定disabled提醒blueprint与实际加载Host的只读自动任务选模预检已实现；真实Webhook回合/激活仍未资格化。高级分流是独立后续。** [Spec §6.3–6.4](../roadmap/template-ops-automation-spec.md#receiver-resilience)。首发每个实际支持的目标仍须取得其最小身份/模型/数据/成本资格；不能因为高级延期就免验custom接收者。
+**Partial：两个固定 disabled Routine blueprint、原生自动任务选模预检、原配对/授权和维护任务接收/回执接口已实现；实际 Bot 模型/工具回合、用户展示、默认用户出口和生产者合流仍未资格化。** 本轮 AH-143 不实现 AH-189 修复逻辑、AH-190 采用控制或通用 Bot 交接框架。
 
-## 显式发送前置增量
+## 当前接收者链
 
-T45的`ops notifications send`已把用户确认的model fingerprint、prepared配对与启用定义、当前Host同帧观察、既有Server/local所有权门接到真实HTTPS。只在显式单条既有work上使用，保持原证据年龄，不将`verify`结果写为永久资格，也不凭预检自动启用Routine。模型/ownership/代际/定义变化在发送前拒绝；真实回合使用的模型与工具及用户送达仍未观测。自动资格、长期激活和后续交接不由该命令代替。[固定回执](../reports/2026-09-18-explicit-native-notification.md)。
+正式入口使用 `notification receiver blueprint/verify/enable` 与原 `routine`、`system config` 管理族。历史 `ops targets` / `ops notifications` 命令不再是当前 writer。受信 driver 复用 capsule、原 outbox、相同原生 HTTP 边界；未知结果不能换目标广播。
 
-## Depends-on / Modules
+原生只读序列检查受管 Agent/Routine、定义 digest、安装 scope、Gateway generation、reviewed profile、实际 loaded capabilities、ownership 和下一次 automation 的选模见证。模型不是从普通聊天配置猜测；绑定还要求最后五秒新鲜度。原生适配器仅识别两个固定策略摘要，不接受任意 prompt 为“合格接收者”。预检不取 key、不调用模型、不证明真实 Bot 回合或用户已读。
 
-依T43/T53原生合同、T54 frozen route、T45 delivery；T47仅是后续诊断消费者。kernel routing/policy/notification；box-runtime native-notification与bindings/state，复用同一outbox而非新增sender。
+普通提醒的固定策略仍为 `notify_then_end`。维护策略为 `claim_analyze_report`：先领取精确任务、取固定 revision 的安全摘要、分析并报告有限结论；不能改配置、换模型、重启、修源码、建 Issue、调另一个 Bot 或采用制品。Routine 默认 disabled；启用仍须用户有权的原生路径，不由配对/预检暗中执行。
 
-## 已实现的接收者预检
+## 分析授权与最小接口
 
-`ops targets blueprint <alias>`生成固定禁用Routine定义；`ops targets verify <alias>`只读prepared配对、安装scope、受管原生ID/revision、prompt策略和Host选模见证。模型与loaded capabilities来自同一原生状态帧，前后校验reviewed profile和Gateway代际，最终本地核对后再次检查五秒新鲜度。缺证、已启用、变化或过期不得得到绿色预检，不读key、不写资格/配置、不发模型请求。
+配置要求 `ops.maintainer.enabled=true`、确切 `ops.maintainer.target`、目标允许 `diagnose-or-report`、`ops.diagnostics.mode=automatic-bounded`。准备配对后，管理入口 enable 的预期 binding/model revision、持久 request UUID、`--confirm` 和额外 `--confirm-analysis` 才能发布 `analysisAuthorized=true`。preset 和旧提醒授权不能代签。原私有凭据 owner 在实际 HTTP 前再次检查该分析授权。
 
-Host选模闭包复用原生automation实验/默认/环境逻辑，route模式附精确Agent的managed selection revision；仅限下一次本地默认自动任务。`preflight_ready`明确没有Server所有权、实际工具、HTTP或用户已读证明，也不授权canary/activate/send。旧Host没有对应观察点时返回缺证，不从当前配置猜测模型。
+接收端另需本安装明确委派的管理凭据，principal 精确为 `notification-receiver:<bindingId>`，只授 `notifications.tasks`。凭据不能放在 Webhook body、普通 ops 配置或报告中，也不在本轮测试/配置提交时自动创建或发送给真实 Bot。缺凭据或真实 Bot 工具入口时保留 blocked，不伪造认领。这个主体验证是凭据归属，不是原生 Bot turn 证明，也不是同 UID shell 沙箱。
 
-## 新管理健康面（2026-09-20）
+- `POST /v1/notification-task-claims`：仅接收 `databaseId/workId/attemptId/taskDigest/requestId`；服务端从认证主体取得接收者，不接受请求自报 Bot/权限。
+- `GET /v1/notification-tasks/:databaseId/:workId`：读取原任务和分层回执；`/evidence` 仅在原认领、当前配置/绑定/授权有效且任务未过期时读取该 revision 的 `public-summary`。没有通用本地诊断或私有 Host 源码访问权。
+- `POST /v1/notification-task-results`：在上述原定位字段上增加 `claimId/conclusion/reportDigest`。结论限 `no-action-proposed/repair-proposed/inconclusive/blocked`；仅可附独立报告摘要 hash 或 null，不接受源码、自由文本、执行指令或“已修复/已采用”结论。
 
-HOST-01当前提供来源/静态分析和原installation incident，公开合同保留 `notificationCoverage=local-only`，不把依赖同Host的receiver当独立兜底。原接收者所有资格门保持不变，检测器不能写入许可或改模型/目标。首次接入和enable/test已经由T45/T46统一管理入口替代本票早期 `ops targets` 示例；阅读历史预检回执不得恢复已退役writer。实际送达、同故障域失效和独立出口仍需本票/现场证据。
+重放相同 request 必须得到原 claim/result，另一个 claim 或同 request 换内容必须冲突。认领只允许已经 dispatch 的 attempting/accepted/unknown，不能认领 reserved。未过期任务方可首次认领；已领取的结果允许在原记录保留期内补报，但不因此恢复取证/执行授权。
 
-## Work
+## 回执和故障域
 
-分别验证identity、routine、ownership、Webhook实际model selection、tool scope、data consent与availability。普通聊天选模不证明automation回合走同一供应商；配置/捕获/观察值不同必须展示。custom依赖本次故障Host/modeld/provider时明确dependency-unavailable；官方也可能共用Host/Box，不承诺高可用。
+HTTP 状态保持原 `native-accepted/definitely-not-accepted/unknown`。任务回执明确 `source=receiver-credential`、`nativeTurnObserved=false`；`claim` 与 `result` 不会改变 HTTP 事实、推造用户展示或签署修复完成。HTTP200 无回执仍是未认领；报告丢应答后查询原 task/request，不换 ID 发另一条 Webhook。
 
-最小模式：一个明确目标，不可用本地保留/过期合并，不改模型/修Host/猜备用。后续备用仅限已配对相同intent和数据范围且确定原attempt未接收/未开始；timeout或无报告为unknown，不扇出。新增alias不得扩大安装或真实native Bot费用预算。
+重启可读取/补报已领取任务；尚未发送的旧 backlog 和不明预留仍受原恢复围栏约束，尚未实现完整自动冷启动接续。有限明确拒绝重试见 [T45](T45-template-webhook-delivery.md)。通知、分析各有安装额度；同实际 Bot 的 alias 和用途仍共享目标额度。轮询本身不调用模型，获准 Webhook 可能产生实际模型费用，不能用本地 attempt 数保证 token 成本硬上限。
 
-后续受托/预授权诊断允许一次受控needs-analysis交接：核对权限/数据/预算，安全summary+refs，不转发整段对话、不A→B→A；默认brief只提醒不能提出自动升级。集中reportTarget是额外有预算的投递，与诊断完成分列，不能偷换会话。
+依赖故障 Host/modeld/provider 的接收者不是独立告警出口。HOST-01 的 `notificationCoverage=local-only` 不因新增回执接口变成用户送达；无维护 Bot 的默认用户出口尚缺已资格化的任意原生通知写能力，不能以本地页面、文件或 HTTP200 代替。
 
-绑定/caller真实身份不可证时不开放自动诊断工具；固定安全提醒仍按最小载荷合同，不用agentId参数自证权限。同UID任意shell不宣称沙箱，模型输出不授予控制权。
+## 已有证明与缺口
 
-## Executable acceptance
+原预检探针与早期局限保留在 [接收者选模回执](../reports/2026-09-18-receiver-model-preflight.md)。本轮定向原用例保留，`notification-task.test.ts` 补合同/权限/注入反例；`packages/server/test/notification-tasks.node.ts` 纳入原 `test/notification-management.test.ts`，使用隔离配置根、SQLite、端口和自有 HTTP 接收端，验证明确分析授权、认领先到/HTTP 应答丢失、原 unknown 保留、重启续报、并行事实以及错误凭据/跨任务/内容升级拒绝。
 
-已新增`packages/box-runtime/test/ops-receiver-qualification.test.ts`、`test/receiver-frame.test.ts`及显式固定源`native-receiver-model.test.ts`。`ops-receiver`完整专项117 pass/0 fail，原生函数探针1 pass/72断言；CLI全量732 pass。最终packages前两组1156 pass/20 skip，第三组86文件被工具拦截，未签全仓完成。独立审查超时无报告。实际失败、夹具更新、Node checker与未证范围见[本轮回执](../reports/2026-09-18-receiver-model-preflight.md)。
+该 HTTP 用例在原通知 attempt 边界装载符合 AH-188 合同的自有固定样例，不声称已经跑过尚未进入 v2 的真实 producer。Q 合流后须检查 AH-188 原 episode→固定 revision→此消费者；真实来源的 source-evidence 私有附件读取/分析授权不是本票的 `notifications.tasks` 能力。
 
-`ops-receiver-handoff.test.ts`及实际Webhook模型/工具/数据链仍待实现和验证，不能从预览推导已执行。高级故障切换/交接后续独立完成，不以默认提醒扩大权限。
+真实 Webhook 接收、native Bot turn、选模/工具/安全范围和用户展示需原现场窗口逐层证明。AH-189 消费 task/claim/result 实现实际修复分析流程，AH-190 单独批准采用；本票不以 prompt 禁令声称已具备强制工具隔离。
 
-原生资格在独立授权的一次性接收Bot上通过实际Webhook捕获选模/供应商/报告；无证据标unqualified，不用配置值代替。首发只签所选目标已证范围，高级route/handoff另记未完成。
+## Exit evidence
 
-## Forbidden / Exit evidence
-
-不再造model catalog/agent loop，不为告警可达先restart，不借高severity提高权限。当前原生状态唯一归[LIVE-OPS-RECEIVERS](LIVE-integration-validation.md#live-ops-receivers)，自主任务归[AUTONOMY](LIVE-integration-validation.md#live-ops-autonomy)。
+所有现场待验集中 [LIVE-OPS-RECEIVERS](LIVE-integration-validation.md#live-ops-receivers)、[LIVE-OPS-OBSERVER-LIFETIME](LIVE-integration-validation.md#live-ops-observer-lifetime) 和原索引 AH-143 段。高级 fallback、集中报告和跨 Bot 交接后置；缺默认出口和真实验收时不能 Done。

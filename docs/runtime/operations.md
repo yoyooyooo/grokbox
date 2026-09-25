@@ -32,13 +32,49 @@ intake 接受已知错误、独立原生未知错误、无 STEP 拒绝、队列�
 
 默认 Bot 只转述安全现象、ID、一条主取证命令和必要补充，然后结束；不读整份 JSON、不自动诊断、询问 Issue、派 Bot 或循环催问。用户随后委托才开启同 incident 的独立任务。
 
+<a id="maintenance-task-delivery"></a>
+## 维护分析任务投递
+
+AH-143 的最小维护用途复用上面的事件、原配对和 outbox，不是新增修复执行器。普通用户提醒仍为 `brief-notice/notify_then_end`；专用维护目标使用 `diagnose-or-report/claim_analyze_report`。只有 AH-188 原 producer 的固定 `sourceChange` 分类可驱动后者；snapshot/no-intersection 不派工，related-same-shape/structural-change/unknown 保留分析任务，旧证据缺字段不补造分类。生产者合入 v2 后的实际贯通必须另验，符合合同的自有样例不代签真实 producer。
+
+配置通过安装所有者的原 `system config apply` ops 域入口维护：
+
+```json
+{
+  "observation": { "enabled": true },
+  "notifications": { "mode": "off" },
+  "maintainer": { "enabled": true, "target": "maintainer", "maxAutomaticWakeupsPerDay": 2 },
+  "diagnostics": { "mode": "automatic-bounded" },
+  "maintenance": { "mode": "off" },
+  "routing": { "enabled": false, "defaultTarget": "maintainer" },
+  "targets": {
+    "maintainer": {
+      "agentId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "routineKey": "maintenance-analysis",
+      "allowedIntents": ["diagnose-or-report"],
+      "dataPolicy": "safe-summary"
+    }
+  }
+}
+```
+
+这是替换占位 Agent ID 后提交的意图示例，不是启用授权；`notifications.mode=off` 仅演示普通 Bot 提醒与维护用途独立。沿原受管 disabled Routine→配对→verify→enable 流程，分析 enable 另须 `--confirm-analysis`，固定当前 binding/model revision、request UUID 和 `--confirm`。旧提醒的授权、preset 或告警严重性不能升级为分析许可。配置提交不会唤醒 Bot、启用 Routine、改模型或采用新 Host。
+
+接收 Bot 还需明确委派的本安装管理凭据，principal 为 `notification-receiver:<bindingId>`、capability 为 `notifications.tasks`；凭据由原访问管理 owner 提供，不进入 Webhook payload，也不由本接口自报 Agent ID 获得。缺凭据、实际工具或安全边界必须在真实窗口暴露并阻断，不能用配置存在冒称维护任务可用。
+
+`POST /v1/notification-task-claims` 以原 database/work/attempt/taskDigest/request UUID 原子认领；`GET /v1/notification-tasks/:databaseId/:workId` 查原回执，后缀 `/evidence` 仅按有效原认领取任务未过期的固定 revision 公开摘要；`POST /v1/notification-task-results` 增加原 claimId、有限结论和报告 digest。结论只有 no-action-proposed、repair-proposed、inconclusive、blocked，不能签“修复/采用已完成”。字段与资格细则见 [T55](../tickets/T55-custom-receiver-delivery.md)。
+
+原 attempt 内分别保存 HTTP 结果和 `source=receiver-credential` 的 claim/result。`nativeTurnObserved=false` 与用户展示未观察保持明确；认领/报告不会把 HTTP unknown 改为 accepted。重启能查询及补报同一已领取任务，重复同 request 幂等；尚未投递的旧 backlog / 不明预留仍受原恢复围栏保护，完整自动冷启动接续未交付。新接口不授私有 Host 源码、本地诊断明细、模型工具、修复或采用权限；AH-189/AH-190 分别承接后续职责。
+
+**当前默认出口缺口：**最小只读原生能力核实尚未得到可用于本路径的任意用户告警写接口。没有维护 Bot 的普通用户仍缺已资格化的默认可达出口；本地页面、文件、日志或 HTTP200 都不能代签用户已看到。结构风险需要用户提醒，这项不会被维护分析任务替代。待验统一回 [LIVE 的 AH-143 段](../tickets/LIVE-integration-validation.md#ah-143-delivery-gap)，整票不能仅凭合入 Done。
+
 ## 配对、接收者与自动授权
 
 配对的配置意图、私有 binding、原生 Routine、当前模型/能力、发送授权和用户收到通知是不同事实。bind 先验证安装/scope、受管且 disabled 的 exact Routine/revision，确认后持久占位，至多一次原生凭据请求，再复核后原子发布 capsule。enrolling/unknown 阻止换 operation 绕过；晚到凭据不能复活已解绑 revision。
 
 capsule 是单一受保护凭据/元数据 owner，不把 secret 拆成可能错配的独立普通配置；输出只有白名单 metadata。既有 owner 丢失/损坏不当首次初始化。unbind 移除本地引用/授权，不声称原生 key 已撤销、在途任务已取消或介质擦除。
 
-blueprint 提供固定 disabled 提醒定义，verify 只读预检。实际自动任务模型和 loaded capabilities 必须来自同帧原生选择，而非聊天配置猜测；前后 scope/Host/定义/绑定/模型 revision 和最后新鲜度核验。preflight_ready 不是真实 Webhook、工具执行、接收或运行权限。
+blueprint 按已配置用途提供固定 disabled 提醒或分析定义，verify 只读预检。实际自动任务模型和 loaded capabilities 必须来自同帧原生选择，而非聊天配置猜测；前后 scope/Host/定义/绑定/模型 revision 和最后新鲜度核验。preflight_ready 不是真实 Webhook、工具执行、接收或运行权限。
 
 显式 send 只处理一个既有 work 和私有固定 endpoint；不接受任意 URL/key/body，不启用 Routine、不创建后台 grant。Routine 必须由独立动作启用，且除 enabled 位外与配对定义一致。使用原 outbox 预算/claim/unknown 协议，生产 TLS/origin/无 redirect 约束归 [上游 Webhook 边界](../upstream-integration.md#native-routine-and-notification-webhook-boundary)。
 
@@ -52,7 +88,7 @@ blueprint 提供固定 disabled 提醒定义，verify 只读预检。实际自�
 
 work 的准备/ready/完成/过期/替代/阻断，attempt 的 reserved/attempting/native-accepted/definitely-not-accepted/unknown，Bot report 的 observed/not-observed 和 incident 的 open/resolved/ack/snooze 分开。HTTP accepted 不证明 Bot 完成或用户已读；用户接收声明与程序证据也分开。
 
-发送前短事务预留 attempt 和费用，最终 policy/binding 检查沿既有配置锁完成，网络在所有本地锁之外。原自动授权链仅对 `definitely-not-accepted/native_rejected` 开放有限重试：同一 work 最多三次，前两次明确拒绝后的间隔分别为 30 秒、120 秒，不延长原到期。绑定/模型/策略身份须与第一次完全一致；显式 send、独立 test、撤销/过期/策略拒绝及 unknown 均不自动重开。只读回执提供 `retry` 和有限 `attemptHistory`，单次程序本身不循环发送。持久 attempting 崩溃后先 unknown，对账不能换目标广播。费用按安装/真实接收 Bot/发生周期共同计数，多 alias 不扩额度；原生 token 花费不是本地请求数硬限。
+发送前短事务预留 attempt 和费用，最终 policy/binding 检查沿既有配置锁完成，网络在所有本地锁之外。原自动授权链仅对 `definitely-not-accepted/native_rejected` 开放有限重试：同一 work 最多三次，前两次明确拒绝后的间隔分别为 30 秒、120 秒，不延长原到期。绑定/模型/策略身份须与第一次完全一致；显式 send、独立 test、撤销/过期/策略拒绝及 unknown 均不自动重开。只读回执提供 `retry` 和有限 `attemptHistory`，单次程序本身不循环发送。持久 attempting 崩溃后先 unknown，对账不能换目标广播。费用按安装用途/真实接收 Bot/发生周期共同计数，同一真实 Bot 跨 alias/用途不扩目标额度；原生 token 花费不是本地请求数硬限。
 
 精确配额、TTL、backoff 和状态 schema 由 source policy 拥有。无变化不产生周期 LLM 摘要。过期积压不逐条补送，有限合并必须保存 supersedes/未知投递和原发生周期限制。sender 故障形成有界本地健康状态，不递归制造无限通知。
 

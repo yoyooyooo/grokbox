@@ -191,7 +191,7 @@
 | 稳定场景 / Gate | 本候选结果与证据范围 | 待完成动作与通过判据 | 阻断、下一步、来源 |
 |---|---|---|---|
 | <a id="live-ops-routines"></a>**LIVE-OPS-ROUTINES**<br>G2 | [ ] `partial`；`not-run` | ①固定blueprint→disabled apply→outcome/readback→安全更新；②同operation不重复create，unknown只精确ID reconcile；③配对preview零key调用、确认bind后capsule私有；④明确enable后正式Webhook一次；⑤disable后无新fire，in-flight单独结算；⑥本轮资源清理 | 来源与实施差额：[T43](T43-native-webhook-contract.md) · [T53](T53-agent-routines-cli.md) · [Routine步骤](../maintainers/live-end-to-end.md#webhook-journey) |
-| <a id="live-ops-receivers"></a>**LIVE-OPS-RECEIVERS**<br>G2 | [ ] `partial`；`not-run` | ①verify同帧能力/模型与新鲜所有权；②实际Webhook回合记录三种授权Provider至少high，另选一个xhigh；③固定提醒正文/incident/revision正确、无自动诊断/Issue；④只验证过的模型档位列入接收者支持；⑤异常结果不广播备用 | 来源与实施差额：[T55](T55-custom-receiver-delivery.md) · [接收者证据](../reports/2026-09-18-receiver-model-preflight.md) |
+| <a id="live-ops-receivers"></a>**LIVE-OPS-RECEIVERS**<br>G2 | [ ] `partial`；`not-run` | ①verify同帧能力/模型与新鲜所有权；②实际Webhook回合记录三种授权Provider至少high，另选一个xhigh；③普通提醒正文/incident/revision正确且只提醒；专用维护目标经独立分析授权领取固定任务并回报，凭据回执不代签真实Bot回合/用户展示；④只验证过的模型档位列入接收者支持；⑤异常结果不广播备用 | 来源与实施差额：[T55](T55-custom-receiver-delivery.md) · [接收者证据](../reports/2026-09-18-receiver-model-preflight.md) |
 | <a id="live-ops-observer-lifetime"></a>**LIVE-OPS-OBSERVER-LIFETIME**<br>G2 | [ ] `partial`；`not-run` | ①必要配置/授权齐备可显式启用，无须先测试或人工声明收到；②独立可选 test 产生真实 test work/attempt，不伪造 incident，verify 不发送；③新异常→后台 outbox→原生提醒且无需外部 Agent 常驻；④关页面/CLI 后继续，off/未授权零投递；⑤未知先对账，不补旧积压 | 来源与实施差额：[T45](T45-template-webhook-delivery.md) · [自动链证据](../reports/2026-09-19-automatic-notification.md) |
 | <a id="live-notice-requalification"></a>**LIVE-NOTICE-REQUALIFICATION**<br>G2 | [ ] `partial`；`not-run` | ①绑定/模型/权限/代际变化后重核真实资格；②失效停发且原因可查；③恢复经新合同的显式授权路径，测试不成为隐含门槛；④旧 unknown/积压不重投；⑤重启不扩大已有授权 | 来源与实施差额：[T46](T46-template-ops-pairing.md) · [T55](T55-custom-receiver-delivery.md) |
 | <a id="live-obs-evidence"></a>**LIVE-OBS-EVIDENCE**<br>G1/G2 | [ ] `partial`；`not-run` | ①未知tray/queue failed/无STEP实际产生incident，已知失败也正确归类；②现场含事发制品/关联/副作用/覆盖缺口；③同revision在下一输入/滚动后命令仍可读；④过期降摘要不回空健康；⑤J1接纳不等CONT职责完成 | 来源与实施差额：[源边界证明](../reports/2026-09-19-pre-e2e-observation.md#producer-boundaries) · [OBS-00](OBS-00-evidence-contracts.md) · [OBS-02](OBS-02-incident-evidence-snapshots.md) · [T45](T45-template-webhook-delivery.md) |
@@ -349,5 +349,20 @@ A `7994b92`与B `dc03066`：配置迁移、所选Provider/工具/Memory/effort�
 ### H-NOTICE — 2026-09-18至19通知链集成
 
 [显式发送](../reports/2026-09-18-explicit-native-notification.md)与[自动通知](../reports/2026-09-19-automatic-notification.md)保存源码、合成HTTP、真实SQLite/Node/daemon、source→v2映射和缺失末组回归。sender/激活代码已存在；生产TLS、实际接收者与collector持久安装不能由这些离线事实推导。
+
+<a id="ah-143-delivery-gap"></a>
+### AH-143 — 固定维护任务已接收口，真实默认出口与现场闭环未完成
+
+**状态仍为 partial / not-run；不是已部署、已合入或整票 Done。** 当前实现合同见 [operations](../runtime/operations.md#maintenance-task-delivery)、[T45](T45-template-webhook-delivery.md)、[T54](T54-ops-targets-and-routing.md)、[T55](T55-custom-receiver-delivery.md)。原有 LIVE-ID 不变，不新增平行现场入口。
+
+2026-09-25 自有隔离证明：原 outbox 有限明确拒绝重试（每 work 最多三次、30秒/120秒、固定身份/到期）、unknown 不重投；专用分析授权与固定任务；实际 Node HTTP 自有 Webhook 接收端先认领再丢 HTTP 确认，原库保留独立 unknown/claim，重启按原 claim 续报而没有第二次 POST。样例在原通知 attempt 边界按 AH-188 最小事件合同构造，不是其真实 producer、原生 Bot 或用户展示的验收。普通 packed 子进程已通过自有 `ops.observation.enabled=false` 明确隔离不相关观察，不靠执行 disabled 推导观察关闭。
+
+| 原场景 / 阻断 | 仍需的真实或合流证据 |
+| --- | --- |
+| LIVE-OPS-RECEIVERS：默认用户出口 | 最小原生只读核实尚未找到已资格化的任意用户告警写入口。须落实一个未配维护 Bot 也实际可达的出口，并分别记录受理与用户展示；本地页面/文件/HTTP200 不代签。结构风险提醒不能仅靠维护任务替代。 |
+| LIVE-OPS-RECEIVERS：维护任务 | 原现场窗口明确接收 Bot、Routine、实际 automation 模型/工具、费用/数据授权以及委派 `notifications.tasks` 凭据。真实 sourceChange→原 fixed evidence→outbox→Webhook→精确认领/分析结果，回执分列 HTTP、receiver-credential、native turn、用户展示；无权执行修复/采用。 |
+| LIVE-OPS-OBSERVER-LIFETIME / LIVE-NOTICE-REQUALIFICATION | 验证已领取任务重启续报与 unknown 原操作对账；未发送旧 backlog / 不明 reservation 的完整自动冷启动接续仍是实现缺口，不把当前保守不发送宣称已完成。绑定/模型/授权改变不扩大权限，待验受控拒绝重试、额度和故障可见性。 |
+| AH-188 合流 / 公共观察配置 | Q 串行合流生产者后验证真实 episode/classification→此消费者、same-shape 待分析、snapshot/no-intersection 零唤醒、结构升级不被旧任务吞掉；动态配置开/关/读取失败独立于 desiredMode。packed handover 原20项在本分支通过，但未包含AH-188时不签其合流故障已解决，合流候选须原样复验。 |
+| 独立复核与部署 | 未取得本切片独立复核结论；Q 按精确提交完成必要复核和交叉检查。合流不更换 AH-124 固定现场候选，不动现役 Host/modeld/全局 shim；真实通知及模型费用仅在原有效授权窗口执行。 |
 
 本次基线重整没有产生新的现场通过。旧 `RC-E2E-20260919` 的规划与判据见[原清单重整回执](../reports/2026-09-19-live-e2e-checklist-rebaseline.md)，其前置实现见[固定收口证据](../reports/2026-09-19-pre-e2e-closeout.md)；这些不是新版的施工或采用前置。已有历史锚点保留，后续窗口写入[报告目录](../reports/README.md)，本页只替换受影响场景的当前结果。
