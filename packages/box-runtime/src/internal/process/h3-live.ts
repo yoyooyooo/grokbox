@@ -130,14 +130,27 @@ export function liveDiskSha(): string {
   return sha256Bytes(readFileSync(LIVE_HOST_BUNDLE));
 }
 
+export function liveLaunchUmask(owner: ProcessIdentity, port: ProcessPort, readStatus = (pid: number) => readFileSync(`/proc/${pid}/status`, "utf8")): number {
+  const before = port.inspect(owner.pid);
+  if (!before || JSON.stringify(before) !== JSON.stringify(owner)) throw Error("launch-umask-unproven");
+  const match = /^Umask:[\t ]+([0-7]{4})$/m.exec(readStatus(owner.pid));
+  const after = port.inspect(owner.pid);
+  if (!match || !after || JSON.stringify(before) !== JSON.stringify(after)) throw Error("launch-umask-unproven");
+  const umask = Number.parseInt(match[1]!, 8);
+  if (umask > 0o777) throw Error("launch-umask-unproven");
+  return umask;
+}
+
 export function liveAdoptLaunchSpec(
   env: Record<string, string>,
-  input: { execPath: string; hostBundle: string; cwd: string },
-): { execPath: string; argv: string[]; cwd: string; env: Record<string, string>; stdio: readonly ["ignore", "ignore", "ignore"] } {
+  input: { execPath: string; hostBundle: string; cwd: string; umask: number },
+): { execPath: string; argv: string[]; cwd: string; umask: number; env: Record<string, string>; stdio: readonly ["ignore", "ignore", "ignore"] } {
+  if (!Number.isInteger(input.umask) || input.umask < 0 || input.umask > 0o777) throw Error("launch-umask-unproven");
   return {
     execPath: input.execPath,
     argv: [input.hostBundle],
     cwd: input.cwd,
+    umask: input.umask,
     env: { ...env, GROKBOX_ALLOW_LIVE_HOST: "1" },
     stdio: HOST_CHILD_STDIO,
   };
@@ -284,10 +297,15 @@ export function createLiveH3AdoptPorts(input: {
       return ready && !signal?.aborted ? readMarkerFile(input.markerPath) : null;
     },
     applyLaunchEnv: async (env) => {
+      // The native supervisor owns launch permissions. The terminal invoking
+      // adoption may have a different mask and must not widen native files.
+      const supervisors = port.list().filter(owner => classify(owner) === "supervisor");
+      if (supervisors.length !== 1) throw Error("launch-umask-unproven");
       const spec = liveAdoptLaunchSpec(env, {
         execPath: input.execPath,
         hostBundle,
         cwd: dirname(hostBundle),
+        umask: liveLaunchUmask(supervisors[0]!, port),
       });
       await mkdir(dirname(input.overlayPath), { recursive: true, mode: 0o700 });
       await writeFile(input.overlayPath, `${JSON.stringify(spec)}\n`, { mode: 0o600 });

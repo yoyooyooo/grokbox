@@ -47,7 +47,7 @@ fs.writeFileSync(process.env.MARKER,JSON.stringify({operationId:'original',pid:p
 process.stdout.write('${fixtureSecret}');process.stderr.write('${fixtureSecret}');
 ${scenario === "delayed-gateway" ? "setTimeout(()=>fs.writeFileSync(process.env.GATEWAY,JSON.stringify({pid:process.pid})),150);setInterval(()=>{},1000);" : scenario === "postcompile-exit" ? "setTimeout(()=>process.exit(17),100);" : "setInterval(()=>{},1000);"}
 `);
-    await writeFile(specPath, JSON.stringify({ execPath: process.execPath, argv: [hostPath], env: {
+    await writeFile(specPath, JSON.stringify({ execPath: process.execPath, umask: 0o022, argv: [hostPath], env: {
       GROKBOX_OPERATION_ID: "original", MARKER: markerPath, GATEWAY: gatewayPath,
     } }));
     const ports = createLiveH3AdoptPorts({ markerPath, gatewayPath, overlayPath: specPath, preloadNeedle: "fixture-preload",
@@ -101,7 +101,7 @@ ${scenario === "delayed-gateway" ? "setTimeout(()=>fs.writeFileSync(process.env.
 process.on('SIGTERM',()=>{if(!stopping){stopping=true;fs.writeFileSync(process.env.TERM,'received');setTimeout(()=>process.exit(0),1000);}});
 const stat=fs.readFileSync('/proc/self/stat','utf8');const start=Number(stat.slice(stat.lastIndexOf(')')+2).split(' ')[19]);
 fs.writeFileSync(process.env.MARKER,JSON.stringify({operationId:'original',pid:process.pid,start,mode:'identity',transformed:true,compiled:true,modeld:false}));setInterval(()=>{},1000);`);
-  await writeFile(specPath, JSON.stringify({ execPath: process.execPath, argv: [hostPath], env: { GROKBOX_OPERATION_ID: "original", GROKBOX_BOX_RUNTIME_ROOT: dir, GROKBOX_HOST_BUNDLE: hostPath, GROKBOX_PRELOAD_MODE: "identity", MARKER: markerPath, TERM: termPath } }));
+  await writeFile(specPath, JSON.stringify({ execPath: process.execPath, umask: 0o022, argv: [hostPath], env: { GROKBOX_OPERATION_ID: "original", GROKBOX_BOX_RUNTIME_ROOT: dir, GROKBOX_HOST_BUNDLE: hostPath, GROKBOX_PRELOAD_MODE: "identity", MARKER: markerPath, TERM: termPath } }));
   const tree = new FakeProcessTree(); tree.nextPid = 900000001;
   const wrapper = tree.spawn("wrapper"), supervisor = tree.spawn("supervisor", { parent: wrapper }); tree.spawn("host", { parent: supervisor });
   let helper: ProcessIdentity | null = null, host: ProcessIdentity | null = null;

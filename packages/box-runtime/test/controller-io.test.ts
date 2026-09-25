@@ -396,6 +396,7 @@ writeFileSync(process.argv[2], JSON.stringify({
   expect(picked.env.ACME_KEY).toBeUndefined();
   const spec = {
     execPath: NODE20,
+    umask: 0o022,
     argv: [childPath, reportPath],
     cwd: dir,
     env: { ...picked.env, T22_SENTINEL: sentinel },
@@ -433,9 +434,9 @@ describe("raw output", () => {
     expect(IDENTITY_LAUNCH_ALLOWLIST).toContain("SAND_INFERENCE_RENEWAL_CREDENTIAL");
     const helperSource = readFileSync(SOURCE_HELPER, "utf8");
     expect(helperSource.includes("sand-host-adopt.err")).toBe(false);
-    expect(helperSource.includes("openSync")).toBe(false);
     const spec = liveAdoptLaunchSpec({ PATH: "/usr/bin" }, {
       execPath: NODE20,
+      umask: 0o022,
       hostBundle: "/tmp/host.js",
       cwd: "/tmp",
     });

@@ -5,9 +5,11 @@ const { readFileSync, writeFileSync, renameSync, openSync, closeSync, fsyncSync,
 const specPath = process.argv[2];
 if (!specPath) process.exit(2);
 const spec = JSON.parse(readFileSync(specPath, "utf8"));
-if (typeof spec.execPath !== "string" || !Array.isArray(spec.argv) || typeof spec.env !== "object" || spec.env == null) {
+if (typeof spec.execPath !== "string" || !Array.isArray(spec.argv) || typeof spec.env !== "object" || spec.env == null
+  || !Number.isInteger(spec.umask) || spec.umask < 0 || spec.umask > 0o777) {
   process.exit(2);
 }
+process.umask(spec.umask);
 const child = spawn(spec.execPath, spec.argv, {
   env: spec.env,
   cwd: typeof spec.cwd === "string" ? spec.cwd : undefined,

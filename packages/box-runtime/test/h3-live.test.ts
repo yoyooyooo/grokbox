@@ -5,6 +5,7 @@ import {
   decideLivePreflight,
   identityHostReady,
   liveAdoptLaunchSpec,
+  liveLaunchUmask,
   liveClassify,
   reviewOfficialAdoptCapability,
 } from "../src/internal/process/h3-live.ts";
@@ -21,6 +22,15 @@ const ident = {
 };
 
 describe("live H3 preflight (zero-signal abort)", () => {
+  test("launch permissions come from the same native supervisor lifetime", () => {
+    const owner = { ...ident, cmdline: ["node", "supervisor.cjs"] };
+    let current: typeof owner | null = owner;
+    const port = { list: () => [owner], inspect: () => current, signal: () => { throw Error("no signal"); } };
+    expect(liveLaunchUmask(owner, port, () => "Name:\tnode\nUmask:\t0022\n")).toBe(0o022);
+    expect(liveLaunchUmask(owner, port, () => "Umask:\t0077\n")).toBe(0o077);
+    expect(() => liveLaunchUmask(owner, port, () => "Umask:\t8888\n")).toThrow("launch-umask-unproven");
+    expect(() => liveLaunchUmask(owner, port, () => { current = { ...owner, start: 2 }; return "Umask:\t0022\n"; })).toThrow("launch-umask-unproven");
+  });
   test("duplicate/missing chain, unknown SHA, and launch strategy abort before inject", () => {
     expect(
       decideLivePreflight({
@@ -117,9 +127,10 @@ describe("live H3 preflight (zero-signal abort)", () => {
     ).toBe("host");
     const spec = liveAdoptLaunchSpec(
       { PATH: "/usr/bin", HOME: "/home/box" },
-      { execPath: "/exec-daemon/node", hostBundle: "/home/box/sand-host/host-main.cjs", cwd: "/home/box/sand-host" },
+      { execPath: "/exec-daemon/node", hostBundle: "/home/box/sand-host/host-main.cjs", cwd: "/home/box/sand-host", umask: 0o022 },
     );
     expect(spec.argv).toEqual(["/home/box/sand-host/host-main.cjs"]);
+    expect(spec.umask).toBe(0o022);
     expect(spec.env.GROKBOX_ALLOW_LIVE_HOST).toBe("1");
     expect(spec.env.ACME_KEY).toBeUndefined();
     expect(spec.stdio).toEqual(["ignore", "ignore", "ignore"]);
