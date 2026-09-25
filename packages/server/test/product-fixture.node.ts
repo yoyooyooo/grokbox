@@ -30,7 +30,8 @@ export async function productFixture() {
   const root = await mkdtemp(join(tmpdir(), "native-product-")), discoveryPath = join(root, "gateway.json");
   const state = { rows: new Map<string, Record<string, any>>([[P_A, productRow(P_A)], [P_B, productRow(P_B)], [P_GROUP, productRow(P_GROUP, true)]]),
     calls: [] as Array<{ method: string; input: any }>, writes: 0, cleanupCalls: 0, scopeId: P_SCOPE, owner: true, ownershipAgeMs: 0,
-    token: "synthetic-product-native", startedAt: 1000, failNative: false, failAfterWrite: false, failWriteStatus: 503, failReadBack: false,
+    token: "synthetic-product-native", startedAt: 1000, failNative: false, failAfterWrite: false, failWriteStatus: 503, failWriteBody: "{}", failReadBack: false,
+    writeReply: undefined as undefined | ((reply: unknown) => unknown),
     ownershipTransform: undefined as undefined | ((proof: ReturnType<typeof ownedOwnershipSnapshot>, ids: string[]) => unknown),
     filterMembers: false, failCleanup: false, nativeCleanup: false, routines: [] as unknown[], transcript: [] as unknown[],
     holdWrite: undefined as undefined | (() => Promise<void>), afterWrite: undefined as undefined | (() => Promise<void>),
@@ -89,7 +90,8 @@ export async function productFixture() {
         } else if (method === "setAgentHiddenFromSidebar") { if (row) row.isHiddenFromSidebar = input.isHidden; output = null; }
         else if (method === "setAgentNotifyOnUpdates") { if (row) row.notifyOnUpdatesEnabled = input.isEnabled; output = null; }
         await state.afterWrite?.();
-        if (state.failAfterWrite) { response.writeHead(state.failWriteStatus).end("{}"); return; }
+        if (state.failAfterWrite) { response.writeHead(state.failWriteStatus).end(state.failWriteBody); return; }
+        if (state.writeReply) output = state.writeReply(output);
       } else { response.writeHead(404).end("{}"); return; }
       response.end(JSON.stringify(output));
     } catch { if (!response.destroyed) response.writeHead(500).end("{}"); }

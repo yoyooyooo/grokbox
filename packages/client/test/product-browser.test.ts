@@ -42,7 +42,7 @@ test("bundled browser product validation executes without Node globals and rejec
     const object=Products.productObject({id,name:"中文 Bot",description:"safe",title:"Note | owner=box",avatarShape:null,avatarColor:null,harness:"box"});
     const intent=Products.productIntent({requestId:request,kind:"bot",action:"update",targetId:id,profile:{name:"中文 Bot"}});
     const result={nativeReceipt:"returned",targetId:id,readBack:"matched",object,cleanup:"not-applicable",atomicCompareAndSet:false,relationshipsTransferred:false,fullClone:false};
-    const receipt={requestId:request,operationId:request,installationId:installation,principalId:"owner",scopeId:"a".repeat(64),intent,planRevision:"b".repeat(64),state:"complete",result,createdAtMs:1};
+    const receipt={requestId:request,operationId:request,installationId:installation,principalId:"owner",scopeId:"a".repeat(64),intent,planRevision:"b".repeat(64),state:"complete",result,diagnostic:null,createdAtMs:1};
     const valid=Products.productReceiptView(receipt,installation,receipt.scopeId,request);
     const forged=JSON.parse(JSON.stringify(receipt));forged.result.object.revision="0".repeat(64);
     const inconsistent=JSON.parse(JSON.stringify(receipt));inconsistent.result.nativeReceipt="not-dispatched";

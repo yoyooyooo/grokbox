@@ -47,10 +47,15 @@ export type ProductPlan = {
   effects: string[]; nativeEffectsPerformed: false;
 };
 export type ProductSubmission = ProductIntent & { scopeId: string; expectedRevision: string; confirmed: true; acceptNonAtomic: true };
+export type ProductDiagnostic = {
+  phase: "native-call" | "http-response" | "response-body" | "response-shape" | "dispatch";
+  code: "source_unavailable" | "source_unauthorized" | "source_timeout" | "source_invalid" | "source_changed" | "unexpected_failure";
+  method: string | null; httpStatus: number | null; observedAtMs: number; detailStored: boolean;
+};
 export type ProductReceipt = {
   requestId: string; operationId: string; installationId: string; principalId: string; scopeId: string;
   intent: ProductIntent; planRevision: string; state: "prepared" | "effect_unknown" | "complete";
-  result: ProductResult | null; createdAtMs: number;
+  result: ProductResult | null; diagnostic: ProductDiagnostic | null; createdAtMs: number;
 };
 export type ProductResult = {
   nativeReceipt: "returned" | "not-dispatched"; targetId: string | null;
@@ -193,8 +198,18 @@ export function assertProductResult(raw: ProductResult): ProductResult {
   }
   return raw;
 }
+export function assertProductDiagnostic(raw: ProductDiagnostic): ProductDiagnostic {
+  if (!object(raw) || Object.keys(raw).sort().join() !== "code,detailStored,httpStatus,method,observedAtMs,phase"
+    || !["native-call", "http-response", "response-body", "response-shape", "dispatch"].includes(raw.phase)
+    || !["source_unavailable", "source_unauthorized", "source_timeout", "source_invalid", "source_changed", "unexpected_failure"].includes(raw.code)
+    || !(raw.method === null || typeof raw.method === "string" && /^[A-Za-z][A-Za-z0-9]{0,63}$/.test(raw.method))
+    || !(raw.httpStatus === null || Number.isSafeInteger(raw.httpStatus) && raw.httpStatus >= 100 && raw.httpStatus <= 599)
+    || !Number.isSafeInteger(raw.observedAtMs) || raw.observedAtMs < 1 || typeof raw.detailStored !== "boolean") throw new ContinuityFailure("integrity_failure");
+  return raw;
+}
 export function assertProductReceipt(raw: ProductReceipt): ProductReceipt {
-  if (!object(raw) || Object.keys(raw).sort().join() !== "createdAtMs,installationId,intent,operationId,planRevision,principalId,requestId,result,scopeId,state") throw new ContinuityFailure("integrity_failure");
+  if (!object(raw) || Object.keys(raw).sort().join() !== "createdAtMs,diagnostic,installationId,intent,operationId,planRevision,principalId,requestId,result,scopeId,state") throw new ContinuityFailure("integrity_failure");
+  if (raw.diagnostic !== null) assertProductDiagnostic(raw.diagnostic);
   if (![raw.requestId, raw.operationId, raw.installationId].every(isContinuityUuid) || !isContinuityHash(raw.scopeId) || !isContinuityHash(raw.planRevision)
     || !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$/.test(raw.principalId) || canonicalJson(productIntent(raw.intent)) !== canonicalJson(raw.intent)
     || raw.intent.requestId !== raw.requestId || !["prepared", "effect_unknown", "complete"].includes(raw.state)

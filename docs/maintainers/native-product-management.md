@@ -39,6 +39,10 @@ profile 接受 name/description/title/avatarShape/avatarColor。Group 创建只�
 
 管理请求保存在原 CONT 安全库，绑定 installation/principal/scope/request。duplicate 委托原 CONT duplication owner。重复提交读取原回执，不自动重发；未知创建不通过同名、新增名单或更换 UUID 猜测关联。原生响应的目标 ID 在读回/清理之前持久化，源离线也不丢掉它。
 
+未知创建按规范化后的原创建声明防重：忽略 requestId 后的相同声明仍被阻止，独立的不同创建声明不再被同类全局围栏连带阻止。已有对象的未知修改继续按精确 targetId 隔离。不同声明不代表可以把失败操作改名重试；原操作的结果与新对象的用途必须分别保留。
+
+`product operation get` 的 diagnostic 提供失败阶段、原生方法、可用的 HTTP 状态以及私有详情是否已留存；没有记录时为 null。最多 8 KiB 的错误响应文本只存入权限受限的 CONT 安全库，普通管理响应不返回它，也不复制请求凭据或响应头。诊断附在原操作旁，原声明、unknown 状态和结果不被改写；HTTP 错误或无效响应均不自动代表未执行。诊断落盘无法确认时返回 operation_unknown，继续查询原请求，不能重新派发。
+
 complete 表示这条回执已经结算，不表示所有产品效果匹配。分别检查 nativeReceipt、readBack 和 cleanup。not-dispatched 不能同时声明 matched、目标新身份或已清理；其他回执也验证 action/target/读回的一致性。delete 的原生回执、独立清理和原生读回分别记录，重复提交不再次清理。完整退役仍属于 CONT 条件删除合同，不能用普通 delete 代替其屏障。
 
 Bot 删除后的桌面清理必须分别观察原显示停止、原座位未变、解绑完成；helper 退出成功不是停止证据。发现显示重建、座位重分配或读回缺证时保留不确定结果，不继续清理新资源。原 assignment writer 使用精确 expectedDisplay，发布后重现的 seat/token 不自动重删；已确认删除 Bot 的转录缺失只在本次删除观察中允许，不改变普通 idle/status 的保守判定。上述观察仍不是原生原子租约，详见[删除清理验证](../reports/2026-09-23-desktop-deletion-readback.md)。

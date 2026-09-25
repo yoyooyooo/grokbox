@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { ManagementClient, normalizeProductIntent, productReference, productIdentity, type ProductIntent } from "@grokbox/client";
 import { assertProductReceipt } from "@grokbox/runtime-kernel/continuity";
 import { openAgentDuplication } from "@grokbox/box-runtime/runtime";
+import { openMonitorSqlite } from "../../box-runtime/src/internal/io/monitor-sqlite.node.ts";
 import { startManagementServer } from "../src/server.ts";
 import { productFixture, productCommand, productRow, P_INSTALL, P_A, P_B, P_GROUP, P_SCOPE, P_OWNER, P_OTHER, P_READER } from "./product-fixture.node.ts";
 const rejects = (promise: Promise<unknown>, code: string) => assert.rejects(promise, (error: any) => error?.code === code);
@@ -150,7 +151,7 @@ test("permissions cover native ownership, costly startup, routine copying and de
   } finally { await f.close(); }
 });
 
-test("unknown native birth never uses roster differences or replay to mint another identity", async () => {
+test("unknown birth fences its original request and declaration while independent creation can proceed", async () => {
   const f = await productFixture();
   try {
     f.state.failAfterWrite = true; const { command, result } = await submit(f);
@@ -160,6 +161,74 @@ test("unknown native birth never uses roster differences or replay to mint anoth
     assert.equal((await f.client().reconcileProduct(command)).data.state, "effect_unknown");
     const next = await reviewed(f); await rejects(f.client().submitProduct(next.command), "idempotency_conflict");
     assert.equal(f.state.writes, 1);
+    const independent = await submit(f, productCommand("create", "bot", { profile: { name: "Independent B", description: "Another declared object" } }));
+    assert.equal(independent.result.state, "complete"); assert.ok(independent.result.result?.targetId);
+    assert.equal(f.state.writes, 2); assert.equal(f.state.rows.size, 5);
+    await f.restart();
+    assert.deepEqual((await f.client().productOperation(command)).data, result);
+    assert.deepEqual((await f.client().submitProduct(command)).data, result);
+    const sameDeclaration = await reviewed(f, productCommand("create", "bot", { profile: { description: "  Declared instructions  ", name: " New product " } }));
+    await rejects(f.client(P_OTHER).submitProduct(sameDeclaration.command), "idempotency_conflict");
+    assert.equal(f.state.writes, 2);
+  } finally { await f.close(); }
+});
+
+for (const status of [401, 503]) test(`native HTTP ${status} detail is private, durable, and never settles an effect`, async () => {
+  const f = await productFixture();
+  try {
+    f.state.failAfterWrite = true; f.state.failWriteStatus = status;
+    f.state.failWriteBody = "synthetic-private-native-error: creation may already exist";
+    const { result, command } = await submit(f);
+    assert.equal(result.state, "effect_unknown"); assert.equal(result.result, null); assert.equal(f.state.writes, 1);
+    assert.equal(result.diagnostic?.phase, "http-response"); assert.equal(result.diagnostic?.method, "createAgent");
+    assert.equal(result.diagnostic?.httpStatus, status); assert.equal(result.diagnostic?.detailStored, true);
+    assert.ok(!JSON.stringify(result).includes(f.state.failWriteBody));
+    const database = join(f.root, "continuity", "state.sqlite"), db = await openMonitorSqlite(database, "read");
+    try {
+      const saved = await db.first("SELECT result_json FROM continuity_queued_controls WHERE kind='managed-native-product-diagnostic' AND agent_id=?", [result.operationId]);
+      assert.equal(JSON.parse(String(saved?.result_json)).detail, f.state.failWriteBody);
+    } finally { await db.close(); }
+    assert.equal((await lstat(database)).mode & 0o777, 0o600);
+    assert.equal((await lstat(join(f.root, "continuity"))).mode & 0o777, 0o700);
+    await f.restart(); f.state.failNative = true;
+    assert.deepEqual((await f.client().productOperation(command)).data, result);
+    assert.deepEqual((await f.client().submitProduct(command)).data, result); assert.equal(f.state.writes, 1);
+  } finally { await f.close(); }
+});
+
+test("oversized native error body preserves HTTP evidence without retaining oversized data", async () => {
+  const f = await productFixture();
+  try {
+    f.state.failAfterWrite = true; f.state.failWriteBody = "x".repeat(16384);
+    const { result } = await submit(f);
+    assert.equal(result.state, "effect_unknown"); assert.equal(result.diagnostic?.httpStatus, 503);
+    assert.equal(result.diagnostic?.detailStored, false); assert.equal(f.state.writes, 1);
+  } finally { await f.close(); }
+});
+
+test("a returned but invalid identity shape is distinguished from native transport failure", async () => {
+  const f = await productFixture();
+  try {
+    f.state.writeReply = () => ({ unexpected: "synthetic-private-response-value" });
+    const { result } = await submit(f);
+    assert.equal(result.state, "effect_unknown"); assert.equal(result.result, null);
+    assert.equal(result.diagnostic?.phase, "response-shape"); assert.equal(result.diagnostic?.method, "createAgent");
+    assert.ok(!JSON.stringify(result).includes("synthetic-private-response-value")); assert.equal(f.state.writes, 1);
+  } finally { await f.close(); }
+});
+
+for (const stage of ["beforeCommit", "afterCommit"] as const) test(`diagnostic ${stage} failure preserves unknown and never grants redispatch`, async () => {
+  const f = await productFixture();
+  try {
+    f.state.failAfterWrite = true;
+    f.state[stage] = async label => { if (label === "native-product-diagnostic") throw Error("synthetic-diagnostic-commit-gap"); };
+    const { command } = await reviewed(f);
+    await rejects(f.client().submitProduct(command), "operation_unknown");
+    f.state[stage] = undefined;
+    const original = (await f.client().productOperation(command)).data;
+    assert.equal(original.state, "effect_unknown"); assert.equal(original.result, null);
+    assert.equal(original.diagnostic !== null, stage === "afterCommit");
+    assert.deepEqual((await f.client().submitProduct(command)).data, original); assert.equal(f.state.writes, 1);
   } finally { await f.close(); }
 });
 
@@ -181,6 +250,8 @@ test("unknown duplicate cannot be reconciled by its fresh roster appearance", as
   try {
     f.state.failAfterWrite = true; const { command, result } = await submit(f, productCommand("duplicate"));
     assert.equal(result.state, "effect_unknown"); assert.equal(result.result, null);
+    assert.equal(result.diagnostic?.phase, "http-response"); assert.equal(result.diagnostic?.method, "duplicateAgent");
+    assert.equal(result.diagnostic?.httpStatus, 503);
     f.state.failAfterWrite = false;
     assert.equal((await f.client().reconcileProduct(command)).data.state, "effect_unknown");
     await f.client().submitProduct(command); assert.equal(f.state.writes, 1);

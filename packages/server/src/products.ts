@@ -6,7 +6,7 @@ import {
   type ProductIntent, type ProductList, type Capability,
 } from "@grokbox/client/contract";
 import {
-  previewNativeProduct, submitNativeProduct, readNativeProductOperation, reconcileNativeProduct, ProductReceiptUnstored,
+  previewNativeProduct, submitNativeProduct, readNativeProductOperation, reconcileNativeProduct, ProductReceiptUnstored, ProductDiagnosticUnstored,
   type NativeProductAccess, type ProductManagement, type ProductManagementHooks,
 } from "@grokbox/box-runtime/runtime";
 import { HttpFailure, requireCapability, type Principal } from "./access.ts";
@@ -20,6 +20,8 @@ function failure(error: unknown): HttpFailure {
   if (error instanceof HttpFailure) return error;
   if (error instanceof ProductReceiptUnstored) return new HttpFailure(409, "operation_unknown", "A native identity receipt exists, but its management checkpoint is uncertain. Do not repeat the creation.",
     { requestId: error.requestId, scopeId: error.scopeId, targetId: error.receipt.targetId, nativeReceipt: "returned" });
+  if (error instanceof ProductDiagnosticUnstored) return new HttpFailure(409, "operation_unknown", "The native effect remains unknown and its failure diagnostic could not be confirmed stored. Inspect the original request; do not repeat it.",
+    { requestId: error.requestId, scopeId: error.scopeId, diagnosticStored: false });
   if (error instanceof ManagementClientError) return new HttpFailure(error.code === "wrong_installation" ? 409 : 400, error.code, error.message);
   if (error instanceof NativeProductError) return new HttpFailure(error.code === "invalid_input" ? 400 : error.code === "permission_denied" ? 403
     : error.code === "not_found" ? 404 : ["revision_conflict", "source_changed"].includes(error.code) ? 409 : 503,

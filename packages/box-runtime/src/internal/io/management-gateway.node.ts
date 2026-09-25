@@ -8,6 +8,7 @@ import { NATIVE_ROUTINE_MAX_BYTES } from "@grokbox/runtime-kernel/routines";
 import { createRoutineGateway, type RoutineRpc } from "./routine-gateway.node.ts";
 import { createContinuityGatewayIO, type ContinuityRpc, type ContinuityPrograms } from "./continuity-gateway.node.ts";
 import { createNativeProductAccess, ProductDispatchRefused, type ProductRpc } from "./native-product.node.ts";
+import { ProductCallFailure, PRODUCT_FAILURE_DETAIL_BYTES, type ProductFailureObservation } from "./native-product-failure.node.ts";
 
 export type NativeBotSummary = {
   id: string; name: string; title: string | null; description: string | null;
@@ -53,7 +54,7 @@ async function discovery(path: string): Promise<Discovery> {
     credentialGeneration: sha256Text(canonicalJson([baseUrl, pid, startedAt, sha256Text(raw.token)])) };
 }
 
-async function body(response: Response, signal: AbortSignal, maxBytes = RESPONSE_BYTES): Promise<unknown> {
+async function responseText(response: Response, signal: AbortSignal, maxBytes = RESPONSE_BYTES): Promise<string> {
   if (!response.body) throw invalid();
   const length = response.headers.get("content-length");
   if (length !== null && (!/^\d+$/.test(length) || Number(length) > maxBytes)) {
@@ -75,12 +76,17 @@ async function body(response: Response, signal: AbortSignal, maxBytes = RESPONSE
     }
     if (signal.aborted) throw new ManagementSourceError("source_timeout");
     const bytes = Buffer.concat(chunks, total);
-    try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown; } catch { throw invalid(); }
+    try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); } catch { throw invalid(); }
   } finally {
     signal.removeEventListener("abort", cancel);
     if (!complete) await reader.cancel().catch(() => undefined);
     reader.releaseLock();
   }
+}
+
+async function body(response: Response, signal: AbortSignal, maxBytes = RESPONSE_BYTES): Promise<unknown> {
+  const text = await responseText(response, signal, maxBytes);
+  try { return JSON.parse(text) as unknown; } catch { throw invalid(); }
 }
 
 function summary(raw: Record<string, unknown>): NativeBotSummary {
@@ -117,19 +123,26 @@ export function createManagementGatewayIO(options: { discoveryPath: string; conf
     if (beforeDispatch) await beforeDispatch(signal);
     signal.throwIfAborted();
     let response: Response;
+    const capture = ["createAgent", "createGroup", "updateAgent", "deleteAgent", "duplicateAgent", "setGroupMembers", "setAgentHiddenFromSidebar", "setAgentNotifyOnUpdates"].includes(method);
+    const failed = (phase: ProductFailureObservation["phase"], code: ManagementSourceError["code"], status: number | null = null, detail: string | null = null) =>
+      capture ? new ProductCallFailure({ phase, code, method, httpStatus: status }, detail) : new ManagementSourceError(code);
     try {
       response = await (options.fetch ?? globalThis.fetch)(`${source.baseUrl}/api/${method}`, {
         method: "POST", headers: { authorization: `Bearer ${source.token}`, "content-type": "application/json", "x-sand-slim-avatars": "1" },
         body: JSON.stringify(input), redirect: "manual", signal,
       });
-    } catch { throw signal.aborted ? new ManagementSourceError("source_timeout") : unavailable(); }
+    } catch { throw failed("native-call", signal.aborted ? "source_timeout" : "source_unavailable"); }
     if (!response.ok) {
-      await response.body?.cancel().catch(() => undefined);
-      throw response.status === 401 || response.status === 403 ? new ManagementSourceError("source_unauthorized") : unavailable();
+      let detail: string | null = null;
+      if (capture) {
+        try { detail = await responseText(response, signal, PRODUCT_FAILURE_DETAIL_BYTES); }
+        catch { /* The observed HTTP status survives missing or oversized detail. */ }
+      } else await response.body?.cancel().catch(() => undefined);
+      throw failed("http-response", response.status === 401 || response.status === 403 ? "source_unauthorized" : "source_unavailable", response.status, detail);
     }
     let result: unknown;
     try { result = await body(response, signal, maxBytes); }
-    catch (error) { throw error instanceof ManagementSourceError ? error : signal.aborted ? new ManagementSourceError("source_timeout") : unavailable(); }
+    catch (error) { throw failed("response-body", error instanceof ManagementSourceError ? error.code : signal.aborted ? "source_timeout" : "source_unavailable", response.status); }
     return { result, source };
   };
   const ownershipRead: OwnershipReader = async (agentIds, signal) => {

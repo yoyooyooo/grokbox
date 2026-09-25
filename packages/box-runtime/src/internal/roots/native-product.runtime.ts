@@ -7,6 +7,7 @@ import {
 import { productManagementPrograms, productOperationId } from "../io/product-management.node.ts";
 import { readContinuityIdentity, type ContinuityStoreHooks } from "../io/continuity-database.node.ts";
 import { ProductDispatchRefused, type NativeProductAccess, type ProductNativeReceipt } from "../io/native-product.node.ts";
+import { productCallFailure, type ProductCallFailure } from "../io/native-product-failure.node.ts";
 import { liveDesktopIo, reapDeletedAgentSeat, type DesktopReapResult } from "../io/desktop.node.ts";
 import { openAgentDuplication } from "./agent-duplicate.runtime.ts";
 import { withManagedLifecycleGate } from "./managed-lifecycle.runtime.ts";
@@ -24,6 +25,9 @@ export type ProductManagementHooks = {
  * original IDs survive in the error; this is never authority to create again. */
 export class ProductReceiptUnstored extends Error {
   constructor(readonly receipt: ProductNativeReceipt, readonly requestId: string, readonly scopeId: string) { super("native_product_receipt_unstored"); }
+}
+export class ProductDiagnosticUnstored extends Error {
+  constructor(readonly requestId: string, readonly scopeId: string) { super("native_product_diagnostic_unstored"); }
 }
 const sameRequest = (row: ProductReceipt, q: ProductSubmission) => {
   if (canonicalJson(row.intent) !== canonicalJson(productIntent(qIntent(q))) || row.planRevision !== q.expectedRevision) throw new NativeProductError("revision_conflict");
@@ -83,7 +87,7 @@ export async function submitNativeProduct(d: ProductManagement, input: ProductSu
     // does not erase the first declaration or authorize a changed replay.
     try { await d.authorize(intent, signal); signal.throwIfAborted(); }
     catch { return Effect.runPromise(store.settle(operationId, baseResult(intent.action === "duplicate" ? null : intent.targetId, false, "not-applicable"))); }
-    let created: ProductNativeReceipt | null = null;
+    let created: ProductNativeReceipt | null = null, failure: ProductCallFailure | null = null;
     if (intent.action === "duplicate") {
       const original = openAgentDuplication({ durableRoot: d.root, scopeId: request.scopeId, native: native.duplicate });
       try {
@@ -96,6 +100,7 @@ export async function submitNativeProduct(d: ProductManagement, input: ProductSu
         else {
           // Only the original exact native identity receipt may reconcile a
           // duplicate. No roster difference, label, or latest Bot inference.
+          failure = productCallFailure(error);
           const saved = await original.operation(operationId).catch(() => null);
           if (saved?.result) created = { targetId: saved.result.targetAgentId, desktop: null };
           else if (saved?.operation.state === "not_executed") return Effect.runPromise(store.settle(operationId, baseResult(null, false, "not-applicable")));
@@ -105,9 +110,17 @@ export async function submitNativeProduct(d: ProductManagement, input: ProductSu
       try { created = await native.dispatch(plan, operationId); }
       catch (error) {
         if (error instanceof ProductDispatchRefused) return Effect.runPromise(store.settle(operationId, baseResult(intent.targetId, false, "not-applicable")));
+        failure = productCallFailure(error);
       }
     }
-    if (!created) return (await Effect.runPromise(store.read(operationId)))!;
+    if (!created) {
+      const observed = native.failure() ?? failure;
+      if (observed) {
+        try { return await Effect.runPromise(store.recordFailure(operationId, observed)); }
+        catch { throw new ProductDiagnosticUnstored(intent.requestId, request.scopeId); }
+      }
+      return (await Effect.runPromise(store.read(operationId)))!;
+    }
     const needsCleanup = intent.action === "delete" && intent.kind === "bot";
     let cleanup: ProductResult["cleanup"] = needsCleanup ? created.desktop ? cleanupState(created.desktop) : "unknown"
       : intent.action === "delete" ? "native-lifecycle" : "not-applicable";

@@ -1,3 +1,4 @@
+import { ProductCallFailure, productCallFailure } from "./native-product-failure.node.ts";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { inspectOwnership, OWNERSHIP_EVIDENCE_MAX_AGE_MS } from "@grokbox/runtime-kernel/contract";
 import {
@@ -29,6 +30,7 @@ export function createNativeProductAccess(call: ProductCall, signal: AbortSignal
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 180000) throw new NativeProductError("invalid_input");
   const deadline = performance.now() + timeoutMs;
   let generation: string | undefined, accountScope: string | undefined;
+  let lastFailure: ProductCallFailure | null = null;
   let authorityClock: { observedAt: number; initialAge: number; tick: number } | undefined;
   const remaining = () => {
     signal.throwIfAborted();
@@ -48,7 +50,10 @@ export function createNativeProductAccess(call: ProductCall, signal: AbortSignal
       if (!clock || age < 0 || elapsed < 0 || Math.max(age, clock.initialAge + elapsed) > OWNERSHIP_EVIDENCE_MAX_AGE_MS)
         throw new ProductDispatchRefused("source_unavailable");
     } : undefined;
-    const response = await call(method, body, signal, remaining(), maxBytes, generation, finalAuthorization);
+    const response = await call(method, body, signal, remaining(), maxBytes, generation, finalAuthorization).catch(error => {
+      if (writing && !(error instanceof ProductDispatchRefused)) lastFailure = productCallFailure(error, method);
+      throw error;
+    });
     if (!/^[a-f0-9]{64}$/.test(response.generation)) return unavailable();
     if (generation !== undefined && generation !== response.generation) return changed();
     generation = response.generation;
@@ -154,7 +159,10 @@ export function createNativeProductAccess(call: ProductCall, signal: AbortSignal
     const raw = await rpc(method, input);
     let targetId = q.targetId;
     if (q.action === "create") {
-      if (!record(raw) || !record(raw.agent) || !isContinuityUuid(raw.agent.id) || raw.agent.isGroup === true !== (q.kind === "group")) return unavailable();
+      if (!record(raw) || !record(raw.agent) || !isContinuityUuid(raw.agent.id) || raw.agent.isGroup === true !== (q.kind === "group"))
+        throw new ProductCallFailure({ phase: "response-shape", code: "source_invalid", method, httpStatus: null },
+          JSON.stringify({ rootType: typeof raw, rootKeys: record(raw) ? Object.keys(raw) : [],
+            agentKeys: record(raw) && record(raw.agent) ? Object.keys(raw.agent) : [] }));
       targetId = raw.agent.id.toLowerCase();
     } else if (q.action === "delete" && (!record(raw) || !Array.isArray(raw.transcript))) return unavailable();
     if (!targetId) return unavailable();
@@ -190,7 +198,7 @@ export function createNativeProductAccess(call: ProductCall, signal: AbortSignal
       groups: groups.slice(0, 128).map(row => ({ id: row.id, memberIds: row.memberIds, revision: row.revision })), groupsTruncated: groups.length > 128,
       transcript, routines: routineView, currentRosterCoverage: "native-snapshot", externalTasksEnumerated: false };
   };
-  return { snapshot, ownership, preview, dispatch, duplicate, routines, relations,
+  return { snapshot, ownership, preview, dispatch, duplicate, routines, relations, failure: () => lastFailure,
     readBack: async (scopeId: string, targetId: string) => {
       const view = await snapshot(targetId, targetId);
       if (view.authority.scopeId !== scopeId) return changed();
