@@ -8,6 +8,7 @@ import { HostVerifier } from "../ops/host-health/verifier.port.ts";
 import { hostVerifierLayer } from "../io/host-verifier/client.node.ts";
 import { VerifierFailure } from "../io/host-verifier/stdio.node.ts";
 import { readHostArtifacts, HostSourceFailure, type HostArtifactPaths, type HostArtifacts } from "../io/host-artifact-source.node.ts";
+import { preflightProfileRecipeCooperatively } from "../io/host-source-computation.node.ts";
 import { readHostHealthJournal, retainHostHealthEvidence, acknowledgeHostHealthEvidence, type HostHealthJournal, readHostRuntimeJournal, retainHostRuntimeEvidence, acknowledgeHostRuntimeEvidence, type HostRuntimeJournal } from "../io/provenance.node.ts";
 import { observeHostCompilation, type CompilationReadPorts } from "../io/host-compilation.node.ts";
 import { observeHostWitness, type HostWitnessRead, type HostWitnessReadCursor } from "../io/host-witness.node.ts";
@@ -75,9 +76,9 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
   const recipeSha=sha256Text(canonicalJson(orderedRecipe));
   const analysisKey=(sourceSet:string,buildId:string|null)=>canonicalJson([HOST_HEALTH_CONTRACT,sourceSet,buildId,recipeSha,HOST_CHECK_REQUIREMENTS]);
   const recipeCache=new Map<string,ReturnType<typeof preflightProfileRecipe>>();
-  function evolution(a:HostArtifacts,analysis:StaticAnalysis|null,reference:NativeSourceIdentity){
+  async function evolution(a:HostArtifacts,analysis:StaticAnalysis|null,reference:NativeSourceIdentity){
     let recipe=recipeCache.get(a.sourceSha);
-    if(!recipe){recipe=preflightProfileRecipe(new TextDecoder('utf-8',{fatal:true}).decode(a.source),orderedRecipe,HOST_RECIPE.id);
+    if(!recipe){recipe=await preflightProfileRecipeCooperatively(new TextDecoder('utf-8',{fatal:true}).decode(a.source),orderedRecipe,HOST_RECIPE.id,controller.signal);
       recipeCache.set(a.sourceSha,recipe);while(recipeCache.size>4)recipeCache.delete(recipeCache.keys().next().value!);}
     const failed=analysis?.checks.filter(c=>c.state==='violated').map(({id,revision,code})=>({id,revision,code}))??[];
     const unsupported=analysis?.checks.filter(c=>c.state==='unsupported').map(({id,revision,code})=>({id,revision,code}))??[];
@@ -149,7 +150,7 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
           transition = { ...latest, before: latest.before ? await retainedHostSourceWindow(input.root, latest.before) : null,
             after: latest.after ? await retainedHostSourceWindow(input.root, latest.after) : null };
         } else {
-          const after = a ? await captureHostSourceWindow(input.root, a, orderedRecipe) : null;
+          const after = a ? await captureHostSourceWindow(input.root, a, orderedRecipe, controller.signal) : null;
           transition = describeHostSourceChange({ episodeId: hostSourceEpisodeId(input.installationId, sequence, before, after), before, after });
         }
       }
@@ -157,11 +158,12 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
       // checked. This adds a new observation; it never edits earlier evidence or
       // substitutes changed current bytes for an unavailable historical source.
       if(a&&transition.after&&!transition.after.evidenceRef&&transition.after.sourceSet===a.sourceSet) {
-        const recovered=await captureHostSourceWindow(input.root,a,orderedRecipe);
+        const recovered=await captureHostSourceWindow(input.root,a,orderedRecipe,controller.signal);
         if(canonicalJson({...recovered,evidenceRef:null})===canonicalJson({...transition.after,evidenceRef:null}))
           transition={...transition,after:recovered};
       }
-      // Private attachment I/O may span another disk update or policy change.
+      const sourceEvolution = a ? await evolution(a,analysis,reference) : undefined;
+      // Private attachment I/O and cooperative computation may span another disk update or policy change.
       // Recheck the original immutable window before publishing it as current.
       current = current && expectedGeneration === generation && (!a || await a.current());
       if (closed || !enabled || !current && (!a || !analysis)) return false;
@@ -176,7 +178,7 @@ export function startHostHealth(input:{root:string;installationId:string;enabled
         requiredChecks:HOST_CHECK_REQUIREMENTS.map(c=>c.id),failedChecks:analysis?.checks.filter(c=>c.state==="violated").map(c=>c.id)??[],
         unsupportedChecks:analysis?.checks.filter(c=>c.state==="unsupported").map(c=>c.id)??[],uncoveredSlices:a?.profile?.slices.map(s=>s.id).filter(id=>!covered.has(id))??[],
         loaded:"not-observed",attachment:"not-observed",exercised:"not-exercised",notificationCoverage:"local-only",detectorCode:code,qualified:false,
-        ...(a?{recipeSha,sourceEvolution:evolution(a,analysis,reference)}:{}), sourceChange};
+        ...(a?{recipeSha,sourceEvolution}:{}), sourceChange};
       const next=await retainHostHealthEvidence(input.root,input.installationId,sequence,{event,analysis});
       if(current)status={...status,latest:event,assessment:hostHealthSummary(event),intake:"not-observed"};
       await ports.afterRetain?.(); await intake(next);

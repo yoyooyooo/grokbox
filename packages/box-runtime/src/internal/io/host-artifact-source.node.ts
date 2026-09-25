@@ -1,7 +1,8 @@
 import { canonicalJson, sha256Bytes, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { parseConfigJson } from "@grokbox/runtime-kernel/config";
 import { nativeCheckpointPair } from "../host/native-checkpoint-pair.ts";
-import { applyPatchProfile, approvedSliceSet, MAX_APPROVED_SLICES, type PatchProfile } from "../host/profile.ts";
+import { approvedSliceSet, MAX_APPROVED_SLICES, type PatchProfile } from "../host/profile.ts";
+import { applyPatchProfileCooperatively } from "./host-source-computation.node.ts";
 import { readStableSourceSet } from "./stable-source-set.node.mjs";
 export class HostSourceFailure extends Error { constructor(readonly code: "source-unavailable" | "source-changed" | "invalid-profile") { super(code); } }
 export type HostArtifactPaths = { source: string; worker: string; profile: string | null };
@@ -22,7 +23,7 @@ export async function readHostArtifacts(paths: HostArtifactPaths, signal?: Abort
         || !/^[a-f0-9]{64}$/.test(v.sourceSha256) || !/^[a-f0-9]{64}$/.test(v.transformedSourceSha256) || v.slices.some(s => [s.startAnchor, s.endAnchor, s.find, s.replacement].some(x => typeof x !== "string" || x.length > 65536))) throw Error();
       profile = v;
     } catch { profile = null; } }
-    const result = profile ? applyPatchProfile(new TextDecoder("utf-8", { fatal: true }).decode(source), profile) : null;
+    const result = profile ? await applyPatchProfileCooperatively(new TextDecoder("utf-8", { fatal: true }).decode(source), profile, signal) : null;
     return { source, worker, sourceSha, workerSha, profileDigest, profile,
       companionQualification: profile?.slices.some(s => s.id.startsWith("continuity-native-")) ? (nativeCheckpointPair(sourceSha, workerSha) ? "matched" : "unreviewed") : "not-required",
       candidate: result?.ok ? Buffer.from(result.source) : null,

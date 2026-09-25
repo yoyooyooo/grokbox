@@ -83,31 +83,12 @@ export function applyPatchProfile(source: string, profile: PatchProfile): Transf
     return { ok: false, code: "slice-not-unique" };
   }
 
-  let next = source;
-  for (const slice of profile.slices) {
-    const startCount = countOccurrences(next, slice.startAnchor);
-    const endCount = countOccurrences(next, slice.endAnchor);
-    if (startCount === 0 || endCount === 0) {
-      return { ok: false, code: "anchor-missing", sliceId: slice.id };
-    }
-    if (startCount !== 1 || endCount !== 1) {
-      return { ok: false, code: "anchor-duplicate", sliceId: slice.id };
-    }
-    const start = next.indexOf(slice.startAnchor);
-    const end = next.indexOf(slice.endAnchor, start);
-    if (end < start) return { ok: false, code: "anchor-missing", sliceId: slice.id };
-    const window = next.slice(start, end);
-    const findCount = countOccurrences(window, slice.find);
-    if (findCount === 0) return { ok: false, code: "find-missing", sliceId: slice.id };
-    if (findCount !== 1) return { ok: false, code: "find-duplicate", sliceId: slice.id };
-    next = next.slice(0, start) + window.replace(slice.find, slice.replacement) + next.slice(end);
-  }
-
-  const transformedSha256 = sha256Text(next);
-  if (transformedSha256 !== profile.transformedSourceSha256) {
+  const applied = transformUnchecked(source, profile.slices);
+  if (!applied.ok) return applied;
+  if (applied.transformedSha256 !== profile.transformedSourceSha256) {
     return { ok: false, code: "transformed-mismatch" };
   }
-  return { ok: true, source: next, sourceSha256, transformedSha256 };
+  return applied;
 }
 
 /** Shared authoring preflight. Failures contain only finite codes/IDs, never source text. */
@@ -131,6 +112,13 @@ export function profileFromSource(source: string, slices: readonly SlicePatch[],
 }
 
 export function transformUnchecked(source: string, slices: readonly SlicePatch[]): TransformResult {
+  const steps = profileTransformSteps(source, slices);
+  for (;;) { const next = steps.next(); if (next.done) return next.value; }
+}
+
+/** One transformation program. Preload consumes it synchronously; background
+ * analysis yields between these same steps without another recipe interpreter. */
+export function* profileTransformSteps(source: string, slices: readonly SlicePatch[]): Generator<void, TransformResult> {
   // Authoring/inspection cannot resurrect a retired writer by bypassing the
   // already-reviewed-profile loader. This check itself has no live effects.
   if (containsRetiredHarnessWrite(slices)) return { ok: false, code: "retired-slice" };
@@ -147,12 +135,14 @@ export function transformUnchecked(source: string, slices: readonly SlicePatch[]
     }
     const start = next.indexOf(slice.startAnchor);
     const end = next.indexOf(slice.endAnchor, start);
+    if (end < start) return { ok: false, code: "anchor-missing", sliceId: slice.id };
     const window = next.slice(start, end);
     const findCount = countOccurrences(window, slice.find);
     if (findCount !== 1) {
       return { ok: false, code: findCount === 0 ? "find-missing" : "find-duplicate", sliceId: slice.id };
     }
     next = next.slice(0, start) + window.replace(slice.find, slice.replacement) + next.slice(end);
+    yield;
   }
   return {
     ok: true,

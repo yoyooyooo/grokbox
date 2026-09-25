@@ -3,8 +3,22 @@ import { mkdtemp,writeFile,readFile,rm,unlink,symlink,stat,utimes,chmod } from "
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { readHostArtifacts } from "../src/internal/io/host-artifact-source.node.ts";
-import { profileFromSource,applyPatchProfile } from "../src/internal/host/profile.ts";
+import { profileFromSource,applyPatchProfile,preflightProfileRecipe } from "../src/internal/host/profile.ts";
+import { applyPatchProfileCooperatively,preflightProfileRecipeCooperatively } from "../src/internal/io/host-source-computation.node.ts";
 import { SYNTHETIC_HOST,SYNTHETIC_SLICES } from "./synthetic-host.ts";
+test("background computation uses identical transform rules, yields to management work, freezes inputs and stops on abort",async()=>{
+ const profile=profileFromSource(SYNTHETIC_HOST,SYNTHETIC_SLICES),expected=applyPatchProfile(SYNTHETIC_HOST,profile);
+ const mutable={...profile,slices:profile.slices.map(s=>({...s}))};let yielded=false;
+ const computing=applyPatchProfileCooperatively(SYNTHETIC_HOST,mutable);
+ setImmediate(()=>{yielded=true;});mutable.slices[1]!.replacement="unexpected-mutation";
+ expect(await computing).toEqual(expected);expect(yielded).toBe(true);
+ for(const p of [profile,{...profile,sourceSha256:"f".repeat(64)},{...profile,transformedSourceSha256:"f".repeat(64)},
+  {...profile,slices:profile.slices.map((s,i)=>i?{...s,find:"missing"}:s)},
+  {...profile,slices:[profile.slices[0]!]}]) expect(await applyPatchProfileCooperatively(SYNTHETIC_HOST,p)).toEqual(applyPatchProfile(SYNTHETIC_HOST,p));
+ expect(await preflightProfileRecipeCooperatively(SYNTHETIC_HOST,SYNTHETIC_SLICES,"background")).toEqual(preflightProfileRecipe(SYNTHETIC_HOST,SYNTHETIC_SLICES,"background"));
+ const c=new AbortController(),pending=applyPatchProfileCooperatively(SYNTHETIC_HOST,profile,c.signal);c.abort();
+ await expect(pending).rejects.toMatchObject({name:"AbortError"});
+});
 async function fixture(){const root=await mkdtemp(join(tmpdir(),"health-source-")),paths={source:join(root,"host.cjs"),worker:join(root,"worker.cjs"),profile:join(root,"profile.json")};
  const profile=profileFromSource(SYNTHETIC_HOST,SYNTHETIC_SLICES);await writeFile(paths.source,SYNTHETIC_HOST,{mode:0o600});await writeFile(paths.worker,"module.exports = {};\n",{mode:0o600});await writeFile(paths.profile,JSON.stringify(profile),{mode:0o600});return {root,paths,profile,close:()=>rm(root,{recursive:true,force:true})};}
 test("source adapter passes only the real TS transform, with distinct source/candidate/companion identity",async()=>{const f=await fixture();try{

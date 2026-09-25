@@ -2,10 +2,12 @@ import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { projectHostHealth, type HostSourceWindow } from "@grokbox/runtime-kernel/host-health";
 import { gzip } from "node:zlib";
 import { promisify } from "node:util";
+import { setImmediate } from "node:timers/promises";
 import { openMonitorStore } from "./monitor-store.node.ts";
 import type { HostArtifacts } from "./host-artifact-source.node.ts";
 import { retainHostSourceEvidence, readHostSourceEvidence } from "./provenance.node.ts";
-import { preflightProfileRecipe, type SlicePatch } from "../host/profile.ts";
+import type { SlicePatch } from "../host/profile.ts";
+import { preflightProfileRecipeCooperatively } from "./host-source-computation.node.ts";
 import { measureRecipeWindow } from "../ops/host-seam/envelope-windows.ts";
 
 const compressSource = promisify(gzip);
@@ -13,19 +15,23 @@ const compressSource = promisify(gzip);
 /** Capture from the SAME stable source set as analysis. No new read/watch owner,
  * recipe publication or full-Host semantic claim. The whole worker is a known
  * direct dependency; arbitrary Host bytes outside these windows are uncovered. */
-export async function captureHostSourceWindow(root: string, artifacts: HostArtifacts, fallbackRecipe: readonly SlicePatch[]): Promise<HostSourceWindow> {
+export async function captureHostSourceWindow(root: string, artifacts: HostArtifacts, fallbackRecipe: readonly SlicePatch[], signal?: AbortSignal): Promise<HostSourceWindow> {
   const slices = artifacts.profile?.slices ?? fallbackRecipe;
   const source = new TextDecoder("utf-8", { fatal: true }).decode(artifacts.source);
   const worker = new TextDecoder("utf-8", { fatal: true }).decode(artifacts.worker);
-  const recipe = preflightProfileRecipe(source, slices, "source-observation");
-  const measured = slices.map(slice => {
+  const recipe = await preflightProfileRecipeCooperatively(source, slices, "source-observation", signal);
+  const measured: { id: SlicePatch["id"]; sha256: string | null; window: { startByte: number; endByte: number; text: string } | null }[] = [];
+  const sourceBytes = Buffer.from(artifacts.source);
+  for (const slice of slices) {
+    signal?.throwIfAborted();
     try {
       const window = measureRecipeWindow(source, slice);
-      if (window.count.start !== 1 || window.count.end !== 1) return { id: slice.id, sha256: null, window: null };
-      return { id: slice.id, sha256: window.windowSha,
-        window: { ...window.byteRange, text: Buffer.from(artifacts.source).subarray(window.byteRange.startByte, window.byteRange.endByte).toString("utf8") } };
-    } catch { return { id: slice.id, sha256: null, window: null }; }
-  });
+      if (window.count.start !== 1 || window.count.end !== 1) measured.push({ id: slice.id, sha256: null, window: null });
+      else measured.push({ id: slice.id, sha256: window.windowSha,
+        window: { ...window.byteRange, text: sourceBytes.subarray(window.byteRange.startByte, window.byteRange.endByte).toString("utf8") } });
+    } catch { measured.push({ id: slice.id, sha256: null, window: null }); }
+    await setImmediate(undefined, { signal });
+  }
   const value: HostSourceWindow = { version: 1, sourceSet: artifacts.sourceSet, sourceSha: artifacts.sourceSha, workerSha: artifacts.workerSha,
     profileDigest: artifacts.profileDigest, recipeSha: sha256Text(canonicalJson(slices)), recipeState: recipe.ok ? "applicable" : "mismatch",
     coverage: "recipe-windows-and-worker", slices: measured.map(({ id, sha256 }) => ({ id, sha256 })), evidenceRef: null };
