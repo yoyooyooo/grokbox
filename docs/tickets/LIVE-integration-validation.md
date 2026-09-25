@@ -4,7 +4,7 @@
 
 ### 2026-09-24 受控迁移与双 Bot 窗口
 
-[固定报告](../reports/2026-09-24-controlled-dual-bot.md)记录 AH-183/184/185 → AH-162/122 → AH-123/124 → AH-186。源码修复的已报告问题已在各自范围关闭，最后 `99836167` 独立复核为 OK with notes；组合实现 `18e3e696` / 冻结原生 688f/96c3 已完成所选资格、合入 v2、独立安装及隔离烟测。现场消费者与 shim 仍为 `cff73feb`，schema4/models3 迁移保留。**此前一次实际接管返回 recovery-required/commit-failed，原操作仍是第六条 unknown，desired disabled；原操作恢复另受同期直接子进程创建关系缺失阻断，调查以 bounded UNPROVEN 结束。源码修复和新安装不能补造该证据，双 Bot/compact/回官方验收尚未执行。** 不扩成 J3/J4、完整模型矩阵或持久运行通过；原五条 unknown、失败探针和历史资格均保留原范围。
+[固定报告](../reports/2026-09-24-controlled-dual-bot.md)记录同一授权窗口的历史与当前状态。2026-09-25，原失败操作已完成同 ID 物理恢复，后续 `d15cf498` 固定安装的受控接管及 loaded/committed 对齐实际成功。**双 Bot 验收仍未完成：第一只 Temporal Bot 创建进入 `effect_unknown`，未取得可验证的原生身份回执；没有重发或另换 ID，B/C 未提交，模型/DM/tool/compact/follow-up 未执行。** 当前现场已回官方 Host、desired disabled，实验 modeld 正式停止；49 个原有本机 Bot 身份/harness、模型字节和原 controller 行保留。controller 有 7 条 unknown，产品创建台账另有一条 unknown，均未清除。最新父会话修复未追加独立审查；历史审查仍绑定原范围。原生 40 项及有限静态/模型链资格不扩成完整 E2E、J3/J4、模型矩阵或持久运行通过。
 
 ### F1 持久宿主当前探针回执（2026-09-22）
 

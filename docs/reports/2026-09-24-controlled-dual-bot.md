@@ -1,6 +1,17 @@
 # 2026-09-24 受控迁移、固定候选与双 Bot 窗口
 
-本报告记录 AH-183/184/185 → AH-162/122 → AH-123/124 → AH-186 的同一授权窗口。当前已执行一次固定候选接管，结果为 **recovery-required / commit-failed**；desired 已由原配置 writer 恢复为 disabled。后续源码修复已通过独立复查，组合候选 `18e3e696` 已完成所选范围资格、合入 v2 并独立安装；现场消费者与全局 shim 仍保持 `cff73feb`。原操作恢复另受同期创建证据缺失阻断，双 Bot 验收尚未开始。本报告不签 J3/J4、全模型矩阵、完整 App 或长期运行。
+本报告记录 AH-183/184/185 → AH-162/122 → AH-123/124 → AH-186 的同一授权窗口。**2026-09-25 当前状态：原失败接管已完成同 ID 物理恢复，新的受控接管及 loaded/committed 对齐实际成功；双 Bot 验收阻塞在第一只 Temporal Bot 的原生创建 `effect_unknown`。** 现场已返回官方 Host、desired disabled，实验 modeld 已正式停止，49 个原有本机 Bot 的身份/harness 与模型配置保留。实现与固定安装为 `d15cf498`；全局 shim 指向该安装。以下旧候选小节均为其当时范围，不代表当前状态。本报告不签双 Bot E2E、J3/J4、全模型矩阵、完整 App 或长期运行。
+
+## 2026-09-25 当前结果与剩余阻塞
+
+- 原操作 `2e3df157…` 经受保护的当前资源资格、模型服务退出、现有 socket OFD gate 和新鲜进程/资源观察，在 `b41071e8` 的正式恢复入口返回 `restored`。原始证据、缺失事实、旧 prepared 字节与六条 unknown 保留；历史入口实际读回 `recorded`。完成发布改为一个自包含校验记录的独占原子 link，中断的准备记录不再锁住后来已正常重启的官方 Host。原子发布相关 97 项测试/357 断言、类型和文档检查通过。
+- 当前原生输入为 Host `83be8f81ebfeca0625a2b084d6c516545734e6764697168672257c472b2bc006` / worker `0378b9f497f0f4b9d6f0abd281279505a48da3fe93a69640127ad081109406d3`。61 切片及四项语义检查、当前原生组合 40 项、固定 receiver/模型切换链两项实际通过。此前 2297 输入上的失败和未改代码的单例复核均保留；83be 相对 2297 仅两处构建元数据字符串共 11 bytes 改变。有限资格不等于完整 Host 或真实 provider 验收。
+- 真实接管暴露并修复了启动权限遗漏：临时 Host 曾继承终端 `umask 0002`，使 Gateway 变成 `0664` 而被管理读取器拒绝。当前 helper 在发信号前绑定原生 supervisor 的 umask，启动子 Host 前应用；真实 Node22.14/22.22 夹具验证 `0022/0077`、`0644/0600` 和退出/join，未放宽 Gateway 读取检查。另一轮切换中，旧进程退场阶段耗用 22.29 秒；30 秒 guardian 到期，未提交接管。这轮保留为第七条 controller unknown，随后同 ID 正式物理恢复成功。当前整体守护窗口固定为 60 秒，单段等待仍为 30 秒。
+- `7296d9fb` 与最终 `d15cf498` 的真实接管均返回 `alignment: verified`，实际 loaded source/profile/transformed 摘要与完成 owner 一致。CONT 还修复了安装根权限边界：保护运行根不被其他用户写入，允许原有 `0755`；实际 CONT 目录与文件仍要求 `0700/0600`，相关真实存储与创建链检查通过。独立复核最后覆盖到 `2b760221`；之后按用户要求由父会话直接实现和验证，未再派发审查。
+- 第一只专用 Temporal Bot 的正式创建已有安全台账记录，但没有原生身份回执，状态为 `effect_unknown`。本机完整名册未出现新对象，当前原创建 nonce 缓存也没有可用回执；这些缺席事实不能证明未创建。原生输入经当前真实校验器验证通过，当前预调用路径能到达发送边界；原始调用的错误正文没有留存。没有重发该请求、改 UUID、推断名称为创建回执或清除未知记录。B/C 没有提交，模型关系、Human/DM、工具效果、A/B compact 和 follow-up 尚未执行。
+- 09:35 UTC 收场读回：官方 Host、Gateway `0644`、Host umask `0022`、无 grokbox preload；此前 patched Host 已退出，modeld 原 owner 停止且 socket 不存在。49 个原有本机 Bot 的 ID/harness 保留且均空闲；models3 字节及原 52 条 controller 行未改。controller 当前 7 unknown/49 terminal/0 running；产品创建台账另有上述一条 unknown。modeld 此阶段 accepted/completed/active 与推理历史读写均为零。A 的远端原生副作用仍未知，不能据此推断远端没有对象或费用。Server/Web 为固定安装的受控前台消费者，不声明持久服务。
+
+下一步需要原创建的可验证原生结果，或用户明确调整试验身份/未知风险边界；现有创建围栏不能靠改台账或另换请求 ID 绕过。私有来源、原生诊断、nonce 只读检查、全部失败与回执继续留在仓库外。下面保留历史演进与证据边界。
 
 ## 早期 734 候选与证据边界
 
@@ -57,7 +68,9 @@ cff73 已线性合入 v2 并独立安装。模型文件原为 version2，后续�
 
 已执行原 `runtime deactivate` 的 desired-only containment，当前 disabled；不信号 Host，不清模型绑定或旧证据。最后一次读回 49 个非目标 Bot 元数据/harness 不变且空闲，modeld accepted/completed 为零。A/B/C 尚未创建，Provider/DM/tool/compact/follow-up 均未跑。AH-183 的实际迁移与消费者读回已完成；AH-124 保持 In Progress。后续修复与隔离资格在独占源码树进行，原操作未知仍保留。上述失败不撤销其原范围的离线事实，也不形成任何 live 通过。
 
-## 修复审查与原始创建证据限制
+## 历史：修复审查与原始创建证据限制
+
+本节记录 18e 阶段结束时的判断；后续当前资源恢复结果见报告开头。
 
 隔离修复范围 `cff73feb..550419e7` 的初次独立审查为 **BLOCK（五项 P1、一项 P2）**：中断未等待原采用 Promise 结束、未退出子进程可能被新操作 ID 再次操作并覆盖单例证据、恢复遗漏子进程身份、未完成发布被历史读取器当成完成、异步 rename 可越过期限，以及完整 `/proc` 可见性要求阻断正常用户。后续反例又推动了 checkpoint 写入失败时的事实保留、物理完成与业务账本不确定性的分离、结构化编译观察一致性，以及所有 route authority 的完成证据检查。这些已报告源码问题在各自审查范围内均已关闭。最后范围 `6c07327e..99836167` 的独立复核为 **OK with notes**，24 项测试、146 个断言通过；两个不受支持的 route 变体经真实 store、`current`、`currentContext` 拒绝，未读取原生 ownership。合法 direct identity 与六条历史 unknown 保留。原审查、反例、失败和修复回执均未覆盖。
 
@@ -77,4 +90,4 @@ cff73 已线性合入 v2 并独立安装。模型文件原为 version2，后续�
 
 包为 3,389,985 bytes，SHA256 `c295326a8714e149a91566d4c7c777d3a99fcc6c80a6e52febac7f0316db0fee`；构建清单 SHA256 `9137f881d378a2e5e32c37520369cb6881ead3befd5b6476aaea977a5743ea67`。72 个产物及包内各次出现逐项一致，重复 `bin/grokbox` 的内容/模式相同。Bun 打包只重排了 `package.json` 格式，全部 JSON 字段一致；其余 96 个包文件逐字节匹配。固定安装位于 `/workspace/opt/grokbox/releases/18e3e69624b24679f19fd341975a09fbd055eb6a`，5244 个生产依赖文件和 84 个链接核对一致且闭包留在安装目录内。最初字节比较拒绝的暂存目录与回执另行保留。
 
-独立安装从 `/tmp`、隔离配置根启动：管理/模型 HTTP200、无凭据401、Web200、CLI 配置校验和 modeld ready 均通过；烟测进程完整退出并自行清理 socket。没有连接实际 Host、发布新 profile、切换现场服务或全局 shim。19:42 UTC 的实际只读回查仍为 schema4、models3、12 个绑定、desired disabled；原操作保持 unknown，合计六条 unknown、46 条 terminal、无 running/reserved。modeld 原 epoch 保持 ready/wire8，accepted/completed/active 均为零。A/B/C、真实 provider/DM/tool/compact/follow-up 和官方退出验收继续未执行。**源码与安装资格闭合没有补齐原操作的历史创建关系；AH-124 仍保持 In Progress，现场恢复仍为 BLOCKED / bounded UNPROVEN。**
+独立安装从 `/tmp`、隔离配置根启动：管理/模型 HTTP200、无凭据401、Web200、CLI 配置校验和 modeld ready 均通过；烟测进程完整退出并自行清理 socket。没有连接实际 Host、发布新 profile、切换现场服务或全局 shim。19:42 UTC 的实际只读回查仍为 schema4、models3、12 个绑定、desired disabled；原操作保持 unknown，合计六条 unknown、46 条 terminal、无 running/reserved。modeld 原 epoch 保持 ready/wire8，accepted/completed/active 均为零。A/B/C、真实 provider/DM/tool/compact/follow-up 和官方退出验收继续未执行。**在 18e 阶段结束时，源码与安装资格尚未补齐原操作的历史创建关系；AH-124 当时保持 In Progress，现场恢复为 BLOCKED / bounded UNPROVEN。后续恢复与实际采用结果见报告开头。**
