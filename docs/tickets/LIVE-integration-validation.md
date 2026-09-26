@@ -2,6 +2,12 @@
 
 本页是新版运行核心采用与完整功能候选的 **E2E Checklist 与当前结果唯一入口**。[Agent-first Spec](../roadmap/agent-first-cli/spec.md)决定验收义务，来源票负责实现/离线/独立审查，日期报告保存固定证据，[执行手册](../maintainers/live-end-to-end.md)拥有执行方法。本页不是逐提交发布闸门，也不是要求先把旧版本验完才能重建。
 
+### 2026-09-26 03:49 UTC：本地群作为备选输入容器，仅入口已实证
+
+原生 `createGroup(creationRoute=box)` 实际成功创建一个空闲、空历史的专用本地群，随后准确删除；原51 Bot/4群ID、harness和类型保持。没有发消息或调用模型，没有改官方App/Host，也没有复制群、把群改成普通Bot。原生已有4群中另观察到1个省略harness；0.58原函数可将这种新群输入送往Gateway，但默认Temporal成员仍走Server，后续temporal声明和legacy server历史会改变发送/显示。详见[同一POC报告](../reports/2026-09-26-box-creation-feasibility.md)。
+
+该新分支不是普通Bot主私聊已接管：只表明官方本地聊天容器仍有可用创建入口。真正的Host-only自定义loop输入、原生回复、客户端切换、跨端及零额度尚未证明；不能用本地群入口偷偷降低用户要求。保留为需明确范围的备选，不重排原票，不重开AH-124，不再扩建模型引擎或外围资格。
+
 ### 2026-09-26 当前根目标：逐 Bot 自定义模型，不消耗官方推理额度
 
 03:15 UTC 读回：当前Gateway 51个Bot均为Temporal，原模型配置12个逐Bot选择中没有当前可见Box；这不是Server原始确权，不将保存的选择显示为已接管。官方App保持原样，用户自行检查UI。原生Server/Host的身份、传输、存储及无模型工具代码可以复用，但官方模型仍参与委托和提交的模式不满足目标。
