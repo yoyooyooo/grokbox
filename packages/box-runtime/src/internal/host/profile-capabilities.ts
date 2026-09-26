@@ -32,7 +32,7 @@ export function upgradeProfileCapability(source: string, baseline: PatchProfile,
   }
   const recipe = HOST_RECIPE;
   const extras = capability === "current-state" ? [...recipe.checkpoint, ...recipe.currentState] : [];
-  const dependencies: readonly SliceId[] = capability === "native-creation" ? NATIVE_CREATION_SLICE_IDS : capability === "current-state"
+  const dependencies: readonly SliceId[] = capability === "native-creation" ? [...NATIVE_CREATION_SLICE_IDS, ...OWNERSHIP_DEPENDENCIES] : capability === "current-state"
     ? [...OWNERSHIP_DEPENDENCIES, ...CONTEXT_SLICE_IDS, ...extras.map(slice => slice.id)] : OWNERSHIP_DEPENDENCIES;
   const target = new Set<SliceId>(dependencies);
   const replacements = new Map([...recipe.core, ...extras].filter(slice => target.has(slice.id)).map(slice => [slice.id, slice]));

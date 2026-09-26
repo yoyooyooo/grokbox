@@ -1,3 +1,4 @@
+import { isLocalFirstReceipt, type LocalFirstReceipt } from "./local-first.ts";
 import { canonicalJson, sha256Text } from "../../portable-hash.ts";
 import { composeAgentTitle, parseAgentTitle } from "../contract/title-marker.ts";
 import { ContinuityFailure, isContinuityHash, isContinuityUuid } from "./primitives.ts";
@@ -58,6 +59,8 @@ export type ProductReceipt = {
   result: ProductResult | null; diagnostic: ProductDiagnostic | null; createdAtMs: number;
 };
 export type ProductResult = {
+  /** Absent on historical/non-Local-first receipts; never synthesized. */
+  creation?: LocalFirstReceipt;
   nativeReceipt: "returned" | "not-dispatched"; targetId: string | null;
   readBack: "matched" | "mismatch" | "not-observed"; object: ProductObject | null;
   cleanup: "not-applicable" | "native-lifecycle" | "complete" | "unavailable" | "unknown";
@@ -180,7 +183,8 @@ export function productResultMatches(intent: ProductIntent, current: ProductObje
   return true;
 }
 export function assertProductResult(raw: ProductResult): ProductResult {
-  if (!object(raw) || Object.keys(raw).sort().join() !== "atomicCompareAndSet,cleanup,fullClone,nativeReceipt,object,readBack,relationshipsTransferred,targetId"
+  if (!object(raw) || Object.keys(raw).filter(key => key !== "creation").sort().join() !== "atomicCompareAndSet,cleanup,fullClone,nativeReceipt,object,readBack,relationshipsTransferred,targetId"
+    || "creation" in raw && (!isLocalFirstReceipt(raw.creation) || !raw.creation.settled || raw.creation.localAgentId !== raw.targetId)
     || !["returned", "not-dispatched"].includes(raw.nativeReceipt) || !(raw.targetId === null || isContinuityUuid(raw.targetId))
     || !["matched", "mismatch", "not-observed"].includes(raw.readBack)
     || !["not-applicable", "native-lifecycle", "complete", "unavailable", "unknown"].includes(raw.cleanup)
@@ -217,6 +221,8 @@ export function assertProductReceipt(raw: ProductReceipt): ProductReceipt {
   if (raw.result !== null) {
     const result = assertProductResult(raw.result), intent = raw.intent;
     const createsIdentity = intent.action === "create" || intent.action === "duplicate";
+    if (result.creation && (intent.action !== "create" || intent.kind !== "bot" || intent.harness !== "box"
+      || result.nativeReceipt !== "returned" || result.creation.operationId !== raw.operationId)) throw new ContinuityFailure("integrity_failure");
     if (createsIdentity ? result.nativeReceipt === "not-dispatched" ? result.targetId !== null
       : result.targetId === intent.targetId : result.targetId !== intent.targetId) throw new ContinuityFailure("integrity_failure");
     if (result.nativeReceipt === "returned") {

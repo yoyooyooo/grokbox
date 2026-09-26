@@ -31,19 +31,20 @@ async function fixture(source = LIVE_SHAPED_HOST, slices = legacySlices()) {
 }
 
 linuxTest("native creation can be added through the original writer without replacing other reviewed capabilities", async () => {
-  const f = await fixture(LIVE_SHAPED_HOST, legacySlices().filter(slice => slice.id !== "native-create-box-harness"));
+  const f = await fixture(LIVE_SHAPED_HOST, legacySlices().filter(slice => !["native-create-local-first", "native-create-box-harness"].includes(slice.id)));
   const inspected = await inspectRetainedWriteEnvelope(f.root, f.sha, undefined, "native-creation");
-  expect(inspected.capabilityUpgrade?.addedIds).toEqual(["native-create-box-harness"]);
-  expect(inspected.capabilityUpgrade?.updatedIds).toEqual([]);
-  expect(inspected.requiredIds).toEqual(["native-create-box-harness"]);
+  expect(inspected.capabilityUpgrade?.addedIds).toEqual(["native-create-local-first", "native-create-box-harness"]);
+  expect(inspected.capabilityUpgrade?.updatedIds).toEqual(targets);
+  expect(inspected.requiredIds).toEqual(expect.arrayContaining(["native-create-local-first", "native-create-box-harness"]));
   expect(inspected.next).toContain("--capability native-creation");
   await expect(writeReviewedProfileFromCopy({ ...f.input, capability: "native-creation" })).rejects.toMatchObject({ refusal: "envelope_drift" });
   expect(await fs.readFile(f.path, "utf8")).toBe(f.before);
   const written = await writeReviewedProfileFromCopy({ ...f.input, capability: "native-creation",
     lineage: { ...f.input.lineage, sliceReview: inspected.requiredIds } });
-  expect(written.profile.slices.slice(0, f.slices.length)).toEqual(f.slices);
-  expect(written.profile.slices.at(-1)).toEqual(LIVE_SLICE_PATCHES.find(slice => slice.id === "native-create-box-harness"));
-  expect(written.profile.slices).toHaveLength(f.slices.length + 1);
+  for (const slice of f.slices) expect(written.profile.slices.find(row => row.id === slice.id))
+    .toEqual(targets.includes(slice.id) ? LIVE_SLICE_PATCHES.find(row => row.id === slice.id)! : slice);
+  expect(written.profile.slices.slice(-2)).toEqual(LIVE_SLICE_PATCHES.filter(slice => ["native-create-local-first", "native-create-box-harness"].includes(slice.id)));
+  expect(written.profile.slices).toHaveLength(f.slices.length + 2);
   expect(written.capabilityUpgrade?.capability).toBe("native-creation");
 });
 

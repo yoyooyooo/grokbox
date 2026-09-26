@@ -29,7 +29,11 @@ grokbox product operation get "$REQUEST_ID" --scope-id "$SCOPE"
 
 profile 接受 name/description/title/avatarShape/avatarColor。Group 创建只接受 name/description 与 1–6 个不同的 Bot UUID；不接受嵌套群。成员更改使用完整 memberIds 集合，必须先读取并审阅，不能从旧集合盲覆盖新配置。现有对象 update 不接受 harness 迁移。
 
-显式 `harness=box` 必须一直传到原 native remote mint，不能仅变成“没有请求 Temporal”。当前 Host 的原默认路径省略该字段时，服务端可能返回 Temporal；`native-create-box-harness` 只为明确 Box 请求补传这个字段，保留默认/Temporal 路径与服务端拒绝，不迁移既有对象。已有完整 reviewed profile 可使用原 `runtime profile write --sha <retained-sha> --capability native-creation --expected-reviewed-sha <digest> --slice-review native-create-box-harness` 增补此能力，不用 core-only 写入丢掉其它切片；实际 required review 集合仍以前置分析为准。创建后仍核对原返回 ID 与独立 harness 读回；`complete` 加 `readBack=mismatch` 是已结算但未满足目标，不可重复原创建或把它当作 Box 模型验收对象。
+显式 `harness=box` 走原生 Local-first：原 `createBackgroundAgent` 先物化普通本地 Bot，原 `ensureServerBacked` 按该准确身份登记；`register-existing-local` / `ensure-server-backed` 保留真实语义，Box 和启动抑制字段经过原客户端编码。管理 adapter 在派发前核对已加载的创建桥，缺失时不调用旧 remote-first。默认/Temporal 创建保持原路径，服务端返回 Temporal 不改标签、不回退模型。
+
+该接缝属于现有 `native-creation` recipe 能力，沿 `runtime profile analyze` / `runtime profile write --capability native-creation`、原 reviewed profile 与采用机制交付。所需 review IDs 由实际同源分析给出，包含本地工厂接线、单次登记和只读回执入口，不复制临时目录或写现役 Host。历史 remote-first 字段切片仍是历史证据，不是当前可运行的 Box 创建实现。
+
+新回执的 `result.creation` 分别保留原 operationId、本地 ID、首次 Server 身份响应投影、原登记者绑定、失败阶段及实际桥接的 source/profile/candidate/generation。它不包含凭据或全部原始响应正文；不存在该字段的旧回执仍是缺少这项证据。`readBack` 继续表示本地产品资料匹配；独立 Server/local 归属须读 `bot ownership get`，并核对同一 Server ID。`complete` 只表示管理回执已保存，登记 unknown、mismatch 和未观察读回都不构成 Box 执行资格。
 
 `deferStart=true` 仅用于 Box Bot 创建，表示请求抑制 introduction/kickstart，不是建立输入屏障。未抑制的创建与复制本地启用 Routine 都可能导致后续运行或费用，预览会披露；不能把创建成功推断为零费用或 managed model 已配置。
 
@@ -40,6 +44,8 @@ profile 接受 name/description/title/avatarShape/avatarColor。Group 创建只�
 同主体管理授权在最终原生传输开始前再次核验；授权等待时间同时计入原生身份材料的新鲜度，最后按墙钟和单调时钟复核，超过既有五秒窗口不派发。预览和原生读取后的失权不能沿旧授权继续写。前后身份采样和本地驱动锁不构成跨 App 原子锁，因此计划明确 atomicCompareAndSet=false，提交必须显式 acceptNonAtomic=true。
 
 管理请求保存在原 CONT 安全库，绑定 installation/principal/scope/request。duplicate 委托原 CONT duplication owner。重复提交读取原回执，不自动重发；未知创建不通过同名、新增名单或更换 UUID 猜测关联。原生响应的目标 ID 在读回/清理之前持久化，源离线也不丢掉它。
+
+Local-first 的当前调用绕过原 registrar 的通用重试包装，只调用一次原传输；既有对象和其他登记仍保持原策略。已物化后登记失败会返回准确本地 ID 和阶段，保留原生资料。丢失管理响应时，`product operation reconcile` 只按原 operationId 查询同一 Host 代的有界回执缓存，再写回原 CONT 行，不调用创建。Host 重启或缓存无记录时继续 unknown；缓存不是持久成功证明，也不是新 nonce 的许可。每代最多保留 64 次创建记录，容量满时拒绝新增，不淘汰未知记录。
 
 未知创建按规范化后的原创建声明防重：忽略 requestId 后的相同声明仍被阻止，独立的不同创建声明不再被同类全局围栏连带阻止。已有对象的未知修改继续按精确 targetId 隔离。不同声明不代表可以把失败操作改名重试；原操作的结果与新对象的用途必须分别保留。
 

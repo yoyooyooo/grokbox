@@ -4,8 +4,6 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { sha256Text } from "@grokbox/runtime-kernel/hash";
 import { CONT_NATIVE_PAIR, nativeContinuityEnabled } from "./native-continuity-code.ts";
-import { LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
-import { transformUnchecked } from "../src/internal/host/profile.ts";
 
 const nativeTest = test.skipIf(!nativeContinuityEnabled());
 /** Execute selected original declarations only. The full Host is never loaded;
@@ -61,39 +59,7 @@ function gatewayFixture() {
   return { api: create(), calls, response, fail: () => { failed = true; }, recover: () => { failed = false; }, hashes: selected.digest };
 }
 
-nativeTest("explicit Box creation reaches the original remote mint as Box rather than an omitted default", async () => {
-  const selected = source(), patch = LIVE_SLICE_PATCHES.find(s => s.id === "native-create-box-harness")!;
-  const changed = transformUnchecked(selected.text, [patch]); expect(changed.ok).toBe(true); if (!changed.ok) throw Error(changed.code);
-  const extract = (text: string, marker: string, endMarker: string) => {
-    const start = text.indexOf(marker), end = text.indexOf(endMarker, start + marker.length);
-    if (start < 0 || text.indexOf(marker, start + 1) >= 0 || end < 0 || end - start > 32768) throw Error("native_creation_identity_shape");
-    return text.slice(start, endMarker === "\n  }\n" ? end + 4 : end);
-  };
-  const run = async (text: string, harness: "box" | "temporal" | undefined, temporalCreationEnabled: boolean) => {
-    const code = extract(text, "\n  async createRemoteAgentFirst(fields2, options2) {", "\n  ensureServerRoomMembers(agentIds)")
-      + extract(text, "\n  async mintRemoteFirst({", "\n  }\n");
-    const Native = runInNewContext(`(class {${code}})`, {
-      withGeneratedMark: (_id: string, fields: unknown) => fields, defaultedName: (name: string) => name,
-      toRemoteGrokBotAgent: (row: unknown) => row, invariant: (ok: unknown) => { if (!ok) throw Error("native_identity_invariant"); },
-    }, { timeout: 1000, contextCodeGeneration: { strings: false, wasm: false } });
-    const owner = new Native(), id = "aaaa0000-aaaa-4aaa-8aaa-aaaaaaaaaaaa", sent: Array<Record<string, unknown>> = [];
-    owner.deps = { getCreationPolicy: async () => ({ temporalCreationEnabled, isLegacy: false, durableIdentityWritesEnabled: true }), newAgentId: () => id,
-      createRemoteAgent: async () => { throw Error("owned_transport_not_called_directly"); }, report() {}, log() {} };
-    owner.pendingLocalMaterializationIds = new Set(); owner.serverAvatarVersions = new Map(); owner.rememberServerIdentity = () => {};
-    owner.rollbackRemoteAgent = async () => { throw Error("unexpected_rollback"); };
-    // Observe the real outgoing request and stop at the external-effect port;
-    // do not fabricate a server response or qualify its confirmation semantics.
-    const stopped = Error("owned_remote_boundary");
-    owner.requestMint = async (_create: unknown, input: Record<string, unknown>) => { sent.push(input); throw stopped; };
-    await expect(owner.createRemoteAgentFirst({ name: "Synthetic", introductionSuppressed: true, kickstartRequested: false }, { harness })).rejects.toBe(stopped);
-    return sent;
-  };
-  const before = await run(selected.text, "box", true), after = await run(changed.source, "box", true);
-  expect(before).toHaveLength(1); expect(before[0]!.harness).toBeUndefined();
-  expect(after).toHaveLength(1); expect(after[0]).toEqual({ ...before[0], harness: "box" });
-  for (const [harness, enabled] of [["temporal", true], [undefined, true], [undefined, false]] as const)
-    expect(await run(changed.source, harness, enabled)).toEqual(await run(selected.text, harness, enabled));
-});
+/* Local-first factory/registration qualification lives in local-first-qualification.test.ts. */;
 
 nativeTest("selected current native product RPCs preserve argument shape and original lifecycle delegates", async () => {
   const f = gatewayFixture();

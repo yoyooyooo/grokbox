@@ -75,7 +75,7 @@ export function productManagementPrograms(root: string, scopeId: string, hooks: 
         // objects remain fenced by their exact target identity.
         const { requestId: _requestId, ...creation } = q.intent;
         const blocker = q.intent.targetId === null
-          ? await c.first("SELECT operation_id FROM continuity_queued_controls WHERE kind='managed-native-product' AND state!='complete' AND json_extract(request_json,'$.intent.targetId') IS NULL AND json_remove(json_extract(request_json,'$.intent'),'$.requestId')=? LIMIT 1", [canonicalJson(creation)])
+          ? await c.first("SELECT operation_id FROM continuity_queued_controls WHERE kind='managed-native-product' AND (state!='complete' OR json_extract(result_json,'$.creation.outcome')='unknown') AND json_extract(request_json,'$.intent.targetId') IS NULL AND json_remove(json_extract(request_json,'$.intent'),'$.requestId')=? LIMIT 1", [canonicalJson(creation)])
           : await c.first("SELECT operation_id FROM continuity_queued_controls WHERE kind='managed-native-product' AND state!='complete' AND agent_id=? LIMIT 1", [q.intent.targetId]);
         if (blocker || q.intent.targetId !== null && await c.first("SELECT operation_id FROM operations WHERE agent_id=? AND state IN ('prepared','effect_unknown') LIMIT 1", [q.intent.targetId])) throw new ContinuityFailure("conflict");
         if (Number((await c.first("SELECT COUNT(*) n FROM continuity_queued_controls WHERE kind='managed-native-product'"))?.n) >= 512) throw new ContinuityFailure("capacity");
@@ -93,6 +93,7 @@ export function productManagementPrograms(root: string, scopeId: string, hooks: 
       if (canonicalJson(row.result) === canonicalJson(result)) return row;
       const old = row.result;
       if (old.nativeReceipt !== "returned" || result.nativeReceipt !== old.nativeReceipt || old.targetId !== result.targetId
+        || canonicalJson(old.creation ?? null) !== canonicalJson(result.creation ?? null)
         || old.readBack !== "not-observed" || old.object !== null || old.cleanup !== "unknown" && old.cleanup !== result.cleanup) throw new ContinuityFailure("conflict");
       const text = canonicalJson(result); if (Buffer.byteLength(text) > 65536) throw new ContinuityFailure("capacity");
       await db.metadataRoom(c, Buffer.byteLength(text) * 2 + 8192);

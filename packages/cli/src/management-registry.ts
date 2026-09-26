@@ -43,7 +43,7 @@ export const MANAGEMENT_COMMANDS: readonly LeafCommand[] = [
   command("product operation get", "Read the original principal/account-bound native operation without a native call.", { name: "request-id", description: "Original request UUID" }, [
     { flags: "--scope-id <sha256>", description: "Account scope from the original preview", required: true },
   ]),
-  { ...command("product operation reconcile", "Consume only an exact duplicate identity receipt retained by CONT; never replay a native mutation.", { name: "request-id", description: "Original request UUID" }, [
+  { ...command("product operation reconcile", "Consume the original Local-first or duplicate identity receipt; never replay a native mutation.", { name: "request-id", description: "Original request UUID" }, [
     { flags: "--scope-id <sha256>", description: "Original account scope", required: true },
     { flags: "--confirm", description: "Confirm reconciliation of the original receipt only", required: true },
   ]), destructive: true },

@@ -1,3 +1,4 @@
+import { isLocalFirstSource, isLocalFirstReceipt, type LocalFirstReceipt } from "@grokbox/runtime-kernel/products";
 import { ProductCallFailure, productCallFailure } from "./native-product-failure.node.ts";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { inspectOwnership, OWNERSHIP_EVIDENCE_MAX_AGE_MS } from "@grokbox/runtime-kernel/contract";
@@ -14,7 +15,7 @@ export type ProductRpc = "listAgents" | "getHostStatus" | "getAgentAutomations" 
   | "setAgentNotifyOnUpdates" | "setAgentHiddenFromSidebar";
 export type ProductCall = (method: ProductRpc, input: Record<string, unknown>, signal: AbortSignal, timeoutMs: number,
   maxBytes: number, expectedGeneration?: string, beforeDispatch?: () => Promise<void>) => Promise<{ result: unknown; generation: string }>;
-export type ProductNativeReceipt = { targetId: string; desktop: DesktopReapResult | null };
+export type ProductNativeReceipt = { targetId: string; desktop: DesktopReapResult | null; creation?: LocalFirstReceipt };
 export type NativeProductAccess = ReturnType<typeof createNativeProductAccess>;
 /** Constructed only at a local gate before the native transport starts. */
 export class ProductDispatchRefused extends NativeProductError {
@@ -156,6 +157,12 @@ export function createNativeProductAccess(call: ProductCall, signal: AbortSignal
     try { fresh = await preview(q); }
     catch (error) { throw new ProductDispatchRefused(error instanceof NativeProductError && error.code === "permission_denied" ? "permission_denied" : "source_changed"); }
     if (fresh.revision !== plan.revision || fresh.scopeId !== plan.scopeId || generation !== plan.sourceGeneration) throw new ProductDispatchRefused("source_changed");
+    let creationSource: LocalFirstReceipt["source"] | undefined;
+    if (q.action === "create" && q.kind === "bot" && q.harness === "box") {
+      const status = await rpc("getHostStatus", { grokboxCreationRequestId: operationId }, 32768);
+      if (!record(status) || !isLocalFirstSource(status.grokboxCreationSource)) throw new ProductDispatchRefused("source_unavailable");
+      creationSource = status.grokboxCreationSource;
+    }
     const raw = await rpc(method, input);
     let targetId = q.targetId;
     if (q.action === "create") {
@@ -166,7 +173,13 @@ export function createNativeProductAccess(call: ProductCall, signal: AbortSignal
       targetId = raw.agent.id.toLowerCase();
     } else if (q.action === "delete" && (!record(raw) || !Array.isArray(raw.transcript))) return unavailable();
     if (!targetId) return unavailable();
-    return { targetId, desktop: readDesktopReap(raw) ?? null };
+    // A malformed supplementary proof cannot erase the returned native ID.
+    // It remains unqualified creation evidence, even if roster readback matches.
+    const candidate = record(raw) ? raw.grokboxCreation : undefined;
+    const creation = isLocalFirstReceipt(candidate) && candidate.operationId === operationId && candidate.settled
+      && candidate.localAgentId === targetId && canonicalJson(candidate.source) === canonicalJson(creationSource ?? null)
+      ? candidate : undefined;
+    return { targetId, desktop: readDesktopReap(raw) ?? null, ...(creation ? { creation } : {}) };
   };
   const relations = async (botId: string): Promise<ProductRelations> => {
     const view = await snapshot(botId, botId, true);
@@ -198,7 +211,17 @@ export function createNativeProductAccess(call: ProductCall, signal: AbortSignal
       groups: groups.slice(0, 128).map(row => ({ id: row.id, memberIds: row.memberIds, revision: row.revision })), groupsTruncated: groups.length > 128,
       transcript, routines: routineView, currentRosterCoverage: "native-snapshot", externalTasksEnumerated: false };
   };
-  return { snapshot, ownership, preview, dispatch, duplicate, routines, relations, failure: () => lastFailure,
+  const creationReceipt = async (scopeId: string, operationId: string): Promise<ProductNativeReceipt | null> => {
+    const proof = await ownership([operationId]);
+    if (proof.scopeId !== scopeId) return changed();
+    const raw = await rpc("getHostStatus", { grokboxCreationRequestId: operationId }, 32768);
+    if (!record(raw) || raw.grokboxCreation == null) return null;
+    const creation = raw.grokboxCreation;
+    if (!isLocalFirstReceipt(creation) || creation.operationId !== operationId) return unavailable();
+    if (!creation.settled || creation.localAgentId === null) return null;
+    return { targetId: creation.localAgentId, desktop: null, creation };
+  };
+  return { snapshot, ownership, preview, dispatch, duplicate, routines, relations, creationReceipt, failure: () => lastFailure,
     readBack: async (scopeId: string, targetId: string) => {
       const view = await snapshot(targetId, targetId);
       if (view.authority.scopeId !== scopeId) return changed();

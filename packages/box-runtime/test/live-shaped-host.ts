@@ -1,3 +1,4 @@
+import { LOCAL_FIRST_SHAPED_HOST } from "./local-first-shaped-host.ts";
 import { CONTEXT_SHAPED_HOST } from "./context-shaped-host.ts";
 import { OWNERSHIP_SHAPED_HOST } from "./ownership-shaped-host.ts";
 import { ALERT_SHAPED_HOST } from "./alert-shaped-host.ts";
@@ -10,15 +11,7 @@ ${ALERT_SHAPED_HOST}
 ${SERVER_ACTIVITY_SHAPED_HOST}
 ${CONTEXT_SHAPED_HOST}
 ${RECEIVER_SHAPED_HOST}
-class SyntheticCreationIdentity {
-  async createRemoteAgentFirst(fields2, options2) {
-    const dealt = fields2;
-    return this.mintRemoteFirst({
-      fields: dealt,
-    });
-  }
-  ensureServerRoomMembers(agentIds) { return agentIds; }
-}
+${LOCAL_FIRST_SHAPED_HOST}
 // Synthetic tool shell: only the selected interoperability anchors are kept.
 // This is not a copy of the native handler and supplies no execution authority.
 const toolOwner = {

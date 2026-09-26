@@ -5,6 +5,7 @@ import { CONTEXT_MAINTENANCE_SLICES } from "./context-slices.ts";
 import { ALERT_OBSERVATION_SLICES } from "./alert-slices.ts";
 import { SERVER_ACTIVITY_OBSERVATION_SLICES } from "./server-activity-slices.ts";
 import type { SlicePatch } from "./profile.ts";
+import { LOCAL_FIRST_SLICES } from "./local-first-slices.ts";
 import { HOST_ACTIVITY_SYMBOL, HOST_AUX_SYMBOL, HOST_COMPACT_SYMBOL, HOST_MANAGED_STEP_SYMBOL, HOST_MANAGED_FAILURE_SYMBOL, HOST_MANAGED_STEP_FAILURE_SYMBOL, ROUTE_SESSION_SYMBOL } from "./profile.ts";
 import { HOST_PROFILE_TITLE_SYMBOL } from "./title-marker.ts";
 import { HOST_RUN_OBSERVATION_SYMBOL } from "./run-observation.ts";
@@ -135,13 +136,7 @@ export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
     find: "        executor: session.getExecutor(),\n",
     replacement: auxExecutor("episode", "        "),
   },
-  {
-    id: "native-create-box-harness",
-    startAnchor: "  async createRemoteAgentFirst(fields2, options2) {",
-    endAnchor: "  ensureServerRoomMembers(agentIds) {",
-    find: "      fields: dealt,\n",
-    replacement: "      fields: options2?.harness === \"box\" ? { ...dealt, harness: \"box\" } : dealt,\n",
-  },
+  ...LOCAL_FIRST_SLICES,
   {
     id: "harness-blank",
     startAnchor:

@@ -27,7 +27,8 @@ function execute(source: string, slices: readonly SlicePatch[], globals: Record<
 test("one immutable current recipe is shared without a historic layout rewrite or fallback", () => {
   expect(HOST_RECIPE.core).toEqual(LIVE_SLICE_PATCHES);
   expect(HOST_RECIPE.currentState).toEqual(NATIVE_CURRENT_STATE_SLICES);
-  expect(HOST_RECIPE.core).toHaveLength(39);
+  expect(new Set(HOST_RECIPE.core.map(slice => slice.id)).size).toBe(HOST_RECIPE.core.length);
+  expect(HOST_RECIPE.core.map(slice => slice.id)).toContain("native-create-local-first");
   expect(HOST_RECIPE.checkpoint).toHaveLength(3);
   expect(HOST_RECIPE.currentState).toHaveLength(19);
   expect(Object.isFrozen(HOST_RECIPE)).toBe(true);

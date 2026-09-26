@@ -100,11 +100,11 @@ async function plantGeneration(root: string, input: {
 test("creation capability extends evidence without invalidating old complete goldens or silently approving the new slice", () => {
   const rows = ALL_ENVELOPE_SLICE_IDS.map((id, index) => ({ id, count: { start: 1, end: 1 }, find: { inWindow: 1, global: 1 },
     windowSha: hex64("a"), byteRange: { startByte: index * 10, endByte: index * 10 + 5 } }));
-  const previous = { sourceSha: hex64("b"), profileId: "before-creation", slices: rows.filter(row => row.id !== "native-create-box-harness") };
+  const previous = { sourceSha: hex64("b"), profileId: "before-creation", slices: rows.filter(row => row.id !== "native-create-local-first") };
   const current = { sourceSha: hex64("b"), profileId: "with-creation", slices: rows };
   expect(parseEnvelopeWindows(previous)).toEqual(previous); expect(parseEnvelopeWindows(current)).toEqual(current);
   const diff = classifyWriteEnvelopeDrift(previous, current);
-  expect(diff.requiredIds).toEqual(["native-create-box-harness"]); expect(diff.appeared).toEqual(diff.requiredIds);
+  expect(diff.requiredIds).toEqual(["native-create-local-first"]); expect(diff.appeared).toEqual(diff.requiredIds);
   expect(admitWriteEnvelope({ pinSha: previous.sourceSha, golden: previous, candidate: current, sliceReview: [] }).ok).toBe(false);
   expect(admitWriteEnvelope({ pinSha: previous.sourceSha, golden: previous, candidate: current, sliceReview: diff.requiredIds }).ok).toBe(true);
   expect(() => parseEnvelopeWindows({ ...current, slices: current.slices.filter(row => row.id !== "continuity-native-session-owner") })).toThrow();

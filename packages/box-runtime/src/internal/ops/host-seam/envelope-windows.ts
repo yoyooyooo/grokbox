@@ -39,13 +39,16 @@ export const ALL_ENVELOPE_SLICE_IDS: readonly SliceId[] = [...WITH_CURRENT_STATE
 // A newly qualified capability must not corrupt older immutable goldens. A
 // missing creation group is absent evidence, not a claim that it was checked.
 const validEnvelopeLength = (length: number) => [ENVELOPE_SLICE_COUNT, WITH_CONTEXT_IDS.length, WITH_CURRENT_STATE_IDS.length]
-  .some(size => length === size || length === size + NATIVE_CREATION_SLICE_IDS.length);
+  .some(size => length === size || length === size + 1 || length === size + NATIVE_CREATION_SLICE_IDS.length);
 function completeEnvelopeIds(ids: ReadonlySet<string>): boolean {
   const withCurrentState = CURRENT_STATE_ENVELOPE_IDS.some(id => ids.has(id));
   const withContext = CONTEXT_SLICE_IDS.some(id => ids.has(id));
   const base = withCurrentState ? WITH_CURRENT_STATE_IDS : withContext ? WITH_CONTEXT_IDS : ENVELOPE_SLICE_IDS;
-  const withCreation = NATIVE_CREATION_SLICE_IDS.some(id => ids.has(id));
-  const expected = withCreation ? [...base, ...NATIVE_CREATION_SLICE_IDS] : base;
+  // The retired one-slice remote-first proof is still readable evidence; it
+  // cannot certify the current Local-first capability or select an old recipe.
+  const creation = ids.has("native-create-local-first") ? NATIVE_CREATION_SLICE_IDS
+    : ids.has("native-create-box-harness") ? ["native-create-box-harness"] as const : [];
+  const expected = [...base, ...creation];
   return ids.size === expected.length && expected.every(id => ids.has(id));
 }
 export const ENVELOPE_WINDOWS_FILE = "envelope-windows.json";

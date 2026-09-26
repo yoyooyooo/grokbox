@@ -1,3 +1,4 @@
+import { HOST_LOCAL_FIRST_SYMBOL } from "./local-first.ts";
 import type { SlicePatch } from "./profile.ts";
 import { HOST_OWNERSHIP_READ_SYMBOL } from "./ownership-read.ts";
 import { HOST_RESUME_GATE_SYMBOL } from "./profile.ts";
@@ -13,14 +14,18 @@ export const OWNERSHIP_READ_SLICES: readonly SlicePatch[] = [
     startAnchor: "var hostStatusArgs = rpcObject({",
     endAnchor: "var localToolPermissionResolution =",
     find: "  includeManagedCapabilities: rpcOptional(rpcBoolean())\n",
-    replacement: "  includeManagedCapabilities: rpcOptional(rpcBoolean()),\n  grokboxOwnershipAgentIds: rpcOptional(rpcArray(rpcString())),\n  grokboxOwnershipLocalOnly: rpcOptional(rpcBoolean()),\n  grokboxRuntimeCapabilities: rpcOptional(rpcBoolean()),\n  grokboxHealthChallenge: rpcOptional(rpcString())\n",
+    replacement: "  includeManagedCapabilities: rpcOptional(rpcBoolean()),\n  grokboxOwnershipAgentIds: rpcOptional(rpcArray(rpcString())),\n  grokboxOwnershipLocalOnly: rpcOptional(rpcBoolean()),\n  grokboxRuntimeCapabilities: rpcOptional(rpcBoolean()),\n  grokboxHealthChallenge: rpcOptional(rpcString()),\n  grokboxCreationRequestId: rpcOptional(rpcString())\n",
   },
   {
     id: "ownership-read-api",
     startAnchor: "    getHostStatus: async ({ includeManagedCapabilities }) => ({",
     endAnchor: "    setBoxMigrating: async (args) => {",
     find: "    getHostStatus: async ({ includeManagedCapabilities }) => ({\n      ...deps.extensions.api(\"host-upgrade\").getVersionState(),\n      isBusy: deps.getHealth().isBusy,\n      capabilities: includeManagedCapabilities ? await hostCapabilities(deps) : BASE_HOST_CAPABILITIES\n    }),\n",
-    replacement: `    getHostStatus: async ({ includeManagedCapabilities, grokboxOwnershipAgentIds, grokboxOwnershipLocalOnly, grokboxRuntimeCapabilities, grokboxHealthChallenge }) => {
+    replacement: `    getHostStatus: async ({ includeManagedCapabilities, grokboxOwnershipAgentIds, grokboxOwnershipLocalOnly, grokboxRuntimeCapabilities, grokboxHealthChallenge, grokboxCreationRequestId }) => {
+      if (grokboxCreationRequestId !== undefined) return {
+        grokboxCreation: globalThis[Symbol.for("${HOST_LOCAL_FIRST_SYMBOL}")]?.read(grokboxCreationRequestId) ?? null,
+        grokboxCreationSource: globalThis[Symbol.for("${HOST_LOCAL_FIRST_SYMBOL}")]?.source() ?? null
+      };
       const read = globalThis[Symbol.for("${HOST_OWNERSHIP_READ_SYMBOL}")];
       if (grokboxHealthChallenge !== undefined) {
         // Only local metadata; do not sample ownership, auth, Bot roster or model.

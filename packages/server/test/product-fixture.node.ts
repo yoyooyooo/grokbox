@@ -8,6 +8,7 @@ import { ManagementClient, CAPABILITIES, normalizeProductIntent, type ProductInt
 import { defaultConfig, validateConfig } from "@grokbox/runtime-kernel/config";
 import { createManagementGateway, openRuntimeStore, publishConfigFile, publishLayoutAliases, type ProductManagementHooks } from "@grokbox/box-runtime/runtime";
 import { startManagementServer, type AccessGrant } from "@grokbox/server";
+import { createLocalFirstBridge } from "../../box-runtime/src/internal/host/local-first.ts";
 import { ownedOwnershipSnapshot } from "../../box-runtime/test/ownership-fixture.ts";
 export const P_INSTALL = "11111111-1111-4111-8111-111111111111", P_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   P_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", P_GROUP = "cccccccc-cccc-4ccc-8ccc-cccccccccccc", P_SCOPE = "e".repeat(64);
@@ -29,6 +30,7 @@ const WRITE = new Set(["createAgent", "createGroup", "updateAgent", "deleteAgent
 export async function productFixture() {
   const root = await mkdtemp(join(tmpdir(), "native-product-")), discoveryPath = join(root, "gateway.json");
   const state = { rows: new Map<string, Record<string, any>>([[P_A, productRow(P_A)], [P_B, productRow(P_B)], [P_GROUP, productRow(P_GROUP, true)]]),
+    localFirst: false, creationSupported: true, registrationError: false, registrationTemporal: false, registrations: 0, factories: 0, serverRows: new Map<string, any>(),
     calls: [] as Array<{ method: string; input: any }>, writes: 0, cleanupCalls: 0, scopeId: P_SCOPE, owner: true, ownershipAgeMs: 0,
     token: "synthetic-product-native", startedAt: 1000, failNative: false, failAfterWrite: false, failWriteStatus: 503, failWriteBody: "{}", failReadBack: false,
     writeReply: undefined as undefined | ((reply: unknown) => unknown),
@@ -42,6 +44,7 @@ export async function productFixture() {
       { principalId: "reader", tokenSha256: hash(P_READER), capabilities: ["products.read", "operations.read", "messages.read", "routines.read"] },
     ] as AccessGrant[],
   };
+  const creation = createLocalFirstBridge({ sourceSha256: "a".repeat(64), transformedSha256: "b".repeat(64), profileSha256: "c".repeat(64), generationId: "synthetic-product-host" });
   const gateway = createServer(async (request, response) => {
     try {
       if (request.headers.authorization !== `Bearer ${state.token}`) { response.writeHead(401).end("{}"); return; }
@@ -53,16 +56,21 @@ export async function productFixture() {
       if (method === "listAgents") {
         if (state.failReadBack && state.writes > 0) { response.writeHead(503).end("{}"); return; }
         output = [...state.rows.values()];
+      } else if (method === "getHostStatus" && input.grokboxCreationRequestId !== undefined) {
+        output = { grokboxCreation: creation.read(input.grokboxCreationRequestId), grokboxCreationSource: state.creationSupported ? creation.source() : null };
       } else if (method === "getHostStatus") {
         const proof = ownedOwnershipSnapshot(input.grokboxOwnershipAgentIds, { scopeId: state.scopeId });
         proof.serverObservedAt = new Date(Date.now() - state.ownershipAgeMs).toISOString();
         for (const row of proof.agents) {
-          if (!state.rows.has(row.agentId) || state.rows.get(row.agentId)!.isGroup) {
+          if (!state.rows.has(row.agentId) || state.rows.get(row.agentId)!.isGroup || state.localFirst && !state.serverRows.has(row.agentId)) {
             Object.assign(row, { serverEvidence: "not_returned", server: null, local: { before: null, after: null, stable: true } });
           } else {
             row.server.viewerIsOwner = state.owner;
             const harness = state.rows.get(row.agentId)!.harness;
-            row.server.harness = harness; row.local.before.harness = harness; row.local.after.harness = harness;
+            row.server.harness = state.localFirst ? state.serverRows.get(row.agentId)!.harness : harness;
+            if (state.localFirst) row.server.serverId = state.serverRows.get(row.agentId)!.id;
+            row.local.before.harness = harness; row.local.after.harness = harness;
+            if (state.localFirst) { row.local.before.serverId = state.rows.get(row.agentId)!.serverId; row.local.after.serverId = state.rows.get(row.agentId)!.serverId; }
           }
         }
         output = { grokboxOwnership: state.ownershipTransform ? state.ownershipTransform(proof, input.grokboxOwnershipAgentIds) : proof };
@@ -71,7 +79,23 @@ export async function productFixture() {
       else if (WRITE.has(method)) {
         await state.holdWrite?.(); state.writes++;
         const row = state.rows.get(input.id);
-        if (method === "createAgent" || method === "createGroup") {
+        if (method === "createAgent" && state.localFirst) {
+          const fields = Object.fromEntries(["name", "description", "title", "avatarShape", "avatarColor"].filter(k => k in input).map(k => [k, input[k]]));
+          output = await creation.create(input, fields, { isIntroductionSuppressed: input.isIntroductionSuppressed, isKickstartRequested: input.isKickstartRequested }, {
+            createBackgroundAgent: async profile => {
+              state.factories++; const id = randomUUID(), agent = { ...productRow(id), ...profile, harness: undefined };
+              state.rows.set(id, agent); return { agent, transcript: [] };
+            }, listAgents: async () => [...state.rows.values()],
+          }, { isWriteEnabled: async () => true, ensureServerBacked: async id => {
+            const result = await creation.mint({ agentId: id, createCaller: "ensure-server-backed", createIntent: "register-existing-local" }, async q => {
+              state.registrations++; if (state.registrationError) throw Error("synthetic_registration_response_lost");
+              const agent = { agentId: id, id: `server-${id}`, harness: state.registrationTemporal ? "temporal" : q.harness };
+              state.serverRows.set(id, agent); return { outcome: "created", agent };
+            }) as any;
+            Object.assign(state.rows.get(id)!, { harness: result.agent.harness, serverId: result.agent.id });
+            return { kind: "server_backed", harness: result.agent.harness, serverId: result.agent.id };
+          } });
+        } else if (method === "createAgent" || method === "createGroup") {
           const id = randomUUID(), group = method === "createGroup";
           const created = { ...productRow(id, group), ...Object.fromEntries(["name", "description", "title", "avatarShape", "avatarColor"].filter(k => k in input).map(k => [k, input[k]])),
             ...(group ? { memberIds: input.memberAgentIds.filter((member: string) => state.rows.has(member)).slice(0, 6) } : { harness: input.harness }) };
@@ -80,7 +104,7 @@ export async function productFixture() {
           if (!row) { response.writeHead(404).end("{}"); return; }
           const id = randomUUID(), created = { ...structuredClone(row), id }; state.rows.set(id, created); output = { agent: created, transcript: [] };
         } else if (method === "deleteAgent") {
-          state.rows.delete(input.id);
+          state.rows.delete(input.id); state.serverRows.delete(input.id);
           for (const value of state.rows.values()) if (value.isGroup) value.memberIds = value.memberIds.filter((id: string) => id !== input.id);
           output = { transcript: [], ...(state.nativeCleanup ? { desktop: { display: 3, outcome: "stopped" } } : {}) };
         } else if (method === "updateAgent") { if (row) Object.assign(row, input.profile); output = row ?? null; }

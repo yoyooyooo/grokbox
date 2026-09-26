@@ -124,7 +124,7 @@ export async function submitNativeProduct(d: ProductManagement, input: ProductSu
     const needsCleanup = intent.action === "delete" && intent.kind === "bot";
     let cleanup: ProductResult["cleanup"] = needsCleanup ? created.desktop ? cleanupState(created.desktop) : "unknown"
       : intent.action === "delete" ? "native-lifecycle" : "not-applicable";
-    const initial = baseResult(created.targetId, true, cleanup);
+    const initial = { ...baseResult(created.targetId, true, cleanup), ...(created.creation ? { creation: created.creation } : {}) };
     let receipt: ProductReceipt;
     try { receipt = await Effect.runPromise(store.settle(operationId, initial)); }
     catch { throw new ProductReceiptUnstored(created, intent.requestId, request.scopeId); }
@@ -152,14 +152,21 @@ export async function submitNativeProduct(d: ProductManagement, input: ProductSu
   throw new NativeProductError("source_unavailable");
 }
 
-/** Recovery is a separate explicit action. It consumes the original duplicate
- * receipt already stored by CONT, and can never call a native write. Unknown
- * create/update/delete outcomes cannot be cleared by an approximate readback. */
+/** Recovery is read-only at the native boundary. Local-first consumes only the
+ * original request's generation-local receipt (absence stays unknown); duplicate
+ * consumes its original durable CONT receipt. Neither can call a native write. */
 export async function reconcileNativeProduct(d: ProductManagement, scopeId: string, requestId: string, signal: AbortSignal): Promise<ProductReceipt> {
   const row = await readNativeProductOperation(d, scopeId, requestId);
   if (!row) throw new NativeProductError("not_found");
   await d.authorize(row.intent, signal); signal.throwIfAborted();
-  if (row.state === "complete" || row.intent.action !== "duplicate") return row;
+  if (row.state === "complete") return row;
+  if (row.intent.action === "create" && row.intent.kind === "bot" && row.intent.harness === "box") {
+    const exact = await d.native(signal).creationReceipt(scopeId, row.operationId).catch(() => null);
+    if (!exact?.creation) return row;
+    return Effect.runPromise(productManagementPrograms(d.root, scopeId).settle(row.operationId,
+      { ...baseResult(exact.targetId, true, "not-applicable"), creation: exact.creation }));
+  }
+  if (row.intent.action !== "duplicate") return row;
   const exact = await openAgentDuplication({ durableRoot: d.root, scopeId }).operation(row.operationId).catch(error => {
     if (error instanceof ContinuityFailure && error.code === "not_found") return null;
     throw error;

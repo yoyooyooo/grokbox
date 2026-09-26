@@ -9,7 +9,8 @@ import { installNativeCheckpointWorkerHook } from "./internal/host/native-checkp
 import { nativeCheckpointPair } from "./internal/host/native-checkpoint-pair.ts";
 import { createNativeCurrentStateOwner, NATIVE_CURRENT_STATE_SYMBOL } from "./internal/host/native-current-state-owner.ts";
 import { createNativeCurrentStateRpc } from "./internal/host/native-current-state-rpc.ts";
-import { NATIVE_CHECKPOINT_SLICE_IDS, NATIVE_CURRENT_STATE_SLICE_IDS, CONTEXT_SLICE_IDS } from "./internal/host/profile.ts";
+import { createLocalFirstBridge, HOST_LOCAL_FIRST_SYMBOL } from "./internal/host/local-first.ts";
+import { NATIVE_CREATION_SLICE_IDS, NATIVE_CHECKPOINT_SLICE_IDS, NATIVE_CURRENT_STATE_SLICE_IDS, CONTEXT_SLICE_IDS } from "./internal/host/profile.ts";
 import { canonicalJson, sha256Bytes, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { inspectPid } from "./internal/host/self-identity.node.ts";
 import { installCompileHook } from "./internal/host/compile-hook.ts";
@@ -85,6 +86,10 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
       transformedSha256: profile.transformedSourceSha256,
     },
   }));
+  if (binding && NATIVE_CREATION_SLICE_IDS.every(id => profile.slices.some(slice => slice.id === id))) {
+    install(HOST_LOCAL_FIRST_SYMBOL, createLocalFirstBridge({ sourceSha256: profile.sourceSha256,
+      transformedSha256: profile.transformedSourceSha256, profileSha256, generationId: binding.generationId }));
+  }
   install(HOST_OWNERSHIP_READ_SYMBOL, Object.assign(bindHostOwnershipRead({
     ...(self ? { loaded: { pid: self.pid, start: self.start, profileSha256,
       sourceSha256: profile.sourceSha256, transformedSha256: profile.transformedSourceSha256 } } : {}),

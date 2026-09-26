@@ -9,3 +9,4 @@ export * from "./internal/continuity/handover.ts";
 export * from "./internal/continuity/protection.ts";
 export * from "./internal/continuity/self-reset.ts";
 export * from "./internal/continuity/native-product.ts";
+export * from "./internal/continuity/local-first.ts";
