@@ -2,14 +2,16 @@
 /**
  * Bounded live-validation control plane.
  *
- * This is an observer and receipt checker. It never sends prompts, changes
- * models, enables Routines, restarts services, deletes objects, or publishes.
+ * Read-only by default. The explicit creation-canary lane alone can create and
+ * clean up one predeclared quiet Bot through the formal CLI. It never sends
+ * prompts, changes models, enables Routines, restarts services or publishes.
  * LIVE/runbook requirements and reported results still need direct evidence.
  */
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { creationCanaryPlan, runCreationCanary, creationCanaryFiles, creationCanaryCli, checkCanaryArtifact } from "./local-first-canary.mjs";
 import { captureVerificationSource } from "./verification-source.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -27,7 +29,7 @@ const SHA = /^[0-9a-f]{40}$/i;
 const HASH = /^[0-9a-f]{64}$/i;
 
 function usage(message) {
-  throw new Error(`${message}\nusage: node scripts/live-validation.mjs <candidate|plan|probe|receipt> [options]`);
+  throw new Error(`${message}\nusage: node scripts/live-validation.mjs <candidate|plan|probe|receipt|creation-canary> [options]`);
 }
 
 function flagValue(args, name) {
@@ -404,6 +406,16 @@ function receipt(args) {
   return { version: 1, kind: "grokbox-live-receipt-check", ...checked, file: file.split(/[\\/]/).pop() ?? "<provided>" };
 }
 
+async function creationCanary(args) {
+  ensureKnownFlags(args, new Set(["--json", "--plan", "--out", "--cli", "--confirm"]));
+  const file = flagValue(args, "--plan"), directory = flagValue(args, "--out");
+  if (!file || !directory) usage("creation-canary requires --plan <json> --out <private-directory>; --confirm enables its declared single creation and cleanup");
+  const plan = creationCanaryPlan(JSON.parse(readFileSync(resolve(file), "utf8")));
+  const entry = resolve(flagValue(args, "--cli") ?? join(root, "dist", "index.js"));
+  await checkCanaryArtifact(entry, plan.artifactSha256);
+  return runCreationCanary({ plan, confirm: has(args, "--confirm"), cli: creationCanaryCli(entry), ...await creationCanaryFiles(resolve(directory)) });
+}
+
 function print(result, json) {
   if (json) {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -426,6 +438,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       : command === "plan" ? plan(args)
         : command === "probe" ? probe(args)
           : command === "receipt" ? receipt(args)
+            : command === "creation-canary" ? await creationCanary(args)
             : usage(`unknown command ${command}`);
     print(result, json);
     process.exitCode = result.ok === false ? 1 : 0;

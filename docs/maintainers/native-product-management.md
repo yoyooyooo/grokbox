@@ -59,6 +59,29 @@ Bot 删除后的桌面清理必须分别观察原显示停止、原座位未变�
 
 用户 title 更新只替换用户段、保留现有元数据，不附带一次模型标签刷新。显式 title sync 的模型元数据语义保留在原标题入口；剩余 title/template/导出退出归后续产品收口，不复活旧通用产品写入口。
 
+## 静默创建哨兵
+
+现有验证入口支持 `node scripts/live-validation.mjs creation-canary --plan <private-plan.json> --out <private-directory> --cli <fixed-dist/index.js> --json`。缺少 `--confirm` 或计划中的 authorizationRef 时返回 not-run，不调用账号。明确获准的候选窗口才加 `--confirm`；先于 DM/compact/模型矩阵运行。该入口不安装、不采用、不重启 Host，不启用模型、群或 Routine，也不改变现有通知/定时平台。
+
+计划为严格 JSON，字段来自当次正式创建预览和固定制品，不能抄历史 POC：
+
+| 字段 | 来源 |
+| --- | --- |
+| version | `1` |
+| requestId / cleanupRequestId | 预先持久保存的两个不同 UUID；原创建输入固定 harness=box、deferStart=true |
+| installationId / scopeId | 正式预览的安装 envelope / 账号作用域 |
+| expectedNativeGeneration / expectedSource | 预览的 sourceGeneration / creationSource，后者包含 source、candidate、profile、preload 摘要及加载 generationId；null 不能签健康 |
+| artifactSha256 | `--cli` 指向的固定 CLI JS 制品 SHA-256；使用安装制品，不依赖兄弟 worktree |
+| profile | 仅 name、description，静默专用普通 Bot 的声明 |
+| authorizationRef | 当前窗口授权的 `private:...` 引用；没有授权时为 null |
+| maxAgeMs | 声明的新鲜度上限，1 分钟至 24 小时 |
+
+哨兵先核对安装、账号、原生代和已加载桥，再提交一次创建。准确返回的本地 ID、首次 Server ID、独立 `bot ownership get` 与 `bot profile get` 必须一致；清理仅消费同一原生 ID 与独立确认的自有 Server 身份。删除之后分别确认原删除回执、本地不存在、Server 未返回登记以及桌面清理结果。所有账号调用都走正式 CLI/shared API/管理 Server；没有按名字删除或模型启动步骤。
+
+私有输出目录保留不可覆盖的原计划、发送尝试、原回执和独立读回。重跑同目录只按原 request 查 get/reconcile，不再提交创建或删除。创建结论与清理结论分列；首次创建成功时间不会被清理失败改写，过期或来源变化显示 stale。登记 unknown 保留本地身份与原请求；无法确认归属时不清理。公开测试只用隔离端口，不提供真实 Server、实际加载或 App/DM/compact 资格。
+
+本入口是有界的一次哨兵。维护者授权的低频调度、HOST-01/OBS 事件入库和通知消费者仍需沿各自现有 owner 接通；没有自动创建新 Bot 的周期任务。真实候选尚未运行时，隔离结果不能作为当前账号健康。
+
 ## 下游消费与证据上限
 
 C 消费 NativeProductAccess 的只读关系/独立读回，不另建 handover；Routine 定义继续复用原 Routine 程序。独立职责、完整入站与条件删除资格仍分别由 CONT/A3 完成。本包的隔离 Node HTTP、CONT SQLite、打包 CLI 和选定原生声明测试不代替真实账号/App/桌面验收。
