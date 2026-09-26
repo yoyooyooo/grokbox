@@ -1,8 +1,8 @@
 # Host 更新与身份变化：固定证据和因果边界
 
-本页提炼截至 2026-09-26 10:57 UTC 的已结算观察；后续 program-update 等实验有独立活动资产，不因本页存在而被签为完成。最新结论应看 [LIVE](../../tickets/LIVE-integration-validation.md)及对应日期报告。
+本页提炼截至 2026-09-26 14:05 UTC 收场的已结算观察：保留原样升级反例，并纳入后续 program-update 的同身份受控更新正例。它不是当前部署配置；最新运行状态仍看 [LIVE](../../tickets/LIVE-integration-validation.md)及[对应日期报告](../2026-09/2026-09-26-box-creation-feasibility.md#program-update-continuity)。
 
-主要来源为普通 Bot POC 的 `p0-lifecycle-evidence/` 与 `controlled-window/evidence/`，目录导航见[独立 POC 索引](independent-poc-atlas-2026-09.md)。
+主要来源为普通 Bot POC 的 `p0-lifecycle-evidence/`、`controlled-window/evidence/` 与 `controlled-window/program-update/` 原回执，目录导航见[独立 POC 索引](independent-poc-atlas-2026-09.md)。
 
 ## 1. 先分清六种事实
 
@@ -48,13 +48,15 @@
 
 这支持“当次普通版本升级没有保持执行归属”，不支持“任何重启或同步都会失权”，也不支持“所有受控维护方式均不可能”。
 
-## 5. 为什么仍缺变化过程
+## 5. 变化过程的缺口与后续更新正例
 
 原 POC 接入随着新版 bundle 消失；归属变化之后才加载的新观察器，能够记录最终 Server 状态，却没有覆盖新版首次启动的原请求/响应全程。旧 marker 被正常消费后，不能从一个空的当前 migration window 反推过去从未发生迁移。
 
 后续观察应在新运行代的首次执行前具备相应记录能力，以正常原流程产生的请求/响应和同一身份读回为依据；不要为了观察而另发一次迁移操作。服务端未暴露的原因保持未知，员工内部接口不存在访问资格时不调用。
 
-“升级程序”“应用补丁”“发起归属迁移”“确认身份与许可”是不同边界。能否独立管理它们属于后续有界实验；当前档案只提供已观察的输入和反例，不在 B 仍执行时提前采纳其未结算结果。
+“升级程序”“应用补丁”“发起归属迁移”“确认身份与许可”是不同边界。后续窗口实际分离了它们：`35733d4 → c3282ed` 官方整包及必要配套由原 supervisor 安装；新版第一次启动已有接入和观察点。只对声明且从未请求迁移的准确 operation 记录本地 not-requested，完整 applied 原文保留后沿原生程序确认逻辑结清；没有伪造迁移响应，没有关闭身份/执行门。首轮、确认后的再次及后续原认证读取都仍为同一 UUID/Server ID 的 Box，升级后业务也实际执行。
+
+这次取得了一个可管理程序更新/迁移意图的具体正例，否定二者必然不可分的泛化；原样升级反例和服务端独立撤权的可能性仍保留。14:05 UTC 已恢复该新版官方原文，80 个原包文件读回相符，原 supervisor 不变，实验 binding/Routine 关闭。它不证明永久持有、零官方额度或正式产品已采用；完整回执、首次 Routine 失败及修正后的新 run 见日期报告。
 
 ## 6. 可以移植的观察最小集合
 

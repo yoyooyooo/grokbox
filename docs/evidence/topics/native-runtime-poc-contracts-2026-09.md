@@ -1,6 +1,6 @@
 # 原生运行接线：普通 Bot POC 的可移植合同
 
-固定依据为 2026-09-26 受控窗口及该窗口的 `runtime/native-hook-routine.cjs`、`runtime/loop.ts`、执行记录和原生回执。它们是独立 POC，不是正式 v2 默认实现。本文只提炼可复用机制及证据上限，产品差额回原实施票，不新增验证框架。
+固定依据为 2026-09-26 受控窗口及该窗口的 `runtime/native-hook-routine.cjs`、`runtime/loop.ts`、执行记录和原生回执；另补入同日 14:05 UTC 收场的 [program-update 窗口](../2026-09/2026-09-26-box-creation-feasibility.md#program-update-continuity)。它们是独立 POC，不是正式 v2 默认实现。本文只提炼可复用机制及证据上限，产品差额回原实施票，不新增验证框架。
 
 关联：[Local-first 事实](box-local-first-poc-2026-09.md)、[入口演变](official-client-ingress-poc-2026-09.md)、[私有材料定位](independent-poc-atlas-2026-09.md)。
 
@@ -50,6 +50,8 @@ Bot 自身 Routine / scheduler
 
 停用 Routine 又产生了一次原生事件回合，带来了额外可见说明。该回合被单列，没有混成用户续聊或 ack-redrive。未来统计模型调用必须包括这类事件，不能只计算用户主动聊天。
 
+后续 program-update 的首次 Routine 真实失败于 loop_budget：模型已读算，又写入结果 Memory、重复工具，没有及时完成。修正明确最终文本由原生适配器交付，并在相同四次调用预算内保留最后一轮无工具收束；同一 Routine 的新只读输入、新 run 完成子/父闭环。旧失败及额外 Memory 写入保留，不把新成功倒填到旧 run，也不把增加预算当作完成接线。
+
 ## 5. 原生 Memory 是 writer，不是复制一份“看起来一样”的 JSON
 
 POC 的 remember 工具调用 runner.agentState.writeMemory，明确 agent scope，再从原 memoryStore 读回。runtime_context 返回原 Bot 身份、当前会话作用域和同一原生 Memory，因此私聊写入的合成事实能在两个群和 Routine 中读取，群里新增的事实也归同一 Bot。
@@ -64,7 +66,7 @@ Loop 复用 v2 的配置读取、requireModel、BackendAuth、ModelBackend、上
 
 选定 runner 的原 runShell 未用于这些自定义调用；原 session/executor 端口的有限 fence 用于阻止被观察到的官方推理入口。没有配置自定义的 Bot 保留原路径。窗口记录为 12 个完成的 Loop 调用、21 次 DeepSeek HTTP 200，包含群 pass、Routine 子父回合和原生事件。
 
-**证据上限**：原函数的失败不回退分支和 fence 检查，不等于本轮已做真实 provider 故障注入；没有 fence 告警也不能排除未观察的 Server 辅助推理。官方模型 ID 和账单归因未完整取得，保持 billing not observed。
+**证据上限**：早期窗口没有真实 Provider 故障注入；后续 program-update 窗口对一个声明输入实际发出不存在的 model，得到 HTTP404，明确失败并正确完成原 ack，后续独立新输入恢复自定义执行，官方对照正常。这个具体失败正例不覆盖全部503/认证/网络故障；没有 fence 告警也不能排除未观察的 Server 辅助推理。官方模型 ID 和账单归因未完整取得，保持 billing not observed。
 
 ## 7. POC 不是另一个长期运行平台
 

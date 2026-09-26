@@ -1,6 +1,6 @@
 # 独立 POC 导航与证据链：2026-09
 
-本页把已读取的独立实验目录纳入项目检索，保留机制、反例、源码与回执之间的关系。归档日为 2026-09-26；业务证据截止到当日 10:57 UTC 的已结算窗口，不包含后续尚在执行的 program-update 结果。它不是全机临时目录清单，也不宣称发现了所有历史实验。
+本页把已读取的独立实验目录纳入项目检索，保留机制、反例、源码与回执之间的关系。初版归档覆盖 2026-09-26 10:57 UTC，现追加当日 14:05 UTC 已收场的 program-update 固定窗口。它不是全机临时目录清单，也不宣称发现了所有历史实验。
 
 公开目录保留的是提炼和可核对索引，不复制非公开 Host/App bundle、凭据或私人对话。若原始回执以后不可得，下面的摘要只能证明归档时读取了哪份材料，不能代替原始字节。
 
@@ -41,6 +41,7 @@
 | 普通运行与 ack | 第三目录 runtime 及 controlled-window/runtime/native-hook-routine.cjs | 原 native ack、provider/工具、私聊回执 | 漏 token 的反例和修后在线正例；不关闭可靠性保护 |
 | 多群与 Routine | controlled-window/runtime/loop.ts、原父子任务接线 | execution-summary、runtime/state/requests、api-evidence | 同身份/共享原生 Memory、原调度器手动及定时正例；不签全部长期容量 |
 | 身份与升级 | p0-lifecycle-evidence、controlled-window 的观察 helper | 原 Server 列表、update-boundaries、post-upgrade/restore-readback | 同身份最终 Temporal 的真实回执；具体历史内部因果未完整获得 |
+| 受控程序更新 | controlled-window/program-update 的 policy、原 Loop/接线和整包制品 | 真实 operation、首启/原 Server 读取、80文件清单、业务/故障/恢复原回执 | 同一普通 Bot 跨35733d4→c3282ed保持Box并可用；B未请求、C保留、D首启就绪；不签永久持有或零额度 |
 
 ## 归档时核对的内容摘要
 
@@ -67,6 +68,6 @@
 
 仍暂留的原始材料包括独有首次响应、unknown、原生恢复和历史回执，以及仍被 A/B 使用的 helper。已查到普通 Bot POC 的 action/live 程序仍依赖第一目录的 native.ts；删除第一目录会破坏后续消费者，即便其最初自有网页方案已不再采用。
 
-后续 program-update 子目录属于 B 的活动范围，本次未改写其计划、运行状态、Host 或结果。D 的归档不接管它；新结果由其真实完成窗口进入日期证据后再补主题。
+program-update 子目录由该实验的实际执行窗口负责；14:05 UTC 来源与运行代恢复已读回，其结算结果现沿[同一日期报告](../2026-09/2026-09-26-box-creation-feasibility.md#program-update-continuity)补入主题。原始计划、首次失败、unknown 和实际效果仍由原文件保留，归档不重写它们；当前角色/操作责任仍归主线安排。
 
 退役顺序为：正式接口替代 → 消费者去依赖 → 独有证据进入可读回且校验过的保留集合 → 确认无活动使用和未决效果 → 清理临时代码/可再生输出。原生 Bot、Memory、数据库和凭据不属于这类删除对象。

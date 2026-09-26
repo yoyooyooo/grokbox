@@ -1,6 +1,53 @@
-# 2026-09-26 — Box 创建核心前提：原生对照与完整客户端编码链
+# 2026-09-26 — Box 创建、业务纵切与程序更新连续性
 
 本报告保存固定实验窗口和当时结论，不再拥有后续施工排程。2026-09-26 用户已选择恢复 Local-first/v2 产品集成，将身份变化与更新连续性作为并行维护；当前实施次序见[增量计划](../../roadmap/agent-first-cli/local-first-reintegration.md)，历史精华见[主题档案](../topics/box-local-first-poc-2026-09.md)，现场状态仍归 [LIVE](../../tickets/LIVE-integration-validation.md)。下文的阶段停点不因保留而重新成为全局开发前置，历史失败也未被撤销。
+
+<a id="program-update-continuity"></a>
+## 14:05 UTC — 同一身份跨受控程序更新的真实正例
+
+**已实际完成 `35733d4 → c3282ed` 的官方整包更新，同一普通 Bot 的 UUID、Server ID 和原生 Memory 保持，原认证 Server 列表在新版首次及后续 reconcile 中仍返回 Box。升级后的私聊、一次正常群成员回合、修正完成策略后的自身 Routine，以及自定义模型故障后的新输入均实际执行。** 这证明程序更新与尚未请求的归属迁移，在本版本对和账号窗口中可以分开管理；先前原样升级后变 Temporal 的反例仍成立，不能再把它解释为 A/B 必然不可分。
+
+本轮沿用同一 POC，仅新增一个专用普通 Bot、一个有两名真实 Bot 成员的群和一条 Routine。没有重建/替换被测身份、改写 harness、恢复旧数据快照或重放旧请求。准备期间官方先自行更新到了 `35733d4`，原未提交计划被保留；没有用旧源码覆盖现役，而是重新确认当前原文，再选择真实发布的 `c3282ed`。新 Bot 的正常 local-first 登记在此次受控更新之前完成，最初 Server 响应为 Box。
+
+### A/B/C/D 的实际分离
+
+| 项目 | 实现与实际观察 |
+|---|---|
+| A：程序/配套更新 | 校验官方 `c3282ed` archive 与其 SHA-256，再生成仅修改 Host 入口的派生包。原 supervisor 校验派生包、整包换入、写真实 applied operation、启动新 Host，并保留原恢复/回滚职责。80 个文件逐一读回相符；该版本对实际变化包含 Host 主文件、`sand-eval-runner.cjs` 和版本文件 |
+| B：归属迁移意图 | 只对本轮明确声明且未发起迁移的 operation 记录独立的本地 `not-requested` 决定；原始 applied marker 字节先保全，随后由原生程序更新确认/释放逻辑结清。没有伪造 Server DISABLED/DONE，没有擦除原记录以隐藏状态；本窗口 migration pass 调用记录为零 |
+| C：身份与执行许可 | 原认证 capability/identity 读取、原身份 writer、首轮与决定后的再次 reconcile、pause/local-work/inference-ready 条件及服务端 BOX 回合退役 gate 均保留。真实目标发送/执行的退役 gate 为 `blocked=false`；源码隔离检查中 true、身份失败、已开始/unknown 迁移仍阻断 |
+| D：新版首启接入 | 补丁随派生整包在第一次新 Host 启动前就绪。12:49:42 UTC 首启记录绑定新官方原文、实际转换后来源、helper/Loop 摘要和真实 applied marker；12:50:47 首次身份读取、程序更新确认后的再读取及 12:50:53 后续读取均为同一 Server Box |
+
+当前迁移请求只有 operation 和 Box 房间摘要，没有单 Bot 选择器，应按可能影响账号范围的动作处理；服务端精确受影响集合未观测。本轮没有为求对照主动触发它，也没有调用员工迁移/hold 接口。源码还显示独立的服务端 BOX 回合退役 gate；服务端政策、其他合法发起者和未来撤权仍可能改变归属或执行许可，本地决定不能覆盖它们。
+
+原 supervisor 将 applied marker 作为真实程序更新记录，Host 又以它作为启动迁移的触发。本轮将两种意图显式区分，保留实际程序更新确认；没有把 marker 缺失、改名或伪造返回当作成功。源码隔离执行保留了原 pending 窗口与身份失败的阻断行为；实际网络结果才证明本窗口仍获 Box 身份并能运行。
+
+### 业务、失败与保留边界
+
+| 范围 | 实际结果 |
+|---|---|
+| 升级前后普通私聊 | 升级前以原生 Memory writer 写入合成长期事实；新版用 `runtime_context` 真正读回，再调用计算工具并由原 transcript writer 回复。UUID、Server ID、旧历史与 Memory 连续 |
+| 一个正常群 | 原生 `createGroup` 建立两成员群，确定性点名被测 Bot；它读取自己的同一 Memory、执行工具，群历史 author 为同一 Bot UUID。群本地 profile 省略的 harness/serverId 字段未被冒称独立 Server 确权 |
+| Routine 首次失败 | 第一个 manual run 真实为 `error / loop_budget`：模型在读算完成后又写入一条结果 Memory、重复读算，耗尽四次调用。原失败、保守的 `failed-or-unknown` receipt 和已发生 Memory 写入均保留 |
+| Routine 局部修正 | 明确最终文本由原生适配器交付，最后一轮只收束已有结果、不再提供工具，仍维持四次 Provider 调用上限。只更新私有 Loop 并普通重启同一 `c3282ed`，未再做版本更新。相同 Routine 的新只读输入、新 run 得到 `ok`；子任务两次和父 Bot 一次自定义请求沿原 settlement/parent wake 将结果送回私聊。未重放失败 run |
+| 自定义模型故障 | 一个声明的故障 nonce 将实际出站 model 改为不存在的探针名，配置的 Provider 端点真实返回 HTTP 404。自定义链明确发布失败，原 ack 正确结清，没有使用官方模型补答；随后独立的新正常输入重新使用自定义模型并读回 Memory |
+| 未选择的 Bot | 原 Temporal 对照 Bot 经原路回复独立标记，未进入自定义 Loop；响应未暴露其具体官方模型 ID |
+
+全窗口 **10 次自定义调用：7 completed、3 保守的 failed-or-unknown；18 次 Provider 请求尝试中观测到 16 个 HTTP 200、1 个 HTTP 404，另 1 次 native event 调用被中断、未取得终态响应**。中断发生在 Routine 停用事件与后续故障探针输入相邻的原生生命周期中，未重放或计成成功。四个普通私聊输入（含明确失败）均保持原 ack token、清除义务/计时器，redriveAttempts=0，未发现 ack-redrive 自定义调用。
+
+本次覆盖的主推理、工具决策、群成员回合和 Routine 子/父推理由自定义链执行；所用原生 Memory 写入、确定性群选择和交付保留原职责。未取得可按 Bot/请求归因的官方使用记录，所检查的正常用量合同为周期/额度汇总；不可见的 Server 辅助推理仍未排除。**`billing not observed`；不签零官方模型额度。** 本轮不重跑先前已取得的 Mac→手机证据，也不补签网页、群界面跨端、完整 compact/长会话、模型矩阵或正式 v2 adoption。
+
+### 收场与实施含义
+
+14:05 UTC 已核对当前 `c3282ed` 官方原文 `b90269e6…` 与全部 80 个原包文件相符，新原 supervisor 子进程已加载，无 POC 引用/加载标记、空闲且无待处理升级。13:35 UTC 最后一次带观察点的原认证列表仍返回 Box；恢复后的原生 reconcile 返回 ok，profile 仍是同一 Server ID/Box。没有把早期版本覆盖回去，原 supervisor 进程及源码摘要未变。
+
+实验 Bot、群、历史、Memory 和两个 Routine run 保留；custom binding 关闭，Routine disabled/nextRunAt=null。既有 60 个名册对象的 ID/harness/类型不变；这不是所有原生数据逐字节审计。旧 A/B/C、unknown、已 Temporal 实验对象及五个未登记历史 profile 未被复用为本次正例。当前正式 Host 已退出实验接入，不把本次 POC 当作日用采用。
+
+**值得纳入现有维护模块的机制**是：程序更新意图与归属迁移意图分开、原 supervisor 持有整包与恢复、首启前完成接入、始终服从真实身份与执行许可。**局部修正**是自定义 Loop 的完成职责及有界收束。**本窗口已否定的泛化**是“发生程序版本更新就必然失去 Box”；它没有否定原样官方升级反例，也没有证明所有未来版本或服务端政策都允许同一做法。身份演进/维护仍按当前增量计划并行，不恢复为全局开工锁。
+
+私有证据复用 `controlled-window/program-update/`：官方/派生包与逐文件清单，`evidence/{program-update-submit-attempt,applied-program-operation.raw,ownership-migration-not-requested,installed-full-bundle-readback,routine-first-failure,completion-contract-revision,execution-summary,source-boundaries,restore-readback}.json`，首启/身份/ack 事件，以及原请求、原生 run/历史与自定义账本。敏感原文、名册和 transcript 未进入公共仓库。本节是有实际执行证据的原生 POC 结果，不是整张 LIVE 或完整产品资格通过。
+
+以下保留先前固定窗口原文；其中的当时停点不替代本节结果。
 
 ## 固定窗口结论：受控业务纵切已连通，真实官方升级未保住 Box（10:57 UTC）
 

@@ -4,13 +4,13 @@
 
 ### 当前排程：恢复 Local-first/v2 主线，身份演进并行（2026-09-26）
 
-用户已接受[Local-first 回归主线](../roadmap/agent-first-cli/local-first-reintegration.md)：AH-186 把真实成功机制纳入正式 CLI/API/原生 adapter/配方/采用，AH-192 与创建切片协同形成早期创建 canary，再接原 DM/工具/compact 与 Agent First CLI 后续。AH-193 的身份变化只读观察及 AH-190 的正常维护策略并行，不再以永久不迁移或缺少内部诊断全局阻挡研发。**这是排程/合同校准；正式 Local-first 集成、自动哨兵和新增身份观察尚未实施。**
+用户已接受[Local-first 回归主线](../roadmap/agent-first-cli/local-first-reintegration.md)：AH-186 把真实成功机制纳入正式 CLI/API/原生 adapter/配方/采用，AH-192 与创建切片协同形成早期创建 canary，再接原 DM/工具/compact 与 Agent First CLI 后续。AH-193 的身份变化只读观察及 AH-190 的正常维护策略并行，不再以永久不迁移或缺少内部诊断全局阻挡研发。**主线源码已加入正式 Local-first 创建和静默 canary 切片；其现场采用/运行及新增身份观察仍未由本轮 POC 签验。**
 
-**可复用历史证据**：Local-first 曾由原 Server 接受为 Box；受控窗口连通普通私聊、两个正常群、原生共享 Memory、自身手动/定时 Routine、原生 ack 与用户 Mac→手机续聊；官方对照保留原路。**仍保留的失败/缺口**：一次正常升级后同一身份变 Temporal；费用归因 `billing not observed`，网页及群界面跨端等未单独验。旧实验目标/binding不因此恢复许可，当前现场执行仍逐对象核验。
+**可复用原生 POC 证据**：Local-first 曾由原 Server 接受为 Box；受控窗口连通普通私聊、两个正常群、原生共享 Memory、自身手动/定时 Routine、原生 ack 与用户 Mac→手机续聊；官方对照保留原路。新增的 [14:05 受控程序更新窗口](../evidence/2026-09/2026-09-26-box-creation-feasibility.md#program-update-continuity)实际完成 `35733d4 → c3282ed` 整包更新，同一 UUID/Server ID 仍获 Box，升级后私聊/群及修正完成策略后的 Routine 可用；真实 Provider 404 明确失败，后续新输入恢复，官方对照正常。**保留的失败/缺口**：原样升级变 Temporal 的反例、Routine 首次 loop_budget 和一次被中断调用均保留；费用归因仍为 `billing not observed`，网页及群界面跨端等未单独验。新的更新正例不代表永久持有或正式 v2 集成已验收；旧实验目标/binding不因此恢复许可，当前现场仍逐对象核验。
 
 主题精华已归[普通 Box Bot POC 档案](../evidence/topics/box-local-first-poc-2026-09.md)；[固定日期报告](../evidence/2026-09/2026-09-26-box-creation-feasibility.md)保存原始窗口叙述，不作为当前开工锁。AH-194 按引用/保留集合/活动资源退役临时代码，本轮不删除仍被集成引用的 POC 或原请求证据。源码整合、实际加载、真实创建、业务验收与最终用户接受分别记录。
 
-**源头早测的位置**：最小正式创建切片可用即在明确授权的候选窗口运行一次静默创建→原登记→独立 Server/local 读回→准确清理，先于昂贵业务旅程；AST健康、已加载和Server合同各自有结果。相关变化使旧结论过期；低频周期复验须明确授权，不在普通健康查询中暗建Bot。失败只阻断相关创建/发布，不停止独立架构施工。当前 canary 为未实施/未运行，不显示健康。
+**源头早测的位置**：最小正式创建切片可用即在明确授权的候选窗口运行一次静默创建→原登记→独立 Server/local 读回→准确清理，先于昂贵业务旅程；AST健康、已加载和Server合同各自有结果。相关变化使旧结论过期；低频周期复验须明确授权，不在普通健康查询中暗建Bot。失败只阻断相关创建/发布，不停止独立架构施工。当前静默 canary 已加入候选源码，尚无本候选实际运行结果，不显示现场健康。
 
 ### 固定 POC 历史入口
 
@@ -136,7 +136,7 @@
 | <a id="live-config-consumers"></a>**LIVE-CONFIG-CONSUMERS**<br>G1 | [ ] `partial`；`not-run` | ①实际consumer启动/写入revision与请求匹配；②storage、ops、model域互不误失效；③配置committed/effective与applied区分；④坏配置仍可取证；⑤不热加载的域显示所需重启，不伪造全storage applied | 来源与实施差额：[T51](T51-ops-capability-presets.md) · [T60](T60-config-ops-integration-proof.md) |
 | <a id="live-modeld-cutover"></a>**LIVE-MODELD-CUTOVER**<br>G0 | [ ] `partial`；`not-run` | ①实际 CLI/Server/modeld/Host 适配、原生版本与运行代可关联；②协议/配置相容并从真实消费者读回；③不相容版本拒新执行；④唯一 controller/明确宿主采用；⑤在途/unknown 不被清掉，不要求旧开发版零停机 | 来源与实施差额：[T40](T40-persistent-release-and-rollback.md) · [HCR](HCR-02-loaded-capabilities.md) |
 | <a id="live-reasoning-cutover"></a>**LIVE-REASONING-CUTOVER**<br>D | [ ] `partial`；`superseded` | 旧 models2 迁移/旧 schema 降级场景已退役；必要 effort/模型/凭据引用导入归 [INITIAL-ADOPTION](#live-initial-adoption)，新选择与实际请求归 MODEL-SELECTION/REASONING-PROVIDER；不删字段伪造兼容 | 来源与实施差额：[reasoning](FEAT-model-reasoning-policy.md) · [模型配置](../configuration.md#model-reasoning-schema-and-general-config-migration) |
-| <a id="live-host-capability-recovery"></a>**LIVE-HOST-CAPABILITY-RECOVERY**<br>G1 | [ ] `partial`；`not-run` | ①旧/缺wrapper或reader给出准确doctor指引；②同源profile升级保持其他能力；③受控中断经operation-recovery恢复操作元数据；④实际loaded能力和新STEP闭环；⑤busy拒绝不自动force | 来源与实施差额：[HCR来源](README.md#host-capability-recovery) · [能力合同](../roadmap/host-seam-ops-recognition.md#capability-recovery) |
+| <a id="live-host-capability-recovery"></a>**LIVE-HOST-CAPABILITY-RECOVERY**<br>G1 | [ ] `partial`；`not-run`（正式候选） | ①旧/缺wrapper或reader给出准确doctor指引；②同源profile升级保持其他能力；③受控中断经operation-recovery恢复操作元数据；④实际loaded能力和新STEP闭环；⑤busy拒绝不自动force | [原生更新 POC](../evidence/2026-09/2026-09-26-box-creation-feasibility.md#program-update-continuity)已观察整包首启接入、原 supervisor 及新官方原文恢复；不代签本行正式接口/全部失败情形。[HCR来源](README.md#host-capability-recovery) · [能力合同](../roadmap/host-seam-ops-recognition.md#capability-recovery) |
 
 ## E1 补充 — 共同入口与操作合同
 
@@ -200,7 +200,7 @@
 | <a id="live-modeld-app"></a>**LIVE-MODELD-APP**<br>G1 | [ ] `partial`；`not-run` | ①未修改原版App发输入并关联同session/run/代；②增量文本/工具/失败/完成显示；③Working、typing、发送队列、父任务和监听子任务区分；④断连重连与迟到事件不复活；⑤标题/历史不丢 | 来源与实施差额：[Working判据](../maintainers/composer-working-status.md) · [T36](T36-composer-working-activity.md) |
 | <a id="live-auth-availability-app"></a>**LIVE-AUTH-AVAILABILITY-APP**<br>G1 | [ ] `partial`；`not-run` | ①权限等待/过期/超时/拒绝和上游503文案有区别；②动作建议不误导重放或抢归属；③控制帧不进模型正文；④App与CLI关联同一次故障 | 来源与实施差额：[结果观察](../maintainers/run-outcome-observation.md) · [AUTH票](AUTH-ownership-evidence-availability.md) |
 | <a id="live-stream-error-recovery"></a>**LIVE-STREAM-ERROR-RECOVERY**<br>G1 | [ ] `partial`；`not-run` | ①正常stream/工具多步/终态无重复；②自然503/限流/认证错误分层；③空流/畸形/中断仅隔离注入，payload校验未释放工具；④原生Working收束；⑤新nonce正常请求可继续，retry off保持 | 来源与实施差额：[Provider手册](../maintainers/chat-provider-compatibility.md) · [working恢复](../maintainers/working-state-recovery.md) |
-| <a id="live-ownership-alignment"></a>**LIVE-OWNERSHIP-ALIGNMENT**<br>G1/G3 | [ ] `partial`；`failed`（本次正常升级连续性） | ①新Bot confirmed_box；②普通profile更新不写ownership；③temporal/冲突对象拒受管执行；④历史冲突与保全/校准单独列明，不混成干净Bot失败 | [10:57 POC](../evidence/2026-09/2026-09-26-box-creation-feasibility.md)：新local-first Box完成业务、普通重启/reconcile仍Box；一次官方版本升级后同一Server身份确认为Temporal，已停用。仅此POC范围，不签整行/所有路线失败。[T37](T37-server-ownership-admission.md) · [T38](T38-identity-write-alignment.md) |
+| <a id="live-ownership-alignment"></a>**LIVE-OWNERSHIP-ALIGNMENT**<br>G1/G3 | [ ] `partial`；`not-run`（正式候选）；原生 POC 有正反例 | ①新Bot confirmed_box；②普通profile更新不写ownership；③temporal/冲突对象拒受管执行；④历史冲突与保全/校准单独列明，不混成干净Bot失败 | [同一报告](../evidence/2026-09/2026-09-26-box-creation-feasibility.md#program-update-continuity)保留原样升级变 Temporal 的反例，并新增 `35733d4 → c3282ed` 显式区分程序更新/未请求迁移后的同身份 Box 与业务正例。真实 C 检查保持，账单仍未归因；仅此原生 POC 范围，不签整行。[T37](T37-server-ownership-admission.md) · [T38](T38-identity-write-alignment.md) |
 
 ## E3 — 原生 Routine、提醒与受托自主
 

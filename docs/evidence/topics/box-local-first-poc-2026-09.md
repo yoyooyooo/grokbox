@@ -1,6 +1,6 @@
 # 普通 Box Bot 与 Local-first：2026-09 固定 POC 精华
 
-本页按问题归档已验证的事实和失败教训，不是现役配置、执行脚本或新版本资格。固定证据止于 2026-09-26 10:57 UTC；当时仓库报告由 `6ae46579f37aa2a8b8784f32e04c7b45cfeadb40` 保存。原始日期报告已随历史目录统一迁入[创建与运行可行性报告](../2026-09/2026-09-26-box-creation-feasibility.md)，只改变定位，不重写其固定结果。
+本页按问题归档已验证的事实和失败教训，不是现役配置、执行脚本或新版本资格。初版归档止于 2026-09-26 10:57 UTC（报告提交 `6ae46579f37aa2a8b8784f32e04c7b45cfeadb40`）；现补入同日 14:05 UTC 收场的受控程序更新正例，早期反例未撤销。原始日期报告已随主线证据目录统一迁入[创建与运行可行性报告](../2026-09/2026-09-26-box-creation-feasibility.md)，沿同一报告继续保留各个固定窗口。
 
 后续实施顺序归[Local-first 回归主线](../../roadmap/agent-first-cli/local-first-reintegration.md)，当前运行事实只归 [LIVE](../../tickets/LIVE-integration-validation.md)。归档里的“通过”只指注明的窗口与行为，不给未来 Host 或当前已变化身份授予执行权。
 
@@ -39,28 +39,33 @@ POC 起因不是 Agent Loop 无法实现，而是先前可用的 Box 创建路�
 
 窗口内共 12 个完成的自定义 Loop 调用、21 次 DeepSeek HTTP 200。包含原生群 pass 和停用 Routine 产生的独立事件，不把它们算成用户续聊。三次普通私聊 ack 正确结清，无 ack-redrive。模型/工具的真实日志与官方计费是不同事实：**billing not observed**，没有签零扣费。
 
-### 两个值得移植的实现教训
+### 可移植的实现教训
 
 **回复确认必须接回原 token。** 早期 helper 只写可见回复，漏传 ackToken，原生系统认为仍欠回复并多次 redrive。后来通过原 token 的输入/fulfill 摘要、义务与计时器清除取得在线正例。修法是保持原确认链，不是删除义务、关闭重发保护或另造确认库。
 
 **Routine 子任务不应直接冒充可见父回复。** 原 parent-mediated 子任务需要通过 finalAssistantText / automationParentWake 返回原结算链；父回合接收对象形状的提示后继续自定义推理，再由原 writer 写入私聊。保留原 scheduler、子父任务身份与生命周期，没有新增通用任务调度器。
 
+**自定义 Loop 应明确完成职责并有界收束。** 后续升级窗口中的一次 Routine 已完成读算，却继续写结果 Memory、重复工具，四次调用耗尽后真实失败。明确由原生适配器交付最终文本，并把预算内最后一轮保留给无工具的结果收束后，同一 Routine 的新只读输入、新 run 完成子/父闭环。原失败及已发生效果保留；没有加大调用上限或重放原 run。
+
 这些是可移植的合同，不要求把临时硬编码 helper 或独立 Loop 原封不动纳入 v2。正式执行 owner、在途选择、compact/checkpoint 与安装寿命需要沿原产品架构重新接通。
 
 ## 4. 生命周期：普通重启不等于版本升级
 
-| 对照 | 该窗口的同一身份结果 |
+| 对照 | 各自窗口内的身份结果 |
 | --- | --- |
 | 正常使用、两群、Routine | 保持 Box |
 | 显式 identity reconcile | 原 Server 仍确认 Box |
 | 普通 Host 重启 | 原 Server 仍确认 Box，之后手机续聊成功 |
 | 正常官方 394046b → 8ae66c3 升级 | 同一 Bot 和两个群变为 Temporal；原认证客户端两次读回确认 |
+| 后续受控 35733d4 → c3282ed 程序更新 | 另一个专用普通 Bot 在这次更新前后保持同一 UUID/Server ID，原 Server 仍为 Box，升级后私聊/群/修后 Routine 可用；没有复活上行已 Temporal 的身份 |
 
 升级后原始源码为 `31d937e0ad4557db56ae121c042ed3d3245bdf4fce746edd275eafcfc88366d6`。临时观察器最终恢复到该新版原文，没有用旧版覆盖它；自定义 binding 关闭，Routine 停用，测试身份和历史保留。
 
 源码存在 applied-upgrade operation → migration pass → reconcile → 原 profile writer 的链路，但本窗口没有捕获首次变化时的完整迁移响应。升级后安装的观察器证明最终 Server 状态，不足以唯一确定内部原因。独立的服务端迁移也未排除。
 
 暂停 Host 自动更新只控制相关自动准备流程，不撤销已有暂存命令、不阻止手动/外部升级、也不是服务端永久保留 Box 的保证。冻结几十分钟的正例不能外推数日；正常升级失败也不能推出所有受控维护方式都失败。
+
+[后续受控更新](../2026-09/2026-09-26-box-creation-feasibility.md#program-update-continuity)将程序更新、未请求的迁移意图、真实许可和首启接入分别处理。完整官方来源及派生包经原 supervisor 安装，准确 applied 原文保全后由原生程序确认逻辑结清；只对该未请求 operation 使用独立本地决定，不伪造迁移响应、不改 pending/unknown 或 C 检查。新版首启及后续原认证读取仍为同一 Box；80 个包内文件读回相符。另有实际 Provider 404 明确失败与新输入恢复、官方对照正常的证据。14:05 UTC 已恢复新版原文并关闭实验 binding/Routine，失败/中断和原数据保留，仍为 **billing not observed**。这支持维护机制产品化，不保证未来服务端政策相同，也不代签正式 v2 采用。
 
 ## 5. 已探索但不满足本项目目标的替代
 
@@ -86,6 +91,7 @@ POC 起因不是 Agent Loop 无法实现，而是先前可用的 Box 创建路�
 | 完整受控窗口 | `controlled-window/evidence/execution-summary.json`、`window-events.ndjson`、`registration-complete.json` |
 | 跨端与原请求 | `controlled-window/evidence/app-first-client.json`、`app-cross-client.json`、`controlled-window/runtime/api-evidence/` |
 | 升级对照与最终恢复 | `controlled-window/evidence/update-boundaries.json`、`official-upgrade-observations.json`、`post-upgrade/original-client-events.ndjson`、`post-upgrade/restore-readback.json`、`final-resources.json` |
+| 程序更新与迁移意图分离 | `controlled-window/program-update/evidence/{program-update-submit-attempt,applied-program-operation.raw,ownership-migration-not-requested,installed-full-bundle-readback,execution-summary,restore-readback}.json`；首启/身份/ack 事件和 `runtime/` 原回执 |
 | 模型和工具原始结果 | `controlled-window/runtime/state/requests/`、`deliveries/`；区分来源进程、请求和会话作用域 |
 
 原始 Host/worker 完整字节继续由既有内容寻址的 retained corpus 保全；其摘要不是更新后的运行资格。临时加载器的固定路径、旧 PID、Bot ID、disabled binding 和历史源码针脚不得直接拿来重跑。
