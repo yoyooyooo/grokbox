@@ -1,5 +1,17 @@
 # 2026-09-26 — Box 创建核心前提：原生对照与完整客户端编码链
 
+## 05:01 UTC：普通本地 Bot（非群）仍有原生工厂与客户端分流
+
+用户不希望把群当长期替代。本轮转向原生普通对象：实际执行当前来源 `1ee741f9` 的 `materializeSession/createSession/mintAgentSession/createBackgroundAgent`，在明确替代IO的隔离环境中产生普通未绑定对象，并关联同一Bot ID的Memory与Routine store；不是群，不需要先有模型回复。原`buildSummary`保留有用户身份的普通对象、过滤无足迹空白fallback。该结果不签真实数据库、Server、实际App或模型运行。
+
+0.58原`DL/XC/Vk`消费原summary形状，五项现行声明的私聊发送、历史读取、Routine列表、手动运行和中断均走Gateway；另一Temporal对照仍走Server。旧资料的getAgentMemories未在当前声明中找到，已剔除，不能因generic dispatcher会转发未知方法就签为可用。旧Temporal ID仅省略harness不会变成本地，global legacy server-history模式仍会丢本地历史；完整renderer、冷启动、手机/网页未验。
+
+现场只读profile身份元数据发现61个UUID目录：55个有Server ID，5个普通对象与1个群未绑定；5个普通对象均名New Agent、没有harness字段且未列在本次Gateway名册。未读取其历史/Memory正文、未改名唤醒或复制；不能把它们当成有资格执行的现役Bot或可复活资源。这修正的是名册覆盖范围，不是否认此前可见普通Bot全Temporal的观察。
+
+原identity `mint`隔离对照说明真实本地profile可以进入`register-existing-local`生命周期；无profile、写入关闭、已有Server ID分别不提交。合成Server答Box/Temporal时原流程分别stamp对应值，tombstone不stamp。因此“真实本地先创建、再原生登记”是不同于fresh remote-first的候选，但不保证Server会认可Box；本轮没有发送登记网络请求。只改origin=dev在原Host生成相同远端payload，已证伪它是现成的Box捷径。
+
+优先候选为普通本地生成→正常官方登记→同一身份的私聊/群/Routine；明确未登记的普通本地模式仅作为第二候选，需另证完整客户端可达、实际Routine调度及身份同步生命周期，不能伪装Server认可或关闭原政策。正常重载查询与后续一项backfill搜索遭工具拒绝，未改包装重试。本轮没有真实新建Bot、调用模型、客户端/Host补丁或部署。私有脚本和详细结果在原工作目录旁的 `grokbox-ordinary-bot-entry-poc-20260926/`；原AH-124不重开。
+
 ## 04:17 UTC：房间级模型前接入已实现，实际加载被工具阻断并收场
 
 本轮不再重写Agent引擎。在独立私有POC实现了按准确房间ID分流的Host接入：原SendPipeline保存用户消息并执行本地权限/BOX政策检查后，在`dispatchGroupSend`的原排队回调处分支，早于GroupChatOrchestrator及Temporal成员调用。自有loop消费准确原userMessageId/clientNonce，用原`postGroupMemberMessage`写回这个房间；发言者明确为房间自定义运行时，不冒充B成员或其私聊。普通房间保留原callback，失败/撤权不回退官方模型。
