@@ -2,6 +2,12 @@
 
 本页是新版运行核心采用与完整功能候选的 **E2E Checklist 与当前结果唯一入口**。[Agent-first Spec](../roadmap/agent-first-cli/spec.md)决定验收义务，来源票负责实现/离线/独立审查，日期报告保存固定证据，[执行手册](../maintainers/live-end-to-end.md)拥有执行方法。本页不是逐提交发布闸门，也不是要求先把旧版本验完才能重建。
 
+### 2026-09-26 04:17 UTC：房间模型前接入待真实加载
+
+专用本地房间路径已有具体Host-only实现：在原消息持久化/权限检查后、原成员调度前，按准确roomId把整段执行交给自有loop，原生writer提交房间自己的回复；其他目标保持原路。原函数四类检查通过，但使用自有模型/数据库/队列端口，不签在线接管。
+
+本轮对准确原生源临时写入两处接入并通过语法检查后，重启准备调用被工具拒绝，未运行。源码已恢复原`1ee741f9`，实际Gateway未换代、没有加载标记、没有发消息或模型调用。实验空房间已清理，原51 Bot/4群保留，私有binding已禁用。完整事实见[同一POC报告](../reports/2026-09-26-box-creation-feasibility.md)。当前唯一差额仍是获准的实际加载与真实输入/回复，不重建引擎、不改客户端、不把房间形态代签普通Bot主私聊或全端零额度。
+
 ### 2026-09-26 03:49 UTC：本地群作为备选输入容器，仅入口已实证
 
 原生 `createGroup(creationRoute=box)` 实际成功创建一个空闲、空历史的专用本地群，随后准确删除；原51 Bot/4群ID、harness和类型保持。没有发消息或调用模型，没有改官方App/Host，也没有复制群、把群改成普通Bot。原生已有4群中另观察到1个省略harness；0.58原函数可将这种新群输入送往Gateway，但默认Temporal成员仍走Server，后续temporal声明和legacy server历史会改变发送/显示。详见[同一POC报告](../reports/2026-09-26-box-creation-feasibility.md)。
