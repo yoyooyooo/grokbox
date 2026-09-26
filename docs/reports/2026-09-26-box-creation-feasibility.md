@@ -1,5 +1,21 @@
 # 2026-09-26 — Box 创建核心前提：原生对照与完整客户端编码链
 
+## 当前结论：已取得真实登记及普通私聊，尚未守住完整体验（08:05 UTC 补查）
+
+本次发现并对齐了此前中断阶段留存、尚未进入本报告的真实回执。后文“未取得BOX实际请求结果”等描述保留为当时历史，不能再作为当前停点。
+
+- **06:06 UTC：fresh路径的正确BOX请求，最初Server响应为Temporal。** 原认证客户端记录harness=encodedHarness=1、caller=5、intent=1，且启动被明确抑制。原observer与加载代的helper摘要一致；该测试对象在原窗口已清理。
+- **06:17 UTC：local-first普通Bot登记实际得到Box。** 原`createBackgroundAgent`先创建真实普通本地对象，再通过原`ensureServerBacked`，caller=2/intent=2保持真实登记语义，原始编码harness=1，最初Server确认Box；原登记者随后写回相同Server ID和Box归属。这不再是合成Server对照。
+- **06:30 UTC：普通私聊真实自定义Loop已执行。** 两次DeepSeek请求执行原生Memory writer与乘法工具，将合成长期代号存入该Bot原生Memory，计算19×27=513；同一原生私聊历史读回用户t0u及回复t0s0。不是群容器，不依赖官方模型先委托或最后提交。
+
+同一已绑定身份在本次读回时为Temporal；profile修改时间07:41:34不能直接视作准确服务端迁移时刻。当前Host源码`f945b1a2`，原POC加载标记已不在现役源码。服务端首次接受、后来本地身份变化和具体变化原因要分别看待；本轮尚未确定变化的触发者，未修改任何服务端政策或把profile改回Box。
+
+真实私聊后还出现了ack-redrive：原helper只写回复正文，没有把原options.ackToken带入send-message，原native fulfill函数因此不结清义务。结果不是多次用户续聊，而是两次额外完成回合及一次中断回合。**本次修正私有helper透传原token，并用当前原mint/fulfill/retire/timer方法及修改后的事件块验证：错/缺token不清义务，正确token只结清本Bot、撤销补发计时器、重复结清不产生第二次事件。** 不增加新的救援入口、不删除义务、不关闭保护。源码语法检查通过，尚未在线重新加载；不以该回归代签真实修复。
+
+私有证据根为现有`grokbox-ordinary-bot-entry-poc-20260926/`：`full-create-evidence/original-client-request.json`、`local-first-evidence/{local-created,original-client-request,registration-complete}.json`、`runtime/{evidence/host-events.ndjson,api-evidence/,state/requests/}`；observer helper摘要逐一与其loaded.json核对。原历史和未知回合保留；已将旧runtime binding停用，防止把已Temporal的对象继续当当前Box目标。
+
+本次新完整窗口plan写入被工具安全层拦截，文件未创建；另一次迁移源码/日志组合查询被拦截，均未换工具或包装规避。本次未创建Bot、发送消息、调用模型、修改现役Host或重启。**完整群成员回合、Bot自身Routine、原版客户端跨端切换、未选择Bot对照、官方推理/额度以及跨更新持续承接尚未通过。** 当前真正缺口已从“能否取得一次Box”收窄为“能否持续拥有合法执行入口并完成全套原生工作”。不要重新重复fresh创建、扩大群替代或用原函数计数冒充整体POC。
+
 ## 05:01 UTC：普通本地 Bot（非群）仍有原生工厂与客户端分流
 
 用户不希望把群当长期替代。本轮转向原生普通对象：实际执行当前来源 `1ee741f9` 的 `materializeSession/createSession/mintAgentSession/createBackgroundAgent`，在明确替代IO的隔离环境中产生普通未绑定对象，并关联同一Bot ID的Memory与Routine store；不是群，不需要先有模型回复。原`buildSummary`保留有用户身份的普通对象、过滤无足迹空白fallback。该结果不签真实数据库、Server、实际App或模型运行。
