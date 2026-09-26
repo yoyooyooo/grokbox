@@ -19,6 +19,24 @@
 
 声明 Bun 1.3.14 下，告警切片与 Local-first 公共用例共 12 pass / 0 fail，告警事件链及观察器审查回归另有 17 pass / 0 fail；显式选择当前原生声明的 Local-first 隔离用例另有 1 pass / 0 fail、41 assertions。后者执行当前工厂/登记声明并使用合成外部 IO，验证单次 Box 字段、原 writer、Temporal 与丢回复分支；没有真实账号或模型效果，不是创建 canary。
 
+## 当前 Host/worker 的有限配对验证
+
+后续修复仍使用原 recipe/worker/current-state owner：边界锚点去掉不必要的生成编号，同时保持全局唯一匹配；原 checkpoint writer 现为 `async` 方法，其完整写入由原 current-state 屏障包住，未增加另一个 writer。原生 disposer 仅内部失败函数由 `fail` 改名为 `fail2`；原 LIFO、receiver、异常合并和同步 disposer 拒绝用例重验后，替换唯一当前原生 ABI 摘要，不添加历史回退。原生模型预览单独重新验证。
+
+隔离夹具同步当前摘要管线的 `async` 声明，移除已不使用的 generator helper；transcript 尾页带入原新增窗口对齐、可见性函数和常量，保留原 SQL、关联、writer、分页和冷重开断言。未将其替换成总返回成功的 stub。
+
+| 验证 | 实际结果与上限 |
+| --- | --- |
+| 原 `native-pair` | 40 pass / 0 fail；完整 63 切片、四项 Rust 语义检查及四项合法 JS 负例、原生声明/worker/SQLite/生命周期范围 |
+| 原 `native-runtime` | 4/4 commands、88 个外层测试通过；原摘要提交、独立进程 checkpoint/模型切换、实际 modeld/SDK 对自有上游、管理/工具/compact 范围；内层 Node 数不再相加 |
+| 当前接收模型预览 | 1 pass；不启动原生 session、不读认证、不把实验标记成已应用 |
+| 公共受影响回归 | 78 pass / 1 显式 native skip / 0 fail；Rust lease-lifetime 另有 9 pass。该跳过用例在显式 `native-runtime` 中另行执行 |
+| 类型与构建 | 声明 Bun 的根 TypeScript、CLI/Server/Web/原生 verifier 构建通过 |
+
+配对的 Host/worker 字节均为上文所列来源，窗口结束仍 unchanged。各原生验证器继续返回 `qualified:false` / `passed-in-selected-scope`；没有执行完整 Host 或调用真实 Provider，不证明安装、加载、App 或费用。首轮缺失绑定、旧 helper 摘要和夹具依赖错误均保留。公共组合中的两个 lifecycle 夹具还暴露了未关闭安装级观察的问题；在其自有配置中显式关闭与用例无关的观察后，完整 source/owner 32 项通过，业务断言和 freshness 门未放宽。
+
 ## 尚未形成的现场结论
 
-尚未安装或加载本阶段候选，真实静默哨兵未运行。正式模型/DM/工具/compact、Memory/群/Routine/结算、通知用户出口与受控更新连续性均未由本阶段验收。下一步完成当前 Host/worker 必要接缝与有限原生资格，固定同一正式候选，经原 controller 采用后先跑源头哨兵。费用继续 `billing not observed`。
+尚未安装或加载本阶段候选，真实静默哨兵未运行。盘点发现旧 adoption owner 虽为 complete，原资源 journal 仍为 `deactivate-term`；其 Host/监督者与原 attested archive 相符。旧 controller 的八条 unknown 保留，当前恢复入口只读检查未完成物理退出结算，不能手改 journal 或据此重放操作。
+
+正式模型/DM/工具/compact、Memory/群/Routine/结算、通知用户出口与受控更新连续性均未由本阶段验收。下一步沿原恢复路径核对退出资源边界，固定正式候选，经原 controller 采用后先跑源头哨兵。session 钩子仍在官方模型解析/构造之后，独立于其前置条件的差额在正式模型业务前解决。费用继续 `billing not observed`。

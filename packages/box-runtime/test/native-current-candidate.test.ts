@@ -23,7 +23,7 @@ test.skipIf(!nativeContinuityEnabled())("current full native candidate and legal
         GROKBOX_TEST_VERIFIER_DIRECTORY: join(dirname(cli), "native/x86_64-unknown-linux-gnu") } });
     expect(result.error, result.stderr).toBeUndefined(); expect(result.status, result.stderr).toBe(0);
     const receipt = JSON.parse(result.stdout);
-    expect(receipt).toMatchObject({ slices: 62, fullHostExecuted: false, loadedProven: false, profilePublished: false, providerRequests: 0, qualified: false });
+    expect(receipt).toMatchObject({ slices: 63, fullHostExecuted: false, loadedProven: false, profilePublished: false, providerRequests: 0, qualified: false });
     expect(receipt.positive).toHaveLength(4); expect(receipt.negative).toHaveLength(4);
     for (const row of receipt.negative) expect(row).toMatchObject({ state: "violated", validJavaScript: true });
     console.log(JSON.stringify(receipt));

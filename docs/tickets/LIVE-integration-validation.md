@@ -4,7 +4,7 @@
 
 ### 当前排程：恢复 Local-first/v2 主线，身份演进并行（2026-09-26）
 
-用户已接受[Local-first 回归主线](../roadmap/agent-first-cli/local-first-reintegration.md)：AH-186 把真实成功机制纳入正式 CLI/API/原生 adapter/配方/采用，AH-192 与创建切片协同形成早期创建 canary，再接原 DM/工具/compact 与 Agent First CLI 后续。AH-193 的身份变化只读观察及 AH-190 的正常维护策略并行，不再以永久不迁移或缺少内部诊断全局阻挡研发。**主线源码已加入正式 Local-first 创建和静默 canary 切片；其现场采用/运行及新增身份观察仍未由本轮 POC 签验。** 2026-09-26 A/C 已停写交接，AH-187 统一集成者接手剩余责任并独占现场；当前在处理新官方来源的 recipe/原生配对差额，尚未安装加载新候选或执行真实哨兵。[本候选准备证据](../evidence/2026-09/2026-09-26-live-unified-integration.md#candidate-preparation)。
+用户已接受[Local-first 回归主线](../roadmap/agent-first-cli/local-first-reintegration.md)：AH-186 把真实成功机制纳入正式 CLI/API/原生 adapter/配方/采用，AH-192 与创建切片协同形成早期创建 canary，再接原 DM/工具/compact 与 Agent First CLI 后续。AH-193 的身份变化只读观察及 AH-190 的正常维护策略并行，不再以永久不迁移或缺少内部诊断全局阻挡研发。**主线源码已加入正式 Local-first 创建和静默 canary 切片；其现场采用/运行及新增身份观察仍未由本轮 POC 签验。** 2026-09-26 A/C 已停写交接，AH-187 统一集成者接手剩余责任并独占现场；当前新官方来源已完成必要 recipe 调整、40 项配对及 88 项原生运行范围验证；采用前仍需核对旧退出资源记录，尚未安装加载新候选或执行真实哨兵。[本候选准备证据](../evidence/2026-09/2026-09-26-live-unified-integration.md#candidate-preparation)。
 
 **可复用原生 POC 证据**：Local-first 曾由原 Server 接受为 Box；受控窗口连通普通私聊、两个正常群、原生共享 Memory、自身手动/定时 Routine、原生 ack 与用户 Mac→手机续聊；官方对照保留原路。新增的 [14:05 受控程序更新窗口](../evidence/2026-09/2026-09-26-box-creation-feasibility.md#program-update-continuity)实际完成 `35733d4 → c3282ed` 整包更新，同一 UUID/Server ID 仍获 Box，升级后私聊/群及修正完成策略后的 Routine 可用；真实 Provider 404 明确失败，后续新输入恢复，官方对照正常。**保留的失败/缺口**：原样升级变 Temporal 的反例、Routine 首次 loop_budget 和一次被中断调用均保留；费用归因仍为 `billing not observed`，网页及群界面跨端等未单独验。新的更新正例不代表永久持有或正式 v2 集成已验收；旧实验目标/binding不因此恢复许可，当前现场仍逐对象核验。
 

@@ -57,7 +57,7 @@ export function nativeCurrentStateSlices(pair: NativeCheckpointPair): readonly S
   {
     id: "continuity-native-duplicate-identity",
     startAnchor: "function rewriteClonedAgentIdentity(targetDir, newAgentId, includesChatHistory, createAgentDb) {",
-    endAnchor: "function copyIfPresent(sourcePath, targetPath) {",
+    endAnchor: "function copyIfPresent(",
     find: "    db.clearTransientState();\n",
     replacement: `    db.clearTransientState();
     db.deleteKv("grokbox.current-state.v1");
@@ -102,7 +102,7 @@ export function nativeCurrentStateSlices(pair: NativeCheckpointPair): readonly S
   {
     id: "continuity-native-session-owner",
     startAnchor: "var SandSessionMaterialization = class {",
-    endAnchor: "// src/host/extensions/session/session-mutations.ts\nvar import_node_fs87 =",
+    endAnchor: "// src/host/extensions/session/session-mutations.ts\nvar import_node_fs",
     find: `    const maintenance = this.host.maintenanceHost();
     if (db.get("latestRootBlobId").length === 0) {
       await recoverConversationIfRootMissing(maintenance, dbPath, db, agentStore);
@@ -122,7 +122,7 @@ export function nativeCurrentStateSlices(pair: NativeCheckpointPair): readonly S
       scheduleConversationSizeMaintenance(maintenance, dbPath, db);
     }
     __grokbox_current?.register(agentId, { store: agentStore, metadata: db, ctx: this.host.ctx,
-      material: { memory: this.host.memory().createAgentStore((0, import_node_path140.dirname)(dbPath)), history: db },
+      material: { memory: this.host.memory().createAgentStore((0, import_node_path142.dirname)(dbPath)), history: db },
       rootId: SAND_CONVERSATION_ROOT_SLOT_ID,
       source: { hostSourceSha: "${pair.host}", nativeSchema: "${pair.schema}" },
       valid: () => db.isClosed !== true });
@@ -132,16 +132,16 @@ export function nativeCurrentStateSlices(pair: NativeCheckpointPair): readonly S
     id: "continuity-native-checkpoint-fence",
     startAnchor: "var AgentStore2 = class {",
     endAnchor: "// ../packages/agent-kv/dist/cached-blob-store.js",
-    find: "  handleCheckpoint(ctx, checkpoint) {\n    return __awaiter45(this, void 0, void 0, function* () {\n",
-    replacement: "  handleCheckpoint(ctx, checkpoint) {\n    const __grokbox_write = () => __awaiter45(this, void 0, void 0, function* () {\n",
+    find: "  async handleCheckpoint(ctx, checkpoint) {\n",
+    replacement: "  async handleCheckpoint(ctx, checkpoint) {\n    const __grokbox_write = async () => {\n",
   },
   {
     id: "continuity-native-checkpoint-revision",
     startAnchor: "var AgentStore2 = class {",
     endAnchor: "// ../packages/agent-kv/dist/cached-blob-store.js",
-    find: "      this.conversationStateStructure = checkpoint;\n    });\n  }\n",
-    replacement: `      this.conversationStateStructure = checkpoint;
-    });
+    find: "    this.conversationStateStructure = checkpoint;\n  }\n",
+    replacement: `    this.conversationStateStructure = checkpoint;
+    };
     const __grokbox_current = ${control};
     return __grokbox_current?.registered(this.getId())
       ? __grokbox_current.checkpoint(this.getId(), __grokbox_write, this)

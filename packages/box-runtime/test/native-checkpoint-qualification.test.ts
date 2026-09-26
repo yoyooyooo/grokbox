@@ -314,7 +314,7 @@ nativeTest("current original writer preserves native rejection and does not rein
 
 nativeTest("current native dependency receipt hashes actual selected codec, descriptor and writer declarations without publishing them", () => {
   const n = nativeContinuityCode();
-  expect(Object.keys(n.dependencyHashes).sort()).toEqual(["agentStore", "awaiter", "codecDeclarations", "patchedAgentStore", "serde", "sharedDescriptors"]);
+  expect(Object.keys(n.dependencyHashes).sort()).toEqual(["agentStore", "codecDeclarations", "patchedAgentStore", "serde", "sharedDescriptors"]);
   for (const value of Object.values(n.dependencyHashes)) expect(value).toMatch(/^[a-f0-9]{64}$/);
   expect(n.dependencyHashes.agentStore).not.toBe(n.dependencyHashes.patchedAgentStore);
   console.log(JSON.stringify({ scope: "isolated-native-declarations", source: CONT_NATIVE_PAIR, dependencies: n.dependencyHashes,

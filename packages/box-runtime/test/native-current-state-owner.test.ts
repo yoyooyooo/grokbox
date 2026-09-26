@@ -344,7 +344,7 @@ for(const kind of ["clone","spawn"] as const){
       const discoveryPath=join(base,"gateway.json");
       await publishConfigFile(discoveryPath,{scheme:"http",host:"127.0.0.1",port:gateway.port,pid:gateway.pid,startedAt:gateway.startedAt,token:gateway.token});
       const installationId = "11111111-1111-4111-8111-111111111111", token = "synthetic-native-lifecycle-management";
-      const config = { ...defaultConfig(), runtime: { desiredMode: "disabled", continuity: { enabled: false } } };
+      const config = { ...defaultConfig(), ops: { observation: { enabled: false } }, runtime: { desiredMode: "disabled", continuity: { enabled: false } } };
       await publishConfigFile(join(root, "config.json"), config);
       management = await startManagementServer({ store: openRuntimeStore(root, {}), installationId, native: createManagementGateway({ discoveryPath, configurationRoot: root }),
         readGrants: async () => [{ principalId: "owner", tokenSha256: sha256Text(token), capabilities: [...CAPABILITIES] }] });

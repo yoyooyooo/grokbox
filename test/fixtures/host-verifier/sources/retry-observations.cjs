@@ -73,13 +73,13 @@ class AlertOwner {
     try { throw error42; } catch (error42) {
         markTurnTraceError(turnTrace, error42);
         if (epoch === this.tm.sendPipeline.currentTurnEpoch(session)) {
-          const description9 = describeAgentRunError(error42);
+          const description10 = describeAgentRunError(error42);
           const requestId2 = session.db.getRequestIds().at(-1)?.id;
           this.tm.trayErrors.pushError({
             agentId: session.id,
             requestId: requestId2,
-            ...description9,
-            ...hostTrayTitle({ kind: turnTrayTitleKind(description9.errorKind), description: description9 })
+            ...description10,
+            ...hostTrayTitle({ kind: turnTrayTitleKind(description10.errorKind), description: description10 })
           });
         }
         void this.trays.length;
@@ -88,11 +88,11 @@ class AlertOwner {
     }
   }
   forgetTemplateSetupWriteHints() {}
-  notifyAutomationFailure(session, automation, trigger2, description9) {
+  notifyAutomationFailure(session, automation, trigger2, description10) {
     if (isBackgroundAutomationTrigger(trigger2)) return;
     const occurrence = automation.occurrence;
     if (!shouldNotifyAutomationFailure(occurrence)) return;
-    this.trays.push({ agentId: session.id, description: description9 });
+    this.trays.push({ agentId: session.id, description: description10 });
   }
   clearAutomationFailureState(agentId, automationId) {}
 }

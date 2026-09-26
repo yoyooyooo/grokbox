@@ -37,7 +37,7 @@ async function main() {
   try {
     const positive = await analyze(candidate);
     assert.ok(positive.artifacts.every(a => a.valid && a.diagnostics === 0));
-    assert.ok(positive.checks.every(c => c.state === "passed"));
+    assert.ok(positive.checks.every(c => c.state === "passed"), JSON.stringify({ checks: positive.checks }));
     const negative = [];
     for (const [name, sliceId, before, after, checker] of [
       ["wrong-input-identity", "agent-id", "invocationId: inferenceRequestId,\n          clientNonce: options2.clientNonce,", "invocationId: inferenceRequestId,\n          clientNonce: undefined,", "session.main-binding"],

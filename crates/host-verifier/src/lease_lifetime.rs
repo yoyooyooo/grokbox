@@ -13,7 +13,7 @@ const ADD_ABIS: &[&str] = &[
     "94b4d9224f08a82f100c4a57e2911159daddb0f70dcff1739daa1ac98f196f00",
 ];
 const DISPOSE_ABIS: &[&str] = &[
-    "072532d1842c670a1e86533f8ec1d3a6470e3311641771bc0cefd1f9ed6ea93c",
+    "7264d5865d223a37befd23f893d068a4994f7748e14e9c30c3bf79c32c0e9e1f",
     "9c1b3d106e0889cdc3e7b6cb402f9ce7ecb4a68416583e2c210f4b73e6436edc",
 ];
 fn ident(i: &IdentifierReference<'_>, s: &Semantic<'_>) -> Option<SymbolId> {

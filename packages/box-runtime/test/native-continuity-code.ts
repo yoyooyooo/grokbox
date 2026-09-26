@@ -145,14 +145,14 @@ export function nativeContinuityCode(): any {
   const mismatches = [...wanted.keys()].filter(name => !found.has(name) && (!workerOnly.has(name) || present.has(name)));
   if (mismatches.length) throw Error(`native_host_worker_schema_disagreement:${mismatches.join(",")}`);
   const pick = (name: string) => hostDeclaration(source, name).code;
-  const awaiterCode = pick("__awaiter45"), serdeCode = pick("ProtoSerde"), writerCode = pick("AgentStore2");
+  const serdeCode = pick("ProtoSerde"), writerCode = pick("AgentStore2");
   const checkpointSlices = HOST_RECIPE.currentState.filter(slice =>
     ["continuity-native-checkpoint-fence", "continuity-native-checkpoint-revision"].includes(slice.id));
   if (checkpointSlices.length !== 2) throw Error("native_checkpoint_recipe_incomplete");
   const patched = transformUnchecked(source, checkpointSlices);
   if (!patched.ok) throw Error(`native_checkpoint_recipe_mismatch:${patched.sliceId}`);
   const patchedWriterCode = hostDeclaration(patched.source, "AgentStore2").code;
-  const writer = (code: string, control?: unknown) => runInNewContext(`${awaiterCode}\n${serdeCode}\n${code}\nAgentStore2`, {
+  const writer = (code: string, control?: unknown) => runInNewContext(`${serdeCode}\n${code}\nAgentStore2`, {
     ...globals, ConversationStateStructure: native.ConversationStateStructure,
     [Symbol.for(NATIVE_CURRENT_STATE_SYMBOL)]: control,
     Disposable: class {}, getBlobId: async (bytes: Uint8Array) => createHash("sha256").update(bytes).digest(),
@@ -162,7 +162,7 @@ export function nativeContinuityCode(): any {
     currentAgentStore: (control?: unknown) => writer(patchedWriterCode, control),
     dependencyHashes: Object.freeze({ codecDeclarations: digest(codecCode),
       sharedDescriptors: digest(JSON.stringify([...wanted].sort(([a], [b]) => a.localeCompare(b)))),
-      awaiter: digest(awaiterCode), serde: digest(serdeCode), agentStore: digest(writerCode),
+      serde: digest(serdeCode), agentStore: digest(writerCode),
       patchedAgentStore: digest(patchedWriterCode) }) };
   return cached;
 }

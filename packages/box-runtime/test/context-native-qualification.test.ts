@@ -37,7 +37,8 @@ test.skipIf(!nativeHostQualificationEnabled())("pinned native summarizer and arc
   const wanted = ["isInjectedReminderMessage", "runSummarizationPipeline", "warnIfPreservedTailShapeInvalid", "prepareMessagesForCompaction", "hasUserInfoTag", "isEmptyAssistantMessage3", "placedBlockIds", "selectBlockPrompts", "renderDurableBlocks", "appendDurableBlocks", "extractManuallyAttachedSkillBlocks", "collectAllSkillBlocks", "getContextUsageInfo"];
   const functions = new Map<string, string>(), methods = new Map<string, string>();
   for (const name of wanted) {
-    const parsed = parse(selected(`\nfunction ${name}(`, "\n}", 2, 40 * 1024)), statement = parsed.statements[0];
+    const marker = `\n${name === "runSummarizationPipeline" ? "async " : ""}function ${name}(`;
+    const parsed = parse(selected(marker, "\n}", 2, 40 * 1024)), statement = parsed.statements[0];
     if (parsed.statements.length !== 1 || !statement || !ts.isFunctionDeclaration(statement) || statement.name?.text !== name)
       throw Error("native_summary_function_shape");
     functions.set(name, statement.getText(parsed));
@@ -73,20 +74,12 @@ test.skipIf(!nativeHostQualificationEnabled())("pinned native summarizer and arc
       .map(([name, code]) => [name, createHash("sha256").update(code!).digest("hex")])), fullHostExecuted: false }));
   const lifecycle: string[] = [], blobs = new Map<string, unknown>(), archive: any[] = [];
   const metric = { increment() {}, histogram() {} }, log = { info() {}, warn() {}, error() {} };
-  const awaiter = (self: unknown, _args: unknown, _promise: unknown, factory: () => Generator) => new Promise((resolve, reject) => {
-    const generator = factory.call(self);
-    const step = (kind: "next" | "throw", value?: unknown) => {
-      try { const next = generator[kind](value); if (next.done) resolve(next.value); else Promise.resolve(next.value).then(value => step("next", value), error => step("throw", error)); }
-      catch (error) { reject(error); }
-    }; step("next");
-  });
   const globals: Record<string, unknown> = {
     performance, Promise, Object, Map, Set, Symbol,
-    __awaiter28: awaiter, __awaiter29: awaiter,
     __addDisposableResource20: (_env: unknown, value: unknown) => value,
     __disposeResources20(env: { hasError: boolean; error: unknown }) { if (env.hasError) throw env.error; },
     createSpan: (ctx: unknown) => ({ ctx }),
-    logger6: log, logger7: log, logger60: log,
+    logger6: log, logger7: log, logger62: log,
     PrivacyMode: { UNSPECIFIED: 0 }, PrivacyCapability: { UNSAFE_ALWAYS_ALLOWED: 0 }, DataClassification: { CODE: 0 },
     fromRedactedCoreMessages: (rows: unknown[]) => rows, fromRedactedCoreMessage: (row: unknown) => row,
     toRedactedCoreMessage: (row: unknown) => row, isRedactedString: () => false,
