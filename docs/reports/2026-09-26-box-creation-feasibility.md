@@ -1,6 +1,52 @@
 # 2026-09-26 — Box 创建核心前提：原生对照与完整客户端编码链
 
-## 当前结论：服务端当前也已是 Temporal，P0 尚缺持有合同（09:14 UTC）
+## 当前结论：受控业务纵切已连通，真实官方升级未保住 Box（10:57 UTC）
+
+**一个新普通 Bot 在暂停 Host 自动更新的窗口中，实际完成了自定义私聊、正确 ack、两个正常群的成员回合、自己的手动及定时 Routine，以及用户确认的 Mac→手机历史与续聊。显式 identity reconcile 和普通进程重启后，原 Server 仍返回同一 Box 身份。随后一次正常 `394046b → 8ae66c3` 升级完成，同一 Server ID/UUID 被原 Server 两次确认已为 Temporal。** 完整目标仍未通过：本次普通官方升级的执行归属连续性判据失败，官方额度归因也未取得。不能将它扩大为所有可能构造均不可能。
+
+本轮复用了既有 local-first 工厂、原登记者、已构建 Loop 和原始证据目录，只新建一个专用普通 Bot、两个各有两名 Bot 成员的正常群、一条 Routine。另一个群成员是既有官方对照 Bot。没有重跑 fresh 创建反例、复活旧身份、改 Temporal 标签或调用员工内部接口；缺少内部诊断没有被当作业务实验的前置。
+
+### 更新变量的实际边界
+
+| 变量 | 本轮证据与范围 |
+|---|---|
+| 自动更新准备 | 当前原生 opt-out 控制 Host 自动下载/暂存，也影响其自动 image update。POC 在原环境解析处临时使用同一 opt-out 字段；原认证、执行权限、identity sync 和 migration 流程保持原实现 |
+| 实际换包 | 原 supervisor 消费暂存命令，负责校验、换包、重启及回滚。Host opt-out 不撤销已有命令，也不阻止外部/手动升级；窗口前实际核对无命令、暂存包、applied marker 或 pending upgrade |
+| 普通重启 | 未制造 applied marker；修复接线的换代及后续独立重启后，原启动身份列表仍确认 Box |
+| 显式 reconcile | 10:31 UTC 原生调用返回成功，同代原 Server 列表仍为 Box；没有 migration pass 观察事件 |
+| 一次实际版本升级 | 10:44 UTC `updateHostNow(force=false)` 返回 started/8ae66c3，原 supervisor 实际完成换包。10:45 UTC profile 为 Temporal；10:50 UTC 在新来源上只观察原认证列表，两次确认同一身份为 Temporal |
+| 仍未知 | 独立于本机升级请求的服务端触发未被排除；本次 pass 的服务端内部结果/政策原因仍未读取。短期 opt-out 成功不证明永久持有或所有升级均有相同结果 |
+
+这次取得的是“完整业务在明确窗口中成立”和“这次正常升级后持有判据失败”两个不同结果。尚不能把升级后失效精确归因到某个内部 pass 分支，更不能用再造一个短暂 Box 补掉连续性要求。
+
+### 同一身份的业务与客户端结果
+
+| 范围 | 实际结果 |
+|---|---|
+| local-first 普通 Bot | 10:06 UTC 原工厂先物化、原 `ensureServerBacked` 登记；实际 BOX=1，原 caller/intent 保持，Server 首次返回 Box，原 writer 写回相同绑定 |
+| 普通私聊/ack | 自定义 DeepSeek 决定原生 Memory 写入及乘法工具，回复进入普通私聊。原 token 摘要在输入和 native fulfill 处相同；义务与定时器均清除、redriveAttempts=0 |
+| 两个正常群 | 同一 Bot 分别作为成员读私聊长期 Memory；第二群写入另一条合成 Memory。两份群历史的 author 均为同一 Bot UUID，普通私聊未被群容器替代；两个群即时上下文分开 |
+| Bot 自身 Routine | 原配置/调度器创建一条 Routine；10:19 UTC manual 和 10:28 UTC schedule 各有不同 run UUID、status=ok。子任务和父 Bot 都走自定义模型，读到同一两条 Memory，结果经原生父任务唤醒写回该 Bot 私聊。实际定时执行晚于先前投影 nextRunAt，未签调度准点性 |
+| 原 App/跨端 | 用户确认原 App 输入、切换回看，以及 Mac→手机查看既有私聊/Routine 结果和续聊；两条真实客户端 nonce、标记回复、自定义执行和原生 ack 均与历史关联。手机续聊发生在独立重启之后。网页和群界面的跨端点击未单独验证 |
+| 官方对照 | 既有 Temporal 对照 Bot 接受一条独立输入，经原路生成对应回复，未进入自定义 Loop；观察到的响应未暴露具体官方模型 ID |
+
+Routine 的真实适配缺口已直接修在私有 POC：原生 parent-mediated 子任务过滤直接可见发送，需要返回 `finalAssistantText/automationParentWake`；父回合收到原生对象形状的 prompt，需要取其 prompt 字段并沿用原完成记录中的 Routine/子任务标识。修复后仍由原子任务调度、settlement、父任务唤醒和 transcript writer 负责生命周期，没有另建 scheduler 或引擎。修复加载前先完成上一版来源恢复验证。
+
+全窗口保存了 **12 次自定义 Loop 调用、21 次自定义 Provider HTTP 200**，实际请求模型均为 `deepseek-v4.1-flash`。其中包括两次群的自然 pass 回合，以及停用 Routine 后触发的一次独立 native event 回合；后者产生了一条额外可见说明，不是用户续聊或 ack-redrive。三次普通私聊输入均取得 native ack 结清，未出现 ack-redrive 调用。初始 12 回合预算因这些原生回合和客户端/生命周期验证调整为 20，实际未耗尽。
+
+主推理、工具选择及上述最终回复均由自定义链生成，原 `runShell` 未被这些调用使用；所检查的原生 Memory writer 是存储写入，群成员选择是原确定性调度，Routine 子/父推理均有自定义记录。此范围内自有 Loop 未调用摘要或 compact；没有通过本轮成功调用验证故障注入/fallback，也没有覆盖不可见的 Server 辅助推理。**额度结论保持 `billing not observed`**；不能由 21 次自定义请求、无 fence 告警或对照成功代签零官方消耗。
+
+### 升级后的收场与当前停点
+
+原 `4eafc5d6` 和升级后 `31d937e0` 的完整原文均位于既有 retained corpus。真实升级替换了旧 POC 接入；最后的只读 Server 观察器只基于新来源生成，并恢复到该新原文，未把旧版本覆盖回去。10:55 UTC 新原 supervisor 子进程、源码摘要、空闲状态和无 hook 引用已核对；10:57 UTC 升级后的私聊及两群原生历史仍可读，消息/nonce/作者保留。原有名册 ID/harness/类型保持，这不是全机数据逐字节审计。
+
+新 Bot 和两群现均为 Temporal，测试资料保留；自定义 binding 关闭，Routine disabled/nextRunAt=null。没有在身份失效后继续自定义业务，没有删除测试数据或重放 unknown。慢启动的原 unknown 和后续准确运行代读回均保留。私有工具也已将 Box 限制收窄到执行动作，稳定 Server ID 下的只读历史不因归属变化被阻断。
+
+证据仍在原 POC 的 `controlled-window/`：`evidence/{prepared,original-client-request,registration-complete,update-boundaries,explicit-reconcile-result,app-first-client,app-cross-client,official-upgrade-result,official-upgrade-observations,execution-summary,final-resources}.json`、`evidence/window-events.ndjson`、`runtime/{api-evidence,state/requests,deliveries}`，以及 `evidence/post-upgrade/{original-client-events.ndjson,restore-readback.json}`。临时 helper/原生源码、凭据和 transcript 不进入公共仓库。
+
+**当前缺口已具体化为：在维护 Host 版本时继续保留服务端认可的本地执行归属，以及可解释的官方模型/额度证据。** 本次普通官方升级不满足前者，不能宣称长期完整 POC 通过；窗口业务结果也不因这一失败而退回“尚不知能否创建/私聊/多群/Routine”。这些是原生 POC 结果，不代签正式 v2 adoption 或整张 LIVE 场景资格。
+
+## 09:14 UTC：服务端当前也已是 Temporal，P0 尚缺持有合同
 
 本轮没有重跑创建或首轮私聊。重新核对原始回执后，在本轮实际官方 Host 上加载了两处只记录返回值的身份读取观察器；沿原认证客户端、原启动 reconcile 取得同一普通 Bot 的 `ListGrokBotAgents` 响应。**09:10:50 与 09:10:55 UTC，Server 都返回原 Server ID、原 Bot UUID、`harness=temporal`。** 这排除了“仅本地标签写错、服务端仍是 Box”作为当前解释；此前真实 Box 登记和自定义私聊的正例仍成立。
 
