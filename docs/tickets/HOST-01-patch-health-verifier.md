@@ -32,7 +32,7 @@ AH-193 复用 T44/OBS 关联来源、实际加载、官方身份与本地投影�
 
 ## 核心接缝交付合同
 
-本节是A1交付R/D/E/F等消费者的核心调用合同，不增加第二套类型、writer或运行路径。维护模块在`packages/box-runtime/src/internal/host/`；以同一构建、精确Host/worker/candidate及完整有序recipe作为来源身份。下表Symbol均带`grokbox.box-runtime.`前缀，`v1`指现有Symbol/RPC协议版本，不能单凭版本号跨来源接纳；固定摘要与可执行观察见[核心ABI窗口](../reports/2026-09-22-current-host-core-abi.md)。
+本节是A1交付R/D/E/F等消费者的核心调用合同，不增加第二套类型、writer或运行路径。维护模块在`packages/box-runtime/src/internal/host/`；以同一构建、精确Host/worker/candidate及完整有序recipe作为来源身份。下表Symbol均带`grokbox.box-runtime.`前缀，`v1`指现有Symbol/RPC协议版本，不能单凭版本号跨来源接纳；固定摘要与可执行观察见[核心ABI窗口](../evidence/2026-09/2026-09-22-current-host-core-abi.md)。
 
 | 接缝 / 现行模块 | 当前合同、身份与结算 |
 | --- | --- |
@@ -62,13 +62,13 @@ Host/worker 的持续更新是开发期狗粮输入，不是外部异常，也�
 
 **问题回流仍由原Owner与Linear完成，不是运行时新建工单服务。** 先用source pair、recipe、slice/checker/ABI及实际失败范围定位；同一故障先查已有Issue并更新原回执，只有能复现且影响该消费者的缺口才新增修复/Blocks。单纯SHA变化、fixture误用、资源退出或未执行检查不冒充上游功能回归。已签收固定窗口保持Done，新来源的准确后续由对应Owner推进；A2评估可达风险，E1消费原健康/观察事件，Q采用门仍核对实际准备采用的版本与权限，不形成全局停更锁。该接口不自动授权外部Webhook、收费模型或用户Bot变更。
 
-固定窗口实现与确定性/真实来源只读证据见[AH-159来源窗口回执](../reports/2026-09-23-host-source-windows.md)。固定证据另见[最初A1核心ABI](../reports/2026-09-22-current-host-core-abi.md)、[68fab3核心配对复验](../reports/2026-09-23-native-core-pair-requalification.md)、[日志测试原写入结算](../reports/2026-09-23-provider-fixture-journal-settlement.md)和[消息原生与来源演进窗口](../reports/2026-09-23-native-message-source-evolution.md)。历史失败/成功保留各自输入；不将来源哈希变化、配方匹配、仅注册原函数或fixture通过混称当前完整健康。材料writer缺口仍归DATA-01/A3，不借核心窗口复活已退出的Memory RPC。
+固定窗口实现与确定性/真实来源只读证据见[AH-159来源窗口回执](../evidence/2026-09/2026-09-23-host-source-windows.md)。固定证据另见[最初A1核心ABI](../evidence/2026-09/2026-09-22-current-host-core-abi.md)、[68fab3核心配对复验](../evidence/2026-09/2026-09-23-native-core-pair-requalification.md)、[日志测试原写入结算](../evidence/2026-09/2026-09-23-provider-fixture-journal-settlement.md)和[消息原生与来源演进窗口](../evidence/2026-09/2026-09-23-native-message-source-evolution.md)。历史失败/成功保留各自输入；不将来源哈希变化、配方匹配、仅注册原函数或fixture通过混称当前完整健康。材料writer缺口仍归DATA-01/A3，不借核心窗口复活已退出的Memory RPC。
 
 ## 后续实施顺序
 
 A1核心来源合同之后，A2在原owner中继续补齐所声明必要能力的语义与变换后行为、更多独立调用机会，以及真实采用后同代证据；A3的新原生材料/退役接缝按各自依赖推进。`uncoveredSlices`必须真实列明；机会覆盖只到managed主流lease，不能凭函数名或注册表关闭全部能力。场景反例需合法JS且重新固定candidate hash，不得全靠unknown-sha或语法错捕获。
 
-旧controller/inject拒绝型stub及专属测试/spy已经退出，安装preload也不再借用旧副本或回退TypeScript，见[控制入口退出](../reports/2026-09-21-controller-entry-retirement.md)。Tailscale/Serve的显式兼容路径、bootstrap旧writer/选项和JSON/schema占位也已经退出，见[NET-01](NET-01-box-local-network-boundary.md)。手动 compact 已接入同一管理 Server、原 Host/modeld 与 CONT 操作记录，明确 approval 字段进入当前原生 RPC/wire；旧 CLI 直连入口同步退出，见[当前管理切片](../reports/2026-09-21-compaction-management.md)。相关原生配方变化须重新验证，不借用旧 candidate 摘要。handover 控制也已进入管理 Server、原 CONT 职责与入站/退役 owner；旧 CLI 直连/适配别名和直接 attestation writer 退出，见[管理交接阶段](../reports/2026-09-21-handover-management.md)。退役对账没有 native port，不因一个新观察重新派发删除；原生资源独立性和删除屏障仍保持真实缺口。接续收束剩余 daemon 能力与全能力/调用机会资格，不重开已闭合的 Compact 或 handover 控制迁移。优先当前功能owner和准确依赖，不重做已完成的current-state、通知、材料管理等阶段，不另起平行工程。现行Acorn作者探索与Rust健康验证不是自动互相回退；是否仍需作者能力及其退出随原HCR迁移核实，不能仅删依赖而丢必需行为。
+旧controller/inject拒绝型stub及专属测试/spy已经退出，安装preload也不再借用旧副本或回退TypeScript，见[控制入口退出](../evidence/2026-09/2026-09-21-controller-entry-retirement.md)。Tailscale/Serve的显式兼容路径、bootstrap旧writer/选项和JSON/schema占位也已经退出，见[NET-01](NET-01-box-local-network-boundary.md)。手动 compact 已接入同一管理 Server、原 Host/modeld 与 CONT 操作记录，明确 approval 字段进入当前原生 RPC/wire；旧 CLI 直连入口同步退出，见[当前管理切片](../evidence/2026-09/2026-09-21-compaction-management.md)。相关原生配方变化须重新验证，不借用旧 candidate 摘要。handover 控制也已进入管理 Server、原 CONT 职责与入站/退役 owner；旧 CLI 直连/适配别名和直接 attestation writer 退出，见[管理交接阶段](../evidence/2026-09/2026-09-21-handover-management.md)。退役对账没有 native port，不因一个新观察重新派发删除；原生资源独立性和删除屏障仍保持真实缺口。接续收束剩余 daemon 能力与全能力/调用机会资格，不重开已闭合的 Compact 或 handover 控制迁移。优先当前功能owner和准确依赖，不重做已完成的current-state、通知、材料管理等阶段，不另起平行工程。现行Acorn作者探索与Rust健康验证不是自动互相回退；是否仍需作者能力及其退出随原HCR迁移核实，不能仅删依赖而丢必需行为。
 
 长期观察继续核对容量、源重启/变化、迟到结果、检测器退出和独立投递。当前通知显示local-only；接收Host处于同故障域时，不能为了投递放宽ownership/profile/model门，独立出口与凭据须明确授权。已有合法modeld执行不能被健康服务故障或Server关闭带倒。
 

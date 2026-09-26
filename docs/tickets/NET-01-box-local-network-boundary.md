@@ -2,7 +2,7 @@
 
 ## Scope and authority
 
-用户已要求完整翻新、无旧兼容路径。本票原先保留的显式Tailscale bootstrap/recovery，现在随[CLI-05](CLI-05-implementation-follow-through.md)退出，不再冻结保留。Box执行与用户自管网络的边界不变，普通已配置端点与显式SSH恢复不是待保留的旧厂商兼容层。产品合同归[连接](../product-contract.md#2-默认入口与连接)、[Daemon与恢复](../product-contract.md#11-daemon-与恢复)；原历史验证只看[2026-09-19固定回执](../reports/2026-09-19-network-boundary-v2-integration.md)。
+用户已要求完整翻新、无旧兼容路径。本票原先保留的显式Tailscale bootstrap/recovery，现在随[CLI-05](CLI-05-implementation-follow-through.md)退出，不再冻结保留。Box执行与用户自管网络的边界不变，普通已配置端点与显式SSH恢复不是待保留的旧厂商兼容层。产品合同归[连接](../product-contract.md#2-默认入口与连接)、[Daemon与恢复](../product-contract.md#11-daemon-与恢复)；原历史验证只看[2026-09-19固定回执](../evidence/2026-09/2026-09-19-network-boundary-v2-integration.md)。
 
 ## Current implementation
 
@@ -23,4 +23,4 @@
 
 `test/network-boundary.test.ts`检查生产代码/registry没有旧控制源、配置字段拒绝且原字节不变、失败init不改变选择。`test/ssh-recovery.test.ts`实际执行原POSIX恢复程序和自有临时Node服务，覆盖健康no-op、启动与再入不重复、存活但不健康的PID不受影响、缺安装和非法回执拒绝。地址与SSH传输本身是隔离测试输入，不签实际外网可达。
 
-其余入口由profile/recovery/daemon/CLI、共享config、打包安装以及生成Skill验证。最终大阶段固定源码结果见[844项组合与实现边界](../reports/2026-09-21-network-compatibility-retirement.md)；不沿用原有65项兼容验证作为现版证明。独立审查和真实外部DNS/TLS、账号休眠唤醒、整套安装仍看[LIVE-NETWORK-BOUNDARY](LIVE-integration-validation.md#live-network-boundary)，未在本轮执行现场脚本。无部署、推送、真实模型调用或现役服务切换。
+其余入口由profile/recovery/daemon/CLI、共享config、打包安装以及生成Skill验证。最终大阶段固定源码结果见[844项组合与实现边界](../evidence/2026-09/2026-09-21-network-compatibility-retirement.md)；不沿用原有65项兼容验证作为现版证明。独立审查和真实外部DNS/TLS、账号休眠唤醒、整套安装仍看[LIVE-NETWORK-BOUNDARY](LIVE-integration-validation.md#live-network-boundary)，未在本轮执行现场脚本。无部署、推送、真实模型调用或现役服务切换。

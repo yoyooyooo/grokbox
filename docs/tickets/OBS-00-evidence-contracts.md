@@ -6,7 +6,7 @@
 
 `observation.ts`及`internal/observation/evidence-contract.ts`已落地，含E01–08、缺失/截断/冲突、显式关系与不可跨代赋权的合同。实际测试在`observation-evidence-contract.test.ts`和`observation-evidence-privacy.test.ts`；原STEP CLI的coverage/lookup/retention/readFailure/health接线已补。E03需实际请求见证，只有错误文本或空diagnostic不能报完整。
 
-E2E前补强已接回E02的Host加载元组/modeld build与wire、E04的原生handler开始/返回及executor结果接受、E05的原生checkpoint开始/ACK/unknown、E08的collector读取和原生任务窗口。证据配对要求相同Agent/TURN/Host代，工具还要求相同STEP/toolCallId；不能拼接不同执行制造完整度。handler入口不等审批通过或外部业务提交，checkpoint ACK不等新进程独立读回；App/外部副作用和原生现场资格仍保持缺口。固定source→E映射及实际测试见[本片回执](../reports/2026-09-19-pre-e2e-observation.md)，历史局部范围留[首片](../reports/2026-09-18-observation-evidence-first-slice.md)。
+E2E前补强已接回E02的Host加载元组/modeld build与wire、E04的原生handler开始/返回及executor结果接受、E05的原生checkpoint开始/ACK/unknown、E08的collector读取和原生任务窗口。证据配对要求相同Agent/TURN/Host代，工具还要求相同STEP/toolCallId；不能拼接不同执行制造完整度。handler入口不等审批通过或外部业务提交，checkpoint ACK不等新进程独立读回；App/外部副作用和原生现场资格仍保持缺口。固定source→E映射及实际测试见[本片回执](../evidence/2026-09/2026-09-19-pre-e2e-observation.md)，历史局部范围留[首片](../evidence/2026-09/2026-09-18-observation-evidence-first-slice.md)。
 
 ## Goal / Dependencies
 

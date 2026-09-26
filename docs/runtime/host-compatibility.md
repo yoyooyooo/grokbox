@@ -18,7 +18,7 @@ Directory watch plus bounded stat/hash resync observes actual bytes; file events
 
 Known stage activity, entry-first/version-last transitions, mixed companions, mutated failure, unstable reads and unknown rollback state block applicability/adoption while allowing safe capture. Repeated stable observations reduce uncertainty but do not lock the official supervisor. No fixed waiting duration proves cross-writer exclusion. New evidence supersedes old eligibility; A→B→A is a new installation episode, not renewal of A's old permission.
 
-Sensing does not call updateHostNow/autoUpdateBoxNow, alter official command/ack/markers, force a swap or restore a retained source. Unknown upstream schema reports sensor_contract_changed and lowers coverage rather than parsing arbitrary logs. Historical upstream timing/paths are fixed-version research, not permanent defaults; necessary facts remain in [upstream integration](../upstream-integration.md), detailed retired research in [archive](../archive/README.md).
+Sensing does not call updateHostNow/autoUpdateBoxNow, alter official command/ack/markers, force a swap or restore a retained source. Unknown upstream schema reports sensor_contract_changed and lowers coverage rather than parsing arbitrary logs. Historical upstream timing/paths are fixed-version research, not permanent defaults; necessary facts remain in [upstream integration](../upstream-integration.md), detailed retired research in [archive](../evidence/topics/README.md).
 
 ## One provenance writer
 

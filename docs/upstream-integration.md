@@ -35,7 +35,7 @@ Native duplication must not be assumed to preserve a complete working state or e
 
 A pointer match, successful session open or model recalling a fact cannot establish complete checkpoint readback. Determine the actual writer boundary, reference closure, immutable bytes and readback behavior for the selected native generation.
 
-The [2026-09-18 report](reports/2026-09-18-continuity-native-checkpoint.md) records a narrow historical qualification. Its native codecs, AgentStore and private pins were not requalified here. Synthetic fixtures do not establish live worker/DB transactions, Memory import, writer exclusion or restart continuity.
+The [2026-09-18 report](evidence/2026-09/2026-09-18-continuity-native-checkpoint.md) records a narrow historical qualification. Its native codecs, AgentStore and private pins were not requalified here. Synthetic fixtures do not establish live worker/DB transactions, Memory import, writer exclusion or restart continuity.
 
 ## Host session boundary
 

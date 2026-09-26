@@ -20,7 +20,7 @@ Status: linearly integrated into v2 / implementer-reviewed / Bun 1.3.14 full-inv
 
 ## Evidence
 
-固定实现 `aefe851` 已线性合入v2，Bun1.3.14完整311文件2408 pass/15 native skip/0 fail，含实际Node20安装包。新增doctor CLI反例先复现`recovery_pending`仍给`next=none`，修正后通过；`operator.committed`公开有限状态，不作为STEP许可。提交映射、实现者复查与固定集成证据见[集成窗口](../reports/2026-09-18-host-capability-recovery-offline.md#hcr-v2-integration)。当前live状态唯一入口：[LIVE](LIVE-integration-validation.md#live-host-capability-recovery)。
+固定实现 `aefe851` 已线性合入v2，Bun1.3.14完整311文件2408 pass/15 native skip/0 fail，含实际Node20安装包。新增doctor CLI反例先复现`recovery_pending`仍给`next=none`，修正后通过；`operator.committed`公开有限状态，不作为STEP许可。提交映射、实现者复查与固定集成证据见[集成窗口](../evidence/2026-09/2026-09-18-host-capability-recovery-offline.md#hcr-v2-integration)。当前live状态唯一入口：[LIVE](LIVE-integration-validation.md#live-host-capability-recovery)。
 
 <a id="independent-review-residue"></a>
 ## 独立复审残项（非 live）

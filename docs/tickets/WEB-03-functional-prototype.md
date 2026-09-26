@@ -41,25 +41,25 @@ run/STEP/日志、受支持的原生投递对账、完整材料管理与剩余�
 
 `/contexts?mode=compact` 现提供默认 Box current-root 的只读审批计划、独立费用确认、Compact 及原请求查询/对账/未派发续接/取消；与已有 current-state 模式共用 Bot 定位但不混合同。`/operations` 识别 compaction 域与原账号 scope；同源桥只开放准确管理 API。浏览器仅存原定位，不存 policy/revision/正文。已完成的原生操作可在来源失联时查询，错 Bot 不重定向；未知取消拒绝不会解锁新请求。[真实生产浏览器旅程](../../apps/web/test/compaction-browser.node.ts)覆盖提交、费用/模型变更冲突、显式重审、丢回执刷新、未知 checkpoint、权限/CSRF和窄屏。
 
-此路径实际暴露 SSR 与浏览器不一致：原同步摘要校验依赖 Node crypto，SSR 通过但浏览器显式刷新失败。现以同一 canonical 声明配合 WebCrypto 校验，不添加 runtime shim 或第二摘要规则。修复后73节点生产 Chrome组合通过；依赖范围和最终检查归[管理切片报告](../reports/2026-09-21-compaction-management.md)，不等于真实账号/Provider/App 或最终视觉验收。
+此路径实际暴露 SSR 与浏览器不一致：原同步摘要校验依赖 Node crypto，SSR 通过但浏览器显式刷新失败。现以同一 canonical 声明配合 WebCrypto 校验，不添加 runtime shim 或第二摘要规则。修复后73节点生产 Chrome组合通过；依赖范围和最终检查归[管理切片报告](../evidence/2026-09/2026-09-21-compaction-management.md)，不等于真实账号/Provider/App 或最终视觉验收。
 
 ## 交接操作与原证据恢复
 
 `/protection` 的选定 handover 已有 advance/observe/attest/retire 控制和原操作恢复，`/operations` 识别 handover 域、账号 scope 和原替换引用。页面消费同一 Server/CONT 用例；普通阅读不执行原生效果，observe 只保存本地观察，attest 要求原 observation 引用及再次读取验证。退役显示实际资源/原生屏障 blocker，不从 quiet 或原生目标 UUID 推断许可。
 
-独立能力、CSRF、准确 revision、冲突保留与明确重新批准、丢回复刷新、未知 claim 不可取消成新请求、显式续接不重发旧职责、离线历史与窄屏已纳入[真实浏览器旅程](../../apps/web/test/handover-browser.node.ts)。本地只保存原安装/主体/替换/scope/request 定位，不缓存证据输入、审批 revision、材料正文或凭据。完成一个管理批次不等于完整关系交接，历史手动工作流不会被另一主体接管。固定实施/验证归[管理交接报告](../reports/2026-09-21-handover-management.md)；全原生任务/资源独立性、条件删除和多代关系仍是 CONT 的后续责任。
+独立能力、CSRF、准确 revision、冲突保留与明确重新批准、丢回复刷新、未知 claim 不可取消成新请求、显式续接不重发旧职责、离线历史与窄屏已纳入[真实浏览器旅程](../../apps/web/test/handover-browser.node.ts)。本地只保存原安装/主体/替换/scope/request 定位，不缓存证据输入、审批 revision、材料正文或凭据。完成一个管理批次不等于完整关系交接，历史手动工作流不会被另一主体接管。固定实施/验证归[管理交接报告](../evidence/2026-09/2026-09-21-handover-management.md)；全原生任务/资源独立性、条件删除和多代关系仍是 CONT 的后续责任。
 
 ## Host健康与浏览器重复性差额
 
-`/host-health`已分开显示磁盘候选、运行编译、同代原引用注册、详细边界与累计lease机会。当前API只接受现行完整健康/witness合同，不为旧三项规则或window-only事件读面提供兼容；旧资料保留但不充当新成功。四项静态规则和当前有限配对已有资格，整Host/Provider/App与完整机会覆盖仍未证明，不能显示整体healthy。源码与原生/合成范围见[当前收束报告](../reports/2026-09-21-current-host-contract-convergence.md)。
+`/host-health`已分开显示磁盘候选、运行编译、同代原引用注册、详细边界与累计lease机会。当前API只接受现行完整健康/witness合同，不为旧三项规则或window-only事件读面提供兼容；旧资料保留但不充当新成功。四项静态规则和当前有限配对已有资格，整Host/Provider/App与完整机会覆盖仍未证明，不能显示整体healthy。源码与原生/合成范围见[当前收束报告](../evidence/2026-09/2026-09-21-current-host-contract-convergence.md)。
 
 本轮扩大浏览器回归曾有一次180秒子进程超时和一次保护页刷新后继任链接数为0；后续66节点完整通过，但这两次失败根因仍unverified。已保留超时TAP和链接失败时源状态/页面诊断，未放松断言、跳过场景或自动重试提交。后续独立稳定性检查仍需复现并归因，不把单次重新通过当成这两个缺口已修复。
 
 ### 保护读面并发调查（2026-09-21）
 
-已将同类链接缺席问题追到原SQLite只读连接的native busy等待：多个读者占满libuv线程时，释放锁的原写方提交也无法执行。真实单线程池反例修前失败、修后通过，80轮并发保护读取通过。修复只在原驱动的只读SQL等待层，不缓存健康/绕过历史读取或重放业务事务。[固定范围](../reports/2026-09-21-sqlite-read-scheduling.md)。此前180秒浏览器超时的确切根因仍未证，不把这次修复扩为所有浏览器稳定性已完成。
+已将同类链接缺席问题追到原SQLite只读连接的native busy等待：多个读者占满libuv线程时，释放锁的原写方提交也无法执行。真实单线程池反例修前失败、修后通过，80轮并发保护读取通过。修复只在原驱动的只读SQL等待层，不缓存健康/绕过历史读取或重放业务事务。[固定范围](../evidence/2026-09/2026-09-21-sqlite-read-scheduling.md)。此前180秒浏览器超时的确切根因仍未证，不把这次修复扩为所有浏览器稳定性已完成。
 
-同轮进一步复现独立的 `unsafe_path`：原DELETE journal已被unlink，路径检查返回私有同owner但nlink=0的inode。仅sidecar增加一次重观察，不放宽持久库/对象或任何链接/权限检查；7项确定反例及200轮并发读通过，见[后续journal竞态](../reports/2026-09-21-continuity-journal-race.md)。这与busy调度是两项修复，不用后一次绿色覆盖前一次失败。
+同轮进一步复现独立的 `unsafe_path`：原DELETE journal已被unlink，路径检查返回私有同owner但nlink=0的inode。仅sidecar增加一次重观察，不放宽持久库/对象或任何链接/权限检查；7项确定反例及200轮并发读通过，见[后续journal竞态](../evidence/2026-09/2026-09-21-continuity-journal-race.md)。这与busy调度是两项修复，不用后一次绿色覆盖前一次失败。
 
 ## 验收
 

@@ -48,7 +48,7 @@ grokbox system service get server
 
 确认会初始化/迁移观测域并保存`daemon.observation.runRoot/agentIds`，不会启动管理服务或更改通知授权。字段名称是保留的配置位置，不代表旧 daemon 继续拥有 collector。已运行的匹配管理 Server 会随后采用；重复同一operation核对原指纹，不重建丢失的证据库。实际服务同时消费Host/control journal，各有游标和健康；配置改变时先结算旧collector再替换。缺源、读取成功、原生源活性和采集器存活是不同事实。
 
-`system service get server`只读已存在的管理进程及其 worker 状态，缺服务直接拒绝，不用 GET 创建环境；旧 `runtime monitor service` 与 daemon 状态 RPC 已退出。`ops.monitor.enabled=false`或移除`daemon.observation`会停止相应collector；只关闭通知不关闭采集或必要维护。该入口不是操作系统开机注册，状态保留`bootInstalled=false`。Linux已注册daemon socket可在确证原owner死亡、准确inode及连接拒绝时恢复；未知旧socket、损坏owner或未完成首次绑定不自动清理。原 daemon 窗口的 Node/文件/SQLite 证据保留在[固定回执](../reports/2026-09-19-pre-e2e-observation.md#collector-lifetime)，不改写为新 Server 通过；当前归属、取消、互斥与恢复由[管理服务集成](../../packages/server/test/observations.node.ts)验证，原生现场资格仍另验。
+`system service get server`只读已存在的管理进程及其 worker 状态，缺服务直接拒绝，不用 GET 创建环境；旧 `runtime monitor service` 与 daemon 状态 RPC 已退出。`ops.monitor.enabled=false`或移除`daemon.observation`会停止相应collector；只关闭通知不关闭采集或必要维护。该入口不是操作系统开机注册，状态保留`bootInstalled=false`。Linux已注册daemon socket可在确证原owner死亡、准确inode及连接拒绝时恢复；未知旧socket、损坏owner或未完成首次绑定不自动清理。原 daemon 窗口的 Node/文件/SQLite 证据保留在[固定回执](../evidence/2026-09/2026-09-19-pre-e2e-observation.md#collector-lifetime)，不改写为新 Server 通过；当前归属、取消、互斥与恢复由[管理服务集成](../../packages/server/test/observations.node.ts)验证，原生现场资格仍另验。
 
 ## 命令
 
@@ -109,7 +109,7 @@ grokbox runtime incident <step-id> --agent <agent-id> --from monitor --json
 
 ## 固定 incident 证据（首个 OBS 实施切片）
 
-当前源码已实现以下本地入口；[固定源码与离线回执](../reports/2026-09-18-observation-evidence-first-slice.md)说明实际范围。它们不是自动 Bot 推送已经上线的承诺。
+当前源码已实现以下本地入口；[固定源码与离线回执](../evidence/2026-09/2026-09-18-observation-evidence-first-slice.md)说明实际范围。它们不是自动 Bot 推送已经上线的承诺。
 
 ```text
 grokbox runtime monitor incident <incident-id> --evidence-revision <n> --json
@@ -162,7 +162,7 @@ Journal 与 monitor trace 调用同一纯投影，给出原始提醒决策、当
 
 ## 现行磁盘合同与数据保全
 
-monitor 只接受[现行 SQLite schema](../../packages/box-runtime/src/internal/io/monitor-schema.node.ts)，同时核对 metadata 与物理 header；显式通知请求已在原库增设安全关联，见[通知管理工作包](../reports/2026-09-21-notification-send-management.md)。CONT v4、Routine provision v3 分属各自 owner，不与通用配置 schema 混用。SQLite 依赖和 Node 版本以包声明及安装验证为准；Host/preload 不导入 SQLite、SDK 或 Effect。开发期旧库只作为拒绝／字节保全反例，不是正常运行或初始化的兼容输入。实现与固定范围见[安全存储合同收束](../reports/2026-09-21-current-safety-store-contracts.md)。
+monitor 只接受[现行 SQLite schema](../../packages/box-runtime/src/internal/io/monitor-schema.node.ts)，同时核对 metadata 与物理 header；显式通知请求已在原库增设安全关联，见[通知管理工作包](../evidence/2026-09/2026-09-21-notification-send-management.md)。CONT v4、Routine provision v3 分属各自 owner，不与通用配置 schema 混用。SQLite 依赖和 Node 版本以包声明及安装验证为准；Host/preload 不导入 SQLite、SDK 或 Effect。开发期旧库只作为拒绝／字节保全反例，不是正常运行或初始化的兼容输入。实现与固定范围见[安全存储合同收束](../evidence/2026-09/2026-09-21-current-safety-store-contracts.md)。
 
 这里刻意使用 **DELETE rollback-journal** 的增量页事务，而非 WAL：短事务串行写，严格只读连接不创建 WAL/SHM sidecar。不是每次加载、导出、替换整个 JS 数据库镜像。磁盘引擎缺失/文件坏时明确失败，禁止回退内存或创建空库报健康。
 
@@ -196,7 +196,7 @@ monitor 只接受[现行 SQLite schema](../../packages/box-runtime/src/internal/
 
 `runtime storage status`的maintenance分区显示最近周期、完整成功时间、回收量和running/stopped/interrupted/stale/unavailable，固定回执与暂存各16KiB。footprint在最多2048目录项/深度4内读取受管诊断命名空间的元数据，分开文件长度和allocated块，计入备份/暂存/SQLite辅助文件并按inode去重；不读取正文、不输出文件名、不沿符号链接。扫描缺口与未覆盖owner可见，budgetComparison不是全安装硬预留或删除许可，installationBudgetEnforced仍false。
 
-只读命令不执行维护、恢复或服务安装。必要维护已由真实Node owner离线验证，Box重启自启和成套现役采用另见LIVE。[实现与证明](../reports/2026-09-18-modeld-storage-lifetime.md)。
+只读命令不执行维护、恢复或服务安装。必要维护已由真实Node owner离线验证，Box重启自启和成套现役采用另见LIVE。[实现与证明](../evidence/2026-09/2026-09-18-modeld-storage-lifetime.md)。
 
 ## 结构化 journal 分段与游标
 
@@ -204,7 +204,7 @@ monitor 只接受[现行 SQLite schema](../../packages/box-runtime/src/internal/
 
 现有`runtime incident`、`alerts trace`和monitor采集读取同一分段来源，不要求用户记住归档文件名。旧v1游标按inode续读，新v2游标绑定段ID和字节锚点；正常轮转的短暂过渡显示rotation_in_progress且不新建故障，旧段实际淘汰才返回retired_segment。关闭段半行显示sealed_partial_line，不能拼成新JSON。固定incident revision不随源段删除而改变。
 
-普通GET不恢复轮转、不GC；writer在原锁内继续已登记意图，watchdog对分段只作同协议维护，不重新改写活动inode。目录锁v2仅按PID/UID/启动身份的缺失或变化回收对应唯一token；真实硬崩和竞争回收已验证，不用文件年龄。旧PID-only锁、无完整身份的有限准备槽及损坏/撕裂索引仍保留明确阻断，不清目录造绿。journals分区附带只读lockMetadata占用和owner状态，不输出PID/start/token或进行恢复。collector现有维护子Scope处理两个显式root的登记分段，锁忙立即跳过，通知off不停止维护；安装/自启未由这条接线证明。全安装额度、持久安装、原生采用和独立review仍见[OBS-04](../tickets/OBS-04-bounded-observation-storage.md)及[LIVE](../tickets/LIVE-integration-validation.md#live-obs-storage)。原分段证明见[分段回执](../reports/2026-09-18-structured-journal-rotation.md)，后续配置/锁/维护的原子性和未证边界见[增量回执](../reports/2026-09-18-journal-policy-and-lock-recovery.md)。
+普通GET不恢复轮转、不GC；writer在原锁内继续已登记意图，watchdog对分段只作同协议维护，不重新改写活动inode。目录锁v2仅按PID/UID/启动身份的缺失或变化回收对应唯一token；真实硬崩和竞争回收已验证，不用文件年龄。旧PID-only锁、无完整身份的有限准备槽及损坏/撕裂索引仍保留明确阻断，不清目录造绿。journals分区附带只读lockMetadata占用和owner状态，不输出PID/start/token或进行恢复。collector现有维护子Scope处理两个显式root的登记分段，锁忙立即跳过，通知off不停止维护；安装/自启未由这条接线证明。全安装额度、持久安装、原生采用和独立review仍见[OBS-04](../tickets/OBS-04-bounded-observation-storage.md)及[LIVE](../tickets/LIVE-integration-validation.md#live-obs-storage)。原分段证明见[分段回执](../evidence/2026-09/2026-09-18-structured-journal-rotation.md)，后续配置/锁/维护的原子性和未证边界见[增量回执](../evidence/2026-09/2026-09-18-journal-policy-and-lock-recovery.md)。
 
 ## 资格边界
 

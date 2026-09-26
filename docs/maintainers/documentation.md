@@ -18,10 +18,12 @@ No repository surface is self-authenticating. A source branch shows what may exe
 | Runtime mechanisms and their reasons | Relevant runtime guide and nearby source/test |
 | Scoped unresolved work | Existing ticket, identified by full path |
 | Observed integration result | [LIVE](../tickets/LIVE-integration-validation.md), linked to its bounded report |
-| Historical observations | Existing reports/archive; unverified for a different version or deployment |
+| Historical observations | [Evidence](../evidence/README.md): dated windows under `YYYY-MM/`, cross-window syntheses under `topics/`; unverified for a different version or deployment |
 | Possible future work | Roadmap, explicitly separated from accepted requirements |
 
 Entry files and Skills route to these places. Do not duplicate versions, test counts, temporary inventories or model-specific operating choreography.
+
+A local filesystem path is not automatically confidential. Prefer portable repository-relative links and a clearly named local evidence root; retain a concrete machine path when it materially aids reproduction. Remove credentials, tokens, personal data and private conversation content; do not publish proprietary Host/App bundles. Public evidence should preserve mechanism, source identity, observations and uncertainty even when the underlying POC remains outside the repository. Archiving does not authorize deleting raw evidence or active experiments.
 
 ## Check the change
 

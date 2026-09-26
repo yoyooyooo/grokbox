@@ -24,7 +24,7 @@
 
 工作树 HEAD `a3e9131`，包含持续并行重建；本次重新读了 `packages/server/src/server.ts`、`installed.ts`、重建骨架、Host compatibility、HCR实际加载合同和关键旧切片。Server 源码已经组合 monitor/notification 等 worker；这证明组合入口存在，不证明现场服务已运行。
 
-旧缺口与已验证边界来自[健康链审计](../reports/2026-09-20-host-patch-health-chain-audit.md)及[版本影响报告](../reports/2026-09-20-grok-bot-upstream-impact.md)。本次重跑审计反例、HCR capabilities、preload marker、envelope drift，26 pass / 0 fail / 176 expects / 4 files；没有实际 Gateway、模型或用户数据读取。
+旧缺口与已验证边界来自[健康链审计](../evidence/2026-09/2026-09-20-host-patch-health-chain-audit.md)及[版本影响报告](../evidence/2026-09/2026-09-20-grok-bot-upstream-impact.md)。本次重跑审计反例、HCR capabilities、preload marker、envelope drift，26 pass / 0 fail / 176 expects / 4 files；没有实际 Gateway、模型或用户数据读取。
 
 ### 新的只读技术验证：整包严格 AST 可行，旧 8 MiB 是工具预算限制
 

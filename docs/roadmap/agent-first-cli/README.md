@@ -12,8 +12,8 @@
 | 现有每条命令去哪里？ | [迁移映射](migration-map.md) |
 | 哪些已决定，哪些还有合同工作？ | [决策清单](decisions.md) |
 | 当前实现差额、核心与全产品采用结果在哪里？ | [CLI-05](../../tickets/CLI-05-implementation-follow-through.md)、[核心LIVE集合](../../tickets/LIVE-integration-validation.md#core-runtime-lane) |
-| Web 功能边界与原生来源能达到什么程度？ | [页面目标](../future/webui-console.md)、[固定研究记录](../../reports/2026-09-19-webui-source-feasibility.md) |
-| 早期多视角审查与视觉参考在哪里？ | [固定review](../../reports/2026-09-19-agent-first-cli-review.md)、[V0视觉](../../design/webui/v0/README.md)；均不充当当前资格/最终批准 |
+| Web 功能边界与原生来源能达到什么程度？ | [页面目标](../future/webui-console.md)、[固定研究记录](../../evidence/2026-09/2026-09-19-webui-source-feasibility.md) |
+| 早期多视角审查与视觉参考在哪里？ | [固定review](../../evidence/2026-09/2026-09-19-agent-first-cli-review.md)、[V0视觉](../../design/webui/v0/README.md)；均不充当当前资格/最终批准 |
 
 ## 接续方式
 

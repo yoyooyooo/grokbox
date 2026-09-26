@@ -27,4 +27,4 @@ Server registration owns execution ownership; native Host writers own Box conver
 
 Gateway, Sandbox, quota and desktop integration depend on undocumented upstream behavior and require scoped revalidation. Credentials for one surface do not authorize another. Private research and machine evidence are never public build dependencies.
 
-[Documentation](docs/README.md) routes current contracts and operating guides. [Roadmap](docs/roadmap/README.md) owns remaining accepted work and candidates. [Archive](docs/archive/README.md) explains retired design and evidence without reviving old instructions.
+[Documentation](docs/README.md) routes current contracts and operating guides. [Roadmap](docs/roadmap/README.md) owns remaining accepted work and candidates. [Evidence](docs/evidence/README.md) unifies dated observations and historical themes without reviving old instructions.

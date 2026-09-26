@@ -2,7 +2,7 @@
 
 **状态：Partial implementation。材料/操作纯合同、安全意图、一次 claim、unknown 对账、runtime.continuity 配置及有限生命周期/保护/关系记录已接入；完整逐职责效果约束、多代收口和安全墓碑退役仍未实现，字段存在不证明所有消费者已采用。**
 
-配置以 [实际 schema](../../packages/runtime-kernel/src/internal/config/schema.ts)及 [protection 规则](../../packages/runtime-kernel/src/internal/continuity/protection.ts)为准，工作流持久化见 [原 owner](../../packages/box-runtime/src/internal/io/continuity-workflows.node.ts)。新增限定证明见 [生命周期报告](../reports/2026-09-19-continuity-lifecycle-integration.md)；现役和完整默认自动化不从源码接线推导。
+配置以 [实际 schema](../../packages/runtime-kernel/src/internal/config/schema.ts)及 [protection 规则](../../packages/runtime-kernel/src/internal/continuity/protection.ts)为准，工作流持久化见 [原 owner](../../packages/box-runtime/src/internal/io/continuity-workflows.node.ts)。新增限定证明见 [生命周期报告](../evidence/2026-09/2026-09-19-continuity-lifecycle-integration.md)；现役和完整默认自动化不从源码接线推导。
 
 合同：[S13策略](../roadmap/box-runtime-impl-spec.md#continuity-policy-evidence)与[全程里程碑](../roadmap/box-runtime-impl-spec.md#continuity-delivery)。
 
@@ -10,11 +10,11 @@
 
 CONT私有管理SQLite保存内容绑定的operation、policy revision、snapshot引用与effect ID。prepare不派发；claim在返回唯一的本地派发标志前持久化effect_unknown，重复调用或新进程不再获得第二次claim。只有显式结算材料才能变为succeeded/not_executed，未知不因时间、换请求ID或诊断GC而消失；真实外部权限和副作用由相应原生/控制 owner 单独核验，回执始终不授予执行权限。
 
-最低安全记录容量不足拒绝新增操作；当前安全墓碑尚未取得语义退役资格，保留最小记录并报告blocked，不宣称无限请求/长期日用已闭合。真实CONT恢复与安全owner共用本域DB，OBS诊断库只接事件与证据引用。[实现/进程崩溃/J1接线报告](../reports/2026-09-18-continuity-recovery-store.md)固定早期存储切片的证明；不代替配置授权、职责冲突/继任generation、原生效果或独立review。
+最低安全记录容量不足拒绝新增操作；当前安全墓碑尚未取得语义退役资格，保留最小记录并报告blocked，不宣称无限请求/长期日用已闭合。真实CONT恢复与安全owner共用本域DB，OBS诊断库只接事件与证据引用。[实现/进程崩溃/J1接线报告](../evidence/2026-09/2026-09-18-continuity-recovery-store.md)固定早期存储切片的证明；不代替配置授权、职责冲突/继任generation、原生效果或独立review。
 
 ## self-reset 的有限职责消费
 
-AH-133 在原 queued-control owner 中保存 version 1 的原请求、source revision/generation、policy revision、材料与 workflow 引用及逐职责结果。admit 只持久登记；claim 和 settle 具有独立的严格边界，通用控制入口不能绕过。未知结果只接受原请求摘要绑定的显式观察，不能重放效果或抹去已完成职责；未决输入/输出材料和退役 workflow 引用仍受 GC 保护。有限预算、公开 API、实际反例及尚未接通的原生责任见 [C1 报告](../reports/2026-09-22-self-reset-queue.md)。这不关闭完整生命周期的多代职责/退役义务。
+AH-133 在原 queued-control owner 中保存 version 1 的原请求、source revision/generation、policy revision、材料与 workflow 引用及逐职责结果。admit 只持久登记；claim 和 settle 具有独立的严格边界，通用控制入口不能绕过。未知结果只接受原请求摘要绑定的显式观察，不能重放效果或抹去已完成职责；未决输入/输出材料和退役 workflow 引用仍受 GC 保护。有限预算、公开 API、实际反例及尚未接通的原生责任见 [C1 报告](../evidence/2026-09/2026-09-22-self-reset-queue.md)。这不关闭完整生命周期的多代职责/退役义务。
 
 ## 人工生命周期的管理主体
 

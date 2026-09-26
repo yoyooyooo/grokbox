@@ -8,11 +8,11 @@
 
 `openContinuityRecoveryStore`通过生产Effect程序维护CONT私有`continuity/state.sqlite`、content-addressed对象和staging；recovery/safety共用该管理DB，不受OBS诊断TTL支配。显式初始化、完整声明图/hash验证、先reservation后发布、unknown读回、引用与GC共同事务、先退役metadata后unlink、最近两份及最后可靠原生点保护已实现。GET无写入，不安装新timer或自动捕获真实Bot。
 
-实际入口、114项组合证明和未证项见[固定报告](../reports/2026-09-18-continuity-recovery-store.md)。新增验证入口`node scripts/verify-runtime-rebuild.mjs continuity-store`使用声明的Bun/Node。该早期存储组合的材料是 synthetic opaque bytes，`nativeImportProven=false` 仅描述其证明边界；不能用它否定后续原生 capture/导入接线，也不能从管理层闭包推出所有原生隐含引用已齐。新增受限 Memory/历史/指令补充、保护配置和生命周期引用保护见 [生命周期报告](../reports/2026-09-19-continuity-lifecycle-integration.md)。全材料/附件映射、自动安全点、源资源独立、持续安装和全安装物理预算仍未关闭。
+实际入口、114项组合证明和未证项见[固定报告](../evidence/2026-09/2026-09-18-continuity-recovery-store.md)。新增验证入口`node scripts/verify-runtime-rebuild.mjs continuity-store`使用声明的Bun/Node。该早期存储组合的材料是 synthetic opaque bytes，`nativeImportProven=false` 仅描述其证明边界；不能用它否定后续原生 capture/导入接线，也不能从管理层闭包推出所有原生隐含引用已齐。新增受限 Memory/历史/指令补充、保护配置和生命周期引用保护见 [生命周期报告](../evidence/2026-09/2026-09-19-continuity-lifecycle-integration.md)。全材料/附件映射、自动安全点、源资源独立、持续安装和全安装物理预算仍未关闭。
 
 ## 当前管理服务接线
 
-CONT 当前只消费 schema 4；身份读取、普通操作及 initializer 都拒绝旧版本，既有库的初始化为只读核验，不补列、重放 DDL 或修复对象目录。旧版本 unknown/effectId 保留原字节，不能被重解释为新许可；原现行版本的回执恢复、引用/GC和当前状态程序不变。此项[安全账本收束](../reports/2026-09-21-current-safety-store-contracts.md)不等于完整材料或现场恢复资格。
+CONT 当前只消费 schema 4；身份读取、普通操作及 initializer 都拒绝旧版本，既有库的初始化为只读核验，不补列、重放 DDL 或修复对象目录。旧版本 unknown/effectId 保留原字节，不能被重解释为新许可；原现行版本的回执恢复、引用/GC和当前状态程序不变。此项[安全账本收束](../evidence/2026-09/2026-09-21-current-safety-store-contracts.md)不等于完整材料或现场恢复资格。
 
 [保护服务](../../packages/box-runtime/src/internal/roots/protection-service.runtime.ts)已按新架构拥有默认发现和分档捕获通道；复用上述原 vault、原生 checkpoint 与有界 fallback，不创建第二材料库。`bot snapshot list/get`、Web `/protection` 只读取原发布记录的元数据，正文、实际原生导入和当前可用性分开。unsupported capture 保持 snapshot_unavailable，不能为页面生成替代成功材料。慢捕获与归属观察/暂停分离；关闭等待真实回调和最后本地写入，subject/workflow 引用仍参与原 GC 事务。
 
@@ -24,11 +24,11 @@ CONT 当前只消费 schema 4；身份读取、普通操作及 initializer 都�
 
 档位为observe、memory、resume（新保护默认）、archive，另有off。级别增加材料覆盖，不扩大自动操作权限；resume必须保存root必要的完整依赖，archive不是整盒备份或多会话。
 
-**协调器早期证据（2026-09-18）：** [固定报告](../reports/2026-09-18-continuity-current-state.md)验证有限 read port、预算、原始 root 字节、前后 revision 和不可变材料；当时原生端是 owned 合成协议。这份证据不签原生 capture，但当前 binding 已按下节接通，不能把“尚未接官方 decoder”作为今天的实现状态。重复请求仍返回原快照，不重新读取或写入源。
+**协调器早期证据（2026-09-18）：** [固定报告](../evidence/2026-09/2026-09-18-continuity-current-state.md)验证有限 read port、预算、原始 root 字节、前后 revision 和不可变材料；当时原生端是 owned 合成协议。这份证据不签原生 capture，但当前 binding 已按下节接通，不能把“尚未接官方 decoder”作为今天的实现状态。重复请求仍返回原快照，不重新读取或写入源。
 
 ## 材料与恢复质量
 
-具体原生引用捕获已在`host/native-checkpoint.ts`实现并接到CONT协调/存储：完整遍历限定schema的引用，包含原生GC省略的历史root/摘要归档，处理嵌套map与循环；字节/编码/依赖不合法拒绝native候选，不静默丢边。当前已用原生Host/worker对及新Node进程取得[限定证明](../reports/2026-09-18-continuity-native-checkpoint.md)。后续已接入原生worker同连接串行事务和读取前长度预算，正式profile/RPC手动捕获入口见[当前操作指南](../maintainers/current-state-control.md)。主Host与worker的实际安装、真实Bot采集仍须LIVE；全Memory/展示历史/附件采集与四档自动触发仍是本票实现工作，native引用图通过不等于整Bot材料齐备。
+具体原生引用捕获已在`host/native-checkpoint.ts`实现并接到CONT协调/存储：完整遍历限定schema的引用，包含原生GC省略的历史root/摘要归档，处理嵌套map与循环；字节/编码/依赖不合法拒绝native候选，不静默丢边。当前已用原生Host/worker对及新Node进程取得[限定证明](../evidence/2026-09/2026-09-18-continuity-native-checkpoint.md)。后续已接入原生worker同连接串行事务和读取前长度预算，正式profile/RPC手动捕获入口见[当前操作指南](../maintainers/current-state-control.md)。主Host与worker的实际安装、真实Bot采集仍须LIVE；全Memory/展示历史/附件采集与四档自动触发仍是本票实现工作，native引用图通过不等于整Bot材料齐备。
 
 root槽位ID可不变而字节变化，compact rootRevision也不是完整Bot版本。快照记录实际root/闭包hash、Host/schema、Memory分层版本、转录和关系水位、model/effort/配置、必要资源与未决动作。原生最近提交、最后完整保全、各职责安全续接点分开；保存pending/partial不等于允许重放。
 

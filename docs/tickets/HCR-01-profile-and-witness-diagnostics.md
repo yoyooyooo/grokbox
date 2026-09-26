@@ -19,8 +19,8 @@ Status: linearly integrated into v2 / implementer-reviewed / Bun 1.3.14 full-inv
 
 ## Evidence
 
-固定实现 `aefe851` 已线性合入v2并复验，见[集成窗口](../reports/2026-09-18-host-capability-recovery-offline.md#hcr-v2-integration)。本票无已登记未实现功能；独立复审外部依赖统一见[HCR-02残项](HCR-02-loaded-capabilities.md#independent-review-residue)，不能算作live或已通过。以下记录保留各历史窗口的原范围。
+固定实现 `aefe851` 已线性合入v2并复验，见[集成窗口](../evidence/2026-09/2026-09-18-host-capability-recovery-offline.md#hcr-v2-integration)。本票无已登记未实现功能；独立复审外部依赖统一见[HCR-02残项](HCR-02-loaded-capabilities.md#independent-review-residue)，不能算作live或已通过。以下记录保留各历史窗口的原范围。
 
-源码及安装包CLI已增加`error.profileWrite`的有限诊断投影，保留refusal与slice/code，不回传源码或replacement；测试覆盖额外字段和访问器。与HCR其余阶段的验证范围、工具版本及剩余审查见[离线报告](../reports/2026-09-18-host-capability-recovery-offline.md)。后续Bun1.3.14完整清单已验证，独立审查服务503仍未产生报告；见[补充窗口](../reports/2026-09-18-host-capability-recovery-offline.md#hcr-pinned-qualification)。
+源码及安装包CLI已增加`error.profileWrite`的有限诊断投影，保留refusal与slice/code，不回传源码或replacement；测试覆盖额外字段和访问器。与HCR其余阶段的验证范围、工具版本及剩余审查见[离线报告](../evidence/2026-09/2026-09-18-host-capability-recovery-offline.md)。后续Bun1.3.14完整清单已验证，独立审查服务503仍未产生报告；见[补充窗口](../evidence/2026-09/2026-09-18-host-capability-recovery-offline.md#hcr-pinned-qualification)。
 
 以下仅为HCR-01早期切片记录，不签后续整合头的目标工具链；最终实测版本与范围以上方离线报告为准。2026-09-18早期记录：声明版本 Bun 1.3.14 frozen install、typecheck通过；`hcr-diagnostics`、`reviewed-profile-write`、`reviewed-profile-write-lineage`、`ownership-coordinator`、`ownership-availability-presentation` 五文件合计101 pass / 0 fail。新增15项覆盖配方原子拒绝、witness细因、getter/自由字符串脱敏和动态失败不导向组件升级。当前真实加载与App验收只看 [LIVE](LIVE-integration-validation.md#live-host-capability-recovery)，这里不另维护live进度。

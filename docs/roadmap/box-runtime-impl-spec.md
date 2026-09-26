@@ -2,7 +2,7 @@
 
 This former monolithic implementation specification no longer owns current contracts or a construction sequence. Use the concern below directly. Stable historical anchors are retained for existing tickets/reports and external references; they do not revive old model choices, wire versions, layouts, milestone order or permissions.
 
-The exact pre-convergence text and unresolved-obligation mapping are preserved in [the rebuild archive](../archive/runtime-rebuild.md). Current product semantics are [Product](../product-contract.md), architecture is [Architecture](../architecture.md), and the only current live result index is [LIVE](../tickets/LIVE-integration-validation.md).
+The exact pre-convergence text and unresolved-obligation mapping are preserved in [the rebuild archive](../evidence/topics/runtime-rebuild.md). Current product semantics are [Product](../product-contract.md), architecture is [Architecture](../architecture.md), and the only current live result index is [LIVE](../tickets/LIVE-integration-validation.md).
 
 | Historical anchor | Current owning home |
 | --- | --- |
@@ -30,7 +30,7 @@ The exact pre-convergence text and unresolved-obligation mapping are preserved i
 | <a id="backends"></a>Backends | [Execution](../runtime/execution.md), [future scope](README.md) |
 | <a id="recovery-diagnostics"></a>Recovery | [Context](../runtime/context.md), [maintainer routes](../maintainers/README.md) |
 | <a id="pi-ai-qualification"></a>Pi transport candidate | [PI-AI-01](../tickets/PI-AI-01-model-backend-qualification.md) |
-| <a id="delete"></a>POC retirement | [Rebuild archive](../archive/runtime-rebuild.md) |
+| <a id="delete"></a>POC retirement | [Rebuild archive](../evidence/topics/runtime-rebuild.md) |
 | <a id="tickets"></a>Implementation work | [Ticket routes](../tickets/README.md) |
 | <a id="proof"></a>Proof | [Acceptance](../runtime/acceptance.md) |
 | <a id="ownership-release-proof"></a>Ownership release | [Acceptance](../runtime/acceptance.md), [LIVE](../tickets/LIVE-integration-validation.md) |

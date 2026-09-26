@@ -10,7 +10,7 @@ A22 已落实到[启用程序](../../packages/box-runtime/src/internal/roots/ops
 
 `notification send <notification-ref> --receiver <receiver-ref> --request-id <uuid> --expect-revision <n> --expect-model-revision <sha256> --confirm` 和 Web 共用管理 Server；独立 `notifications.send` 权限不由 read/test/enable 代授。原 OBS schema 5 的 `notification_sends` 将安装/主体/原数据库/request 与既有 incident work、实际 attempt 事务关联，不另建通用操作库。`operation get --domain notification --database-id <uuid> --request-id <uuid>` 只读原请求。丢 claim ACK、并发、Server 硬崩/重启和自动 worker 竞争都不授权第二次 POST；历史成功不恢复授权，也不要求当前配置或原生可用。旧 `ops notifications send/list/show` 注册、CLI writer 及单独查询/发送 facade 已退出，没有兼容转发。
 
-浏览器审阅绑定/模型并单独确认费用，只存原 work/request 定位；unknown 刷新后只查询，不重发。原发送程序、私有凭据出口、预算与 HTTP 结算继续复用。当前观测库只接受 schema 5，不自动升级旧库；CONT/Routine 不变。实现/失败复现与固定验证见[显式通知管理工作包](../reports/2026-09-21-notification-send-management.md)。这只关闭入口迁移；有限重试见下节，上游对账、长期安全退役与独立告警出口仍需分别验收。
+浏览器审阅绑定/模型并单独确认费用，只存原 work/request 定位；unknown 刷新后只查询，不重发。原发送程序、私有凭据出口、预算与 HTTP 结算继续复用。当前观测库只接受 schema 5，不自动升级旧库；CONT/Routine 不变。实现/失败复现与固定验证见[显式通知管理工作包](../evidence/2026-09/2026-09-21-notification-send-management.md)。这只关闭入口迁移；有限重试见下节，上游对账、长期安全退役与独立告警出口仍需分别验收。
 
 ## Status / Goal
 
@@ -40,7 +40,7 @@ bridge receipts明确`transport=unavailable/automaticRetry=false`，本地export
 
 定向证据：`ops-notification-outbox.test.ts`（30 项，含真实 SQLite/强杀/回滚）、`notification-restore-fence.test.ts`、`ops-automatic-notification.test.ts`、`ops-native-notification.test.ts`、管理 Node/HTTP/Client 严格响应检查。均使用自有配置根及接收端，不是现役 Bot 或 App 展示证明。
 
-联合候选另已从实际公开来源 producer 消费 `sourceChange`，沿原 OBS/outbox 自动投递至自有 HTTP 接收端并完成授权认领/结果。补齐实际事件 `host_compatibility` 的通知校验与安全摘要；HTTP 后结算保留先前 taskReceipt，认领或报告不把未知传输升级为受理。无关更新不发送、相关同形与结构变化分别派工，证据与固定来源见[联合集成回执](../reports/2026-09-25-host-notification-integration.md)。默认普通用户出口、未知原生操作的实际对账和真实 Bot/App 仍为未完成义务；后续待发冷启动恢复见上节，不由组合通过代签真实收到。
+联合候选另已从实际公开来源 producer 消费 `sourceChange`，沿原 OBS/outbox 自动投递至自有 HTTP 接收端并完成授权认领/结果。补齐实际事件 `host_compatibility` 的通知校验与安全摘要；HTTP 后结算保留先前 taskReceipt，认领或报告不把未知传输升级为受理。无关更新不发送、相关同形与结构变化分别派工，证据与固定来源见[联合集成回执](../evidence/2026-09/2026-09-25-host-notification-integration.md)。默认普通用户出口、未知原生操作的实际对账和真实 Bot/App 仍为未完成义务；后续待发冷启动恢复见上节，不由组合通过代签真实收到。
 
 ## 单次可靠投递切片（2026-09-18）
 
@@ -58,19 +58,19 @@ bridge receipts明确`transport=unavailable/automaticRetry=false`，本地export
 
 管理用例使用 `ops-explicit-delivery.runtime.ts` 的原 prepared driver 装配现有程序，`ops-bindings.node.ts`在私有owner内持key调用`native-notification.node.ts`；生产只允许已登记backend，Node HTTPS验证证书且不重定向/重试。固定body再次全量重构校验，响应仅有界计数，不输出正文/敏感头。完整200与Bot报告、用户已读分列；断连/异常响应保持unknown，取消必须结算真实描述符。当前控制命令是explicit，不产生永久automaticDelivery授权。
 
-官方HTTP事实已写入[上游Current Home](../upstream-integration.md#native-routine-and-notification-webhook-boundary)。固定源码/Node/HTTP证明与两次整目录测试宿主超时的诚实限定见[回执](../reports/2026-09-18-explicit-native-notification.md)。
+官方HTTP事实已写入[上游Current Home](../upstream-integration.md#native-routine-and-notification-webhook-boundary)。固定源码/Node/HTTP证明与两次整目录测试宿主超时的诚实限定见[回执](../evidence/2026-09/2026-09-18-explicit-native-notification.md)。
 
 ## 持久授权与自动发送
 
 新 `notification receiver enable` 需要原接收者引用、绑定 revision、核验得到的模型 revision、持久 request UUID 和明确费用授权。当前身份/模型/Routine/配置仍须通过只读 preflight，但不需要测试或用户已读声明。同一私有 capsule 原子保存 v2 explicit-enable 授权、revision 和操作回执；新动作不领取 key、启用原生 Routine、启动服务或发送消息。原生 Routine 的准备/启用是独立设置步骤。disable/unbind 也通过同一管理用例与 receipt writer；禁用可保留私有凭据供以后显式重新启用，解绑清除本地凭据而不宣称上游撤销。
 
-历史回执绑定安装、主体、数据库、request UUID 与输入摘要，先于当前 revision/配置/原生读取返回；撤销或后续启用不改写现行合同的旧回执，重放旧 enable 不复活授权。实时授权只接受 v2 explicit-enable；历史 v1 tested-consent 胶囊保留字节，但不能被当前 reader/worker 当成有效授权、自动归一化或重新启用。验证在读取 version 前检查准确 own-data 字段，不执行 getter 或接受继承字段。含旧授权且有新待投递 work 的真实私有胶囊反例验证零新增原生读取/HTTP/attempt；完整范围见[现行安全账本与授权收束](../reports/2026-09-21-current-safety-store-contracts.md)。
+历史回执绑定安装、主体、数据库、request UUID 与输入摘要，先于当前 revision/配置/原生读取返回；撤销或后续启用不改写现行合同的旧回执，重放旧 enable 不复活授权。实时授权只接受 v2 explicit-enable；历史 v1 tested-consent 胶囊保留字节，但不能被当前 reader/worker 当成有效授权、自动归一化或重新启用。验证在读取 version 前检查准确 own-data 字段，不执行 getter 或接受继承字段。含旧授权且有新待投递 work 的真实私有胶囊反例验证零新增原生读取/HTTP/attempt；完整范围见[现行安全账本与授权收束](../evidence/2026-09/2026-09-21-current-safety-store-contracts.md)。
 
 管理 Server 的 Effect Scope 现持有`startOpsNotificationWorker`，复用此前 daemon 中的领域逻辑而不保留旧自动 sender。每轮最多一条，空闲5秒、阻断30秒起指数退避到5分钟，上一轮结算后才等下一轮；无新work/关闭/预算不足时不访问原生。只处理创建时间严格晚于授权边界的work，历史积压不补发；复用原outbox、私有owner和HTTPS，不增加router/队列/凭据文件。每次发送重新核对模型、Host/账户代际、Routine、scope、预算和撤销。unknown仍不可重投，退出中止并等待真实HTTP与落盘结算，不留后台晚写。
 
 `notification status` 经共享管理 API 读取安全 worker 状态，使用独立 notifications.read 权限；旧 `ops notifications worker` 命令退出，不做兼容转发。`notification receiver list/get/verify` 已经共享 API 区分私有绑定、持久授权与当前资格；初始设置已通过 `notification settings get/apply`、`notification receiver blueprint/bind` 和 `routine` 入口接入同一管理服务。disable/unbind删除授权并递增revision。循环自身不调用模型，但发送原生提醒可能消耗模型额度。collector生产新work和管理服务开机安装仍是独立前置，不由sender自动初始化观测库或启动采集。
 
-专项`automatic-notification`131 pass/0 fail，含真实私有capsule/SQLite/loopback HTTP、并发与撤销、daemon生命周期及打包Node。与最新v2的CONT交叉回归52项通过；完整回归范围与末组工具拦截见[固定回执](../reports/2026-09-19-automatic-notification.md)。
+专项`automatic-notification`131 pass/0 fail，含真实私有capsule/SQLite/loopback HTTP、并发与撤销、daemon生命周期及打包Node。与最新v2的CONT交叉回归52项通过；完整回归范围与末组工具拦截见[固定回执](../evidence/2026-09/2026-09-19-automatic-notification.md)。
 
 ## 发生时间与恢复后自动重放防护（2026-09-19）
 
@@ -78,7 +78,7 @@ collector组合反例已修复：自动选择和直接自动发送同时检查in
 
 管理服务的自动 sender 继续持有`notice-replay-fence.ts`：本次worker启动前的work/发生周期不自动补投；真正POST之前记住稳定occurrence摘要，数据库恢复掉attempt或给同一故障换work ID也不能绕过。遇到live记忆存在但DB attempt缺失，将精确匹配的work隔离为unknown，不伪造成功，并让其他新故障继续发送。有限guard在work期限及原始15分钟发生窗口都过后可退役，时间高水位拒绝回拨。停止后留下的旧work需要显式对账；不以重启重新授权、补领凭据或延长旧授权。
 
-该证明由`notification-restore-fence.test.ts`的真实SQLite备份还原/loopback HTTP提供。它不是所有安全账本的恢复协议，也不签整机快照/系统时间回退后的全局计费计数、显式人工重发或上游副作用对账。完整安全退役仍归OBS-05，源文件和固定测试证据见[本次回执](../reports/2026-09-19-pre-e2e-observation.md#restore-fence)。
+该证明由`notification-restore-fence.test.ts`的真实SQLite备份还原/loopback HTTP提供。它不是所有安全账本的恢复协议，也不签整机快照/系统时间回退后的全局计费计数、显式人工重发或上游副作用对账。完整安全退役仍归OBS-05，源文件和固定测试证据见[本次回执](../evidence/2026-09/2026-09-19-pre-e2e-observation.md#restore-fence)。
 
 ## 新管理宿主与安全读面
 
@@ -116,7 +116,7 @@ unknown默认不重投/不切备用；确定未接收有限退避，遵守安装
 
 ## Executable acceptance
 
-已实现`packages/box-runtime/test/ops-notification-outbox.test.ts`（含真实source/packed CLI、子进程强杀）和`packages/runtime-kernel/test/ops-routing.test.ts`；组合`bun scripts/verify-runtime-rebuild.mjs ops-notification`。固定结果与依赖范围见[本片回执](../reports/2026-09-18-notification-outbox.md)。
+已实现`packages/box-runtime/test/ops-notification-outbox.test.ts`（含真实source/packed CLI、子进程强杀）和`packages/runtime-kernel/test/ops-routing.test.ts`；组合`bun scripts/verify-runtime-rebuild.mjs ops-notification`。固定结果与依赖范围见[本片回执](../evidence/2026-09/2026-09-18-notification-outbox.md)。
 
 HTTP验证实际实现为`packages/box-runtime/test/ops-native-notification.test.ts`与`test/ops-native-notification-cli.test.ts`，含独立Node传输子进程，不另建同义空文件。组合`bun scripts/verify-runtime-rebuild.mjs native-notification`122 pass；全仓不重叠分组2612 pass/20 skip/0 fail。管理服务的自动worker已有源码/隔离验证；实际原生TLS/接收者回合、collector安装和native对账仍待资格，不能把loopback HTTP算native产品已收到。
 

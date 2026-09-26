@@ -20,12 +20,12 @@ Status: existing recovery implementation retained; current-contract retirement i
 
 ## Current contract
 
-现行operation lease是唯一锁writer；旧PID-only写入器、未被生产消费的coordinator锁writer及其专属路径已退出。原生身份操作、controller与Scope取消全部使用同一实现。owner在首次属性读取前验证自有数据descriptor并复制，getter／继承／隐藏字段不能成为进程身份。正向中断fixture由真实子进程调用当前writer后退出，不手造一个数字PID以通过测试。旧现场资料只保全，不转为当前成功；这不取消独立的原Host恢复职责。固定工作包见[当前恢复与验证入口](../reports/2026-09-21-current-recovery-entrypoints.md)。
+现行operation lease是唯一锁writer；旧PID-only写入器、未被生产消费的coordinator锁writer及其专属路径已退出。原生身份操作、controller与Scope取消全部使用同一实现。owner在首次属性读取前验证自有数据descriptor并复制，getter／继承／隐藏字段不能成为进程身份。正向中断fixture由真实子进程调用当前writer后退出，不手造一个数字PID以通过测试。旧现场资料只保全，不转为当前成功；这不取消独立的原Host恢复职责。固定工作包见[当前恢复与验证入口](../evidence/2026-09/2026-09-21-current-recovery-entrypoints.md)。
 
 ## Historical evidence
 
-固定实现 `aefe851` 已线性合入v2并复验，见[集成窗口](../reports/2026-09-18-host-capability-recovery-offline.md#hcr-v2-integration)。本票无已登记未实现功能；独立复审外部依赖统一见[HCR-02残项](HCR-02-loaded-capabilities.md#independent-review-residue)。macOS不是本次Linux Box恢复验收的额外前置；实际Host提交与恢复仅归LIVE。
+固定实现 `aefe851` 已线性合入v2并复验，见[集成窗口](../evidence/2026-09/2026-09-18-host-capability-recovery-offline.md#hcr-v2-integration)。本票无已登记未实现功能；独立复审外部依赖统一见[HCR-02残项](HCR-02-loaded-capabilities.md#independent-review-residue)。macOS不是本次Linux Box恢复验收的额外前置；实际Host提交与恢复仅归LIVE。
 
 `hcr-operation-recovery.test.ts` 的14项隔离测试覆盖持有进程退出、并发恢复、PID身份、损坏/替换文件、持久化失败与后续恢复；源码及安装包CLI复用同一断言，Node20入口实测通过。`f3b831b` 将CLI取消接入原Effect根，增加 `hcr-operation-lifetime.test.ts` 5项生产lease测试：持锁与申请中取消、预取消零gate、只读取证中取消、提交中取消不提前放锁。取消/失败的回执明确保留元数据可能已提交的未知结果，不承诺回滚。
 
-Bun1.3.14完整清单验证通过。以上只使用临时root与一次性子进程，不扩展为旧版不协作写者、真实adopt提交或macOS执行证明。独立审查调用返回503，未取得review报告；详见[补充窗口](../reports/2026-09-18-host-capability-recovery-offline.md#hcr-pinned-qualification)。真实中断/attestation窗口只登记 [LIVE](LIVE-integration-validation.md#live-host-capability-recovery)。
+Bun1.3.14完整清单验证通过。以上只使用临时root与一次性子进程，不扩展为旧版不协作写者、真实adopt提交或macOS执行证明。独立审查调用返回503，未取得review报告；详见[补充窗口](../evidence/2026-09/2026-09-18-host-capability-recovery-offline.md#hcr-pinned-qualification)。真实中断/attestation窗口只登记 [LIVE](LIVE-integration-validation.md#live-host-capability-recovery)。

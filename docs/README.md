@@ -24,8 +24,8 @@ Exact command inventory is derived from the [registry](../packages/cli/src/regis
 
 [Maintainer guides](maintainers/README.md) route diagnosis, configuration, current-state control, recovery, release and provider qualification. [LIVE-integration-validation](tickets/LIVE-integration-validation.md) alone maintains current live results; its [execution guide](maintainers/live-end-to-end.md) owns procedure, not another status table.
 
-[Implementation tickets](tickets/README.md) own scoped code/offline/review gaps. [Roadmap](roadmap/README.md) separates remaining accepted targets from unaccepted or unscheduled extensions. [Decisions](decisions/README.md) explain adopted choices and explicit supersession. [Archive](archive/README.md) routes retired design and fixed evidence; historical success does not qualify a new deployment.
+[Implementation tickets](tickets/README.md) own scoped code/offline/review gaps. [Roadmap](roadmap/README.md) separates remaining accepted targets from unaccepted or unscheduled extensions. [Decisions](decisions/README.md) explain adopted choices and explicit supersession. [Evidence](evidence/README.md) unifies dated verification windows and cross-window themes; historical success does not qualify a new deployment.
 
 ## Maintain these routes
 
-[Documentation maintenance](maintainers/documentation.md) defines source alignment, freshness, ticket identity, archive/receipt lifecycles and checks. Update the owning meaning and its actual consumers together. Routers link to facts; they do not copy schema versions, test counts, temporary blockers, deployment status or worktree inventories.
+[Documentation maintenance](maintainers/documentation.md) defines source alignment, freshness, ticket identity, evidence lifecycles and checks. Update the owning meaning and its actual consumers together. Routers link to facts; they do not copy schema versions, test counts, temporary blockers, deployment status or worktree inventories.

@@ -60,7 +60,8 @@ function completionIssues(resultCell: string): string[] {
   const checked = /^\[x\]\s/i.test(resultCell), passed = /`passed`/.test(resultCell);
   const issues: string[] = [];
   if (checked !== passed) issues.push("completion_mark_must_match_passed");
-  const reports = [...resultCell.matchAll(/\]\((\.\.\/reports\/[^)\s]+)\)/g)].map(match => match[1]!);
+  // A completed scenario cites one dated observation, not a theme synthesis.
+  const reports = [...resultCell.matchAll(/\]\((\.\.\/evidence\/\d{4}-\d{2}\/[^)\s]+)\)/g)].map(match => match[1]!);
   if (passed && (reports.length !== 1 || !/\.md#[^#\s]+$/.test(reports[0]!))) issues.push("one_current_anchored_report_required");
   return issues;
 }
@@ -68,12 +69,14 @@ function completionIssues(resultCell: string): string[] {
 test("completion ticks require one current per-scenario evidence pointer, not a growing report history", () => {
   for (const row of rows) expect(completionIssues(cells(row)[1]!), idOf(row)).toEqual([]);
   // Parser fixtures only: these are not live results or links in the index.
-  const proof = "[evidence](../reports/example-live-window.md#live-example)";
+  const proof = "[evidence](../evidence/2026-09/2026-09-26-example-live-window.md#live-example)";
   expect(completionIssues(`[x] \`integrated\`；\`passed\`；candidate；${proof}`)).toEqual([]);
   expect(completionIssues("[ ] `integrated`；`blocked`；ENV")).toEqual([]);
   expect(completionIssues(`[ ] \`passed\`；${proof}`)).toContain("completion_mark_must_match_passed");
   expect(completionIssues("[x] `blocked`")).toContain("completion_mark_must_match_passed");
-  expect(completionIssues("[x] `passed`；[window](../reports/example-live-window.md)"))
+  expect(completionIssues("[x] `passed`；[window](../evidence/2026-09/2026-09-26-example-live-window.md)"))
     .toContain("one_current_anchored_report_required");
   expect(completionIssues(`[x] \`passed\`；${proof}；${proof}`)).toContain("one_current_anchored_report_required");
+  expect(completionIssues("[x] `passed`；[theme](../evidence/topics/example.md#live-example)"))
+    .toContain("one_current_anchored_report_required");
 });

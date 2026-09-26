@@ -54,7 +54,7 @@ Authority: [Spec S11](../roadmap/box-runtime-impl-spec.md#model-reasoning-policy
 
 ## 当前 v2 集成回执（2026-09-17）
 
-已按本轮指令变基到最新 v2 `fa476b1`，并由 `git merge --ff-only` 快进至 `e82d116`。原实现 `1e9a76a → ac73435`，原回执 `1108011 → 697fe0c`；新装 model v2、迁移 preview 身份及单一命令面交叉修复为 `0f2cd0a`。完整映射、制品摘要、运行命令、实际回执和边界见 [集成报告](../reports/2026-09-17-reasoning-v2-integration.md)。
+已按本轮指令变基到最新 v2 `fa476b1`，并由 `git merge --ff-only` 快进至 `e82d116`。原实现 `1e9a76a → ac73435`，原回执 `1108011 → 697fe0c`；新装 model v2、迁移 preview 身份及单一命令面交叉修复为 `0f2cd0a`。完整映射、制品摘要、运行命令、实际回执和边界见 [集成报告](../evidence/2026-09/2026-09-17-reasoning-v2-integration.md)。
 
 本轮组合代码全库 2190 pass / 6 默认原生 skip / 0 fail，modeld release-offline 516/0；六个默认跳过的原生源码 case 随独立只读 lane 28/0 覆盖。随后在已合入的 v2 工作区复验配置专项 205/0、reasoning 与制品专项 37/0，sourceDigest 为 `82aaf3e43024f82e8d382734315e6208db5eb956d4d522e89d3b93c310f16750`。这些是不同、部分重叠的证明范围，不合并为独立测试总数。
 

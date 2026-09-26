@@ -4,7 +4,7 @@
 
 ## 目标与先读入口
 
-让同一套当前Host/worker、唯一TS变换、原生接缝及Rust/Oxc证据能够支撑真实运行核心；随后扩展到完整产品。先读[HOST-01](../../../tickets/HOST-01-patch-health-verifier.md)、[HCR-04](../../../tickets/HCR-04-capability-profile-upgrade.md)、[来源变化记录](../../../reports/2026-09-22-native-material-source-drift.md)及[健康方案](../../host-patch-health-proposal.md)。历史固定来源是证据输入，不是当前安装事实。
+让同一套当前Host/worker、唯一TS变换、原生接缝及Rust/Oxc证据能够支撑真实运行核心；随后扩展到完整产品。先读[HOST-01](../../../tickets/HOST-01-patch-health-verifier.md)、[HCR-04](../../../tickets/HCR-04-capability-profile-upgrade.md)、[来源变化记录](../../../evidence/2026-09/2026-09-22-native-material-source-drift.md)及[健康方案](../../host-patch-health-proposal.md)。历史固定来源是证据输入，不是当前安装事实。
 
 ## 掌管模块与禁止越界
 
@@ -39,4 +39,4 @@ A1可以分批交有用接口，消费者只等待自己实际调用的接口资
 
 ### A2 固定风险闭包入口（2026-09-23）
 
-核心候选采用前的 61 片完整风险映射与固定入口为 [A2 固定报告](../../../reports/2026-09-23-core-reachable-patch-risk.md)。执行 `node scripts/verify-host-health.mjs core-risk` 时必须显式提供当前 native Host/continuity/Node 资格输入；该入口覆盖 applicability、candidate、hook/reference、opportunity 与 effect 证据，但始终不把 loaded/attachment/exercised 改写为已观察。后续来源演进继续按 HOST-01/AH-159 分类，不用旧 source pin 冒充新代资格。
+核心候选采用前的 61 片完整风险映射与固定入口为 [A2 固定报告](../../../evidence/2026-09/2026-09-23-core-reachable-patch-risk.md)。执行 `node scripts/verify-host-health.mjs core-risk` 时必须显式提供当前 native Host/continuity/Node 资格输入；该入口覆盖 applicability、candidate、hook/reference、opportunity 与 effect 证据，但始终不把 loaded/attachment/exercised 改写为已观察。后续来源演进继续按 HOST-01/AH-159 分类，不用旧 source pin 冒充新代资格。

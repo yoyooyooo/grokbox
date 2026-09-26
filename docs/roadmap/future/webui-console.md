@@ -8,7 +8,7 @@
 
 前端应用采用 TanStack Start，放入 MonoRepo 的 apps 子项目；SSR 用于页面预取与渲染，业务 API 由独立的 Effect v4 beta、Effect-first 服务提供。前端与 CLI 消费同一套用例与归一化读面。后台骨架已确定为一个常驻管理服务和独立 modeld；采集、证据、索引、异常、保护、交接与通知属于管理服务内部职责，具有各自故障/资源边界。复用共享合同与客户端、后台领域模块和原生/存储适配，不执行 CLI 子进程；页面展示与聚合查询不形成第二套业务规则。具体包、路由和组件由实施者决定，沿 [端到端工作链路](../agent-first-cli/implementation-impact.md)接入真实能力。
 
-[固定来源研究](../../reports/2026-09-19-webui-source-feasibility.md)保存官方形象、activity 标签、Gateway SSE、Memory/Project 与现有 worker 的证据边界；研究可行不等于浏览器或适配已实现。
+[固定来源研究](../../evidence/2026-09/2026-09-19-webui-source-feasibility.md)保存官方形象、activity 标签、Gateway SSE、Memory/Project 与现有 worker 的证据边界；研究可行不等于浏览器或适配已实现。
 
 ## 实施依赖
 

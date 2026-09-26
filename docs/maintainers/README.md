@@ -1,6 +1,6 @@
 # Maintainer guides
 
-Choose the operation or question. These guides route investigation; neither their claims nor the current source/schema are proof of correctness. [Contracts](../README.md) define semantics; [LIVE-integration-validation](../tickets/LIVE-integration-validation.md) owns current live results; [reports](../reports/README.md) preserve fixed windows.
+Choose the operation or question. These guides route investigation; neither their claims nor the current source/schema are proof of correctness. [Contracts](../README.md) define semantics; [LIVE-integration-validation](../tickets/LIVE-integration-validation.md) owns current live results; [reports](../evidence/2026-09/README.md) preserve fixed windows.
 
 | Task | Guide |
 | --- | --- |
@@ -24,6 +24,6 @@ Choose the operation or question. These guides route investigation; neither thei
 | Design a future browser client on existing commands | [Command/API boundary](t29-command-boundary-incubate.md) |
 | Maintain contracts, routes and archive | [Documentation maintenance](documentation.md) |
 
-The former T32 readiness page and external session research are historical routes, not parallel current readiness or architecture authorities. [Archive](../archive/README.md) preserves useful historical reasons without requiring them for ordinary operations.
+The former T32 readiness page and external session research are historical routes, not parallel current readiness or architecture authorities. [Archive](../evidence/topics/README.md) preserves useful historical reasons without requiring them for ordinary operations.
 
 A read result, suggested next command or historical approval never grants service interruption, model spend, identity migration, data deletion or publication. Within an authorized task, finish safe investigation and independent work; preserve the identity and unknown result of any uncertain mutation rather than retrying it blindly.

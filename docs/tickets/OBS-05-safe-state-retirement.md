@@ -14,7 +14,7 @@
 
 ## T53 scoped provision 记录（2026-09-18）
 
-新增`state/routine-provision/operations.sqlite`由T53单独持有创建/更新的重放保护，不纳入诊断GC。该owner已在storage status独立计量：主文件2MiB、最多256条完整操作，已被取代的结算历史可缩为精确tombstone，不存prompt；容量不足只拒绝新的provision，不影响模型执行。attempting/unknown不能被TTL清除，损坏/缺失既有账本不能初始化成新许可。真实文件、并发、SIGKILL和诊断维护隔离已验证，详见[T53回执](../reports/2026-09-18-disabled-routine-provisioning.md)。
+新增`state/routine-provision/operations.sqlite`由T53单独持有创建/更新的重放保护，不纳入诊断GC。该owner已在storage status独立计量：主文件2MiB、最多256条完整操作，已被取代的结算历史可缩为精确tombstone，不存prompt；容量不足只拒绝新的provision，不影响模型执行。attempting/unknown不能被TTL清除，损坏/缺失既有账本不能初始化成新许可。真实文件、并发、SIGKILL和诊断维护隔离已验证，详见[T53回执](../evidence/2026-09/2026-09-18-disabled-routine-provisioning.md)。
 
 operation的安全收缩现已实现，见下方owner边界；首次初始化中断、损坏存储等仍保守拒绝，不当作空数据库重新授予创建权。这种明确拒绝不是允许通用GC删库；J1恢复/安全owner合同不因此改变。
 
@@ -26,7 +26,7 @@ operation的安全收缩现已实现，见下方owner边界；首次初始化中
 
 ## 诊断payload与安全标记的退役分界（2026-09-19）
 
-已验证：材料/通知/lease期限全部结束后，可回收原diagnostic snapshot而保留精确work/attempt与revision水位。reserved/attempting/unknown在清理后仍不能再次reserve/begin；旧证据返回expired，不因incident行退役被说成从未存在。实现及三个状态反例见[固定回执](../reports/2026-09-19-diagnostic-admission.md)。这不是安全标记的最终删除或对整个恢复盘回滚的保证，本票原准入/退役义务不由该局部成功消除。
+已验证：材料/通知/lease期限全部结束后，可回收原diagnostic snapshot而保留精确work/attempt与revision水位。reserved/attempting/unknown在清理后仍不能再次reserve/begin；旧证据返回expired，不因incident行退役被说成从未存在。实现及三个状态反例见[固定回执](../evidence/2026-09/2026-09-19-diagnostic-admission.md)。这不是安全标记的最终删除或对整个恢复盘回滚的保证，本票原准入/退役义务不由该局部成功消除。
 
 ## 已实现的owner收缩边界
 
@@ -35,7 +35,7 @@ operation的安全收缩现已实现，见下方owner边界；首次初始化中
 - routine provision：原SQLite事务把不再被当前binding引用的observed操作收缩为精确operation/fingerprint tombstone；旧操作读出retired，改内容冲突，均不重新接触原生创建。unknown/attempting和当前binding不变；私有schema2使旧writer不能忽略新标记。300次更新/重入反例已实现，不再将256条完整历史记录当作永久运行寿命。
 - notification和CONT：沿用已实现的固定work/attempt、时间/代际恢复边界和CONT本域引用闭包；不借此次维护删除恢复点、未结职责或任意原生状态。
 
-所有安全标记依然受物理容量门约束，必要时拒绝新effect。没有“常量空间永久记住任意旧ID”或“无外部单调锚点识别任意整机快照回滚”的承诺；更强保证要先改变系统边界，不是本轮用TTL删除unknown。固定验证及剩余现场范围见[收口回执](../reports/2026-09-19-pre-e2e-closeout.md)。
+所有安全标记依然受物理容量门约束，必要时拒绝新effect。没有“常量空间永久记住任意旧ID”或“无外部单调锚点识别任意整机快照回滚”的承诺；更强保证要先改变系统边界，不是本轮用TTL删除unknown。固定验证及剩余现场范围见[收口回执](../evidence/2026-09/2026-09-19-pre-e2e-closeout.md)。
 
 ## Work / 后续更强范围
 
@@ -59,7 +59,7 @@ bun test packages/box-runtime/test/execution-retirement.test.ts packages/box-run
 bun test packages/box-runtime/test/context-maintenance-lifetime.test.ts packages/box-runtime/test/routine-provision.test.ts packages/box-runtime/test/notification-restore-fence.test.ts packages/box-runtime/test/obs-continuity-contract.test.ts
 ```
 
-准入反例直接位于execution-retirement测试中，恢复引用保护位于既有J1测试，不为旧计划名再建空的同义文件。精确结果、制品与源码身份见[本轮回执](../reports/2026-09-19-pre-e2e-closeout.md)。
+准入反例直接位于execution-retirement测试中，恢复引用保护位于既有J1测试，不为旧计划名再建空的同义文件。精确结果、制品与源码身份见[本轮回执](../evidence/2026-09/2026-09-19-pre-e2e-closeout.md)。
 
 实际kernel＋真实LevelDB＋新进程：大量不同STEP/turn结算后压缩，旧STEP/旧turn/旧operation在GC后、重启后、备份恢复后均零新增模型/工具副作用；新合法请求继续成功。维护commit_unknown在压缩后仍阻断，读成功不掩盖写失败。
 

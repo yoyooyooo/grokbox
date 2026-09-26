@@ -18,4 +18,4 @@
 
 未来项晋升时，补明确用户场景/非目标、接口owner、安全与数据合同、可执行反例，链接现有Ticket或在同一编号序列新增；把已接受合同回写Product/Architecture/Spec，本文只保留剩余候选与路由，不再复制完成状态。已过时内容合并/降低/删除，不建立v2/final/new等并行草案。
 
-历史事实进入[reports](../../reports/README.md)，不是future。当前路线从[roadmap入口](../README.md)进入。每页维护失效条件和晋升门，不按日期数量推定优先级。
+历史事实进入[reports](../../evidence/2026-09/README.md)，不是future。当前路线从[roadmap入口](../README.md)进入。每页维护失效条件和晋升门，不按日期数量推定优先级。

@@ -6,7 +6,7 @@
 
 ## 本轮设计资料
 
-[Agent-first CLI 收束](../roadmap/agent-first-cli/README.md)已确认一个常驻管理服务、独立 modeld、CLI/Web 共用后台及破坏式命令切换；具体命令与包拆分仍待细化。Web UI 以观察和必要管理为主，Memory/Project/文件按真实来源能力开放读写；不把旧入口或模块形状当成未来架构限制。[WEB-01](WEB-01-visual-baseline.md)保存 V0 风格与功能纠偏，[来源研究](../reports/2026-09-19-webui-source-feasibility.md)保存有限上游证据。本票继续拥有共享边界与后续浏览器实施；当前未启动浏览器施工。
+[Agent-first CLI 收束](../roadmap/agent-first-cli/README.md)已确认一个常驻管理服务、独立 modeld、CLI/Web 共用后台及破坏式命令切换；具体命令与包拆分仍待细化。Web UI 以观察和必要管理为主，Memory/Project/文件按真实来源能力开放读写；不把旧入口或模块形状当成未来架构限制。[WEB-01](WEB-01-visual-baseline.md)保存 V0 风格与功能纠偏，[来源研究](../evidence/2026-09/2026-09-19-webui-source-feasibility.md)保存有限上游证据。本票继续拥有共享边界与后续浏览器实施；当前未启动浏览器施工。
 
 ## 共享能力合同
 

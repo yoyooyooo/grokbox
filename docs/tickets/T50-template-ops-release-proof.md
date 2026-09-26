@@ -30,7 +30,7 @@ README/运维手册/Skill/包内registry必须与真实可用命令同版本，�
 
 ## Executable acceptance
 
-集中真实 E2E 按 [LIVE E0–E6](LIVE-integration-validation.md#window-order)与[执行手册](../maintainers/live-end-to-end.md)执行；开发期局部探针不要求完整产品或全部模型矩阵。通知测试独立可选，配置/授权齐备即可启用；产品启用不能继续要求人工已见测试提醒。集中验收仍须证明实际投递、无人值守和容量，不得改成手动 collector 求通过。源码部分已有`ops-automatic-notification.test.ts`、`ops-automatic-cli.test.ts`及`storage-maintenance-lifetime.test.ts`，固定证据见[自动通知回执](../reports/2026-09-19-automatic-notification.md)，不代替安装资格。
+集中真实 E2E 按 [LIVE E0–E6](LIVE-integration-validation.md#window-order)与[执行手册](../maintainers/live-end-to-end.md)执行；开发期局部探针不要求完整产品或全部模型矩阵。通知测试独立可选，配置/授权齐备即可启用；产品启用不能继续要求人工已见测试提醒。集中验收仍须证明实际投递、无人值守和容量，不得改成手动 collector 求通过。源码部分已有`ops-automatic-notification.test.ts`、`ops-automatic-cli.test.ts`及`storage-maintenance-lifetime.test.ts`，固定证据见[自动通知回执](../evidence/2026-09/2026-09-19-automatic-notification.md)，不代替安装资格。
 
 当前实际用例包括`runtime-services-installation.test.ts`、`test/runtime-services-packed.test.ts`、`modeld-persistent-restart.test.ts`、`execution-retirement.test.ts`、`monitor-service-lifetime.test.ts`、`test/monitor-service-packed.test.ts`、`daemon-socket-recovery.test.ts`和`test/incident-evidence-integration.test.ts`；通过`pre-e2e-observation`组合复验，不创建同义空测试。实际进程层覆盖Linux持有fd的服务门、准确socket owner和强杀后的游标恢复；缺失/损坏证据库不由重放安装自动重建。实际发布Node CLI、临时真实进程/DB/HTTP验证安装幂等、调用者退出、独立重启、断网/撤销/GC期间读取、unknown恢复和单实例；不得以detach/父PID或HTTP200代替完整生命周期。
 
@@ -42,7 +42,7 @@ README/运维手册/Skill/包内registry必须与真实可用命令同版本，�
 
 旧 daemon 窗口的监听器同路径服务所有权：Linux使用已有advisory fd gate，只有已登记的准确socket inode、确证已死的进程身份和拒绝连接同时成立时，才删除遗留socket重新bind；未知/损坏/旧无标记socket保留阻断。该旧窗口退出按当时的子资源顺序释放门；当前 collector/sender 已迁出，不得从旧证据推定新管理服务的安装资格。其他平台仍靠独占bind，不宣称同等强杀恢复。
 
-采集器已覆盖Host/control两个来源、配置变更/停用后的顺序退出、原生run health与进度、通知off下继续采集。source failure→固定revision→受管sender→loopback HTTP的组合及旧源事件晚到不补发已有证明；这些旧组合不单独证明操作系统安装；新增注册命令与其环境要求另见[服务注册](../maintainers/runtime-service-registration.md)。生产Provider/App与完整现场证据仍需LIVE。[固定回执](../reports/2026-09-19-pre-e2e-observation.md)。
+采集器已覆盖Host/control两个来源、配置变更/停用后的顺序退出、原生run health与进度、通知off下继续采集。source failure→固定revision→受管sender→loopback HTTP的组合及旧源事件晚到不补发已有证明；这些旧组合不单独证明操作系统安装；新增注册命令与其环境要求另见[服务注册](../maintainers/runtime-service-registration.md)。生产Provider/App与完整现场证据仍需LIVE。[固定回执](../evidence/2026-09/2026-09-19-pre-e2e-observation.md)。
 
 当前管理 Scope 对通知 sender 的获得、关闭、竞争 outbox 与 unknown 重启保留已有[Node HTTP/SQLite 验证](../../test/notification-management.test.ts)；旧 daemon 的 sender 状态 RPC 和 `ops notifications worker` 已退出，新 `notification status` 共用管理权限/客户端，Web 状态读取不投递。这里只关闭宿主接线的源码差额，不代替启用合同、独立测试、投递对账或生产 OS 服务验收。
 

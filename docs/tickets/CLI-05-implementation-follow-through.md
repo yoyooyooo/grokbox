@@ -6,7 +6,7 @@
 
 2026-09-26 按[Local-first 回归主线](../roadmap/agent-first-cli/local-first-reintegration.md)继续 W3：AH-186 吸收已取得真实证据的本地先创建/原生登记机制，AH-192 与创建切片协同固化正式入口的早期 canary，之后接原 DM/compact/核心候选旅程。当前仅有私人 POC 正例，正式产品接通和哨兵实现仍待交付，不签本票完成。
 
-AH-193 身份变化观察与既有维护票并行，长期升级原因未完全确定不再冻结独立架构施工；真实失权仅阻断相应对象/动作。管理/材料/连续性/Web 等原路线继续，已完成窗口不重开。历史精华在[POC 档案](../archive/box-local-first-poc-2026-09.md)，临时资产按 AH-194 去依赖后退役，不能复制一套 POC writer/Loop 长期并存。
+AH-193 身份变化观察与既有维护票并行，长期升级原因未完全确定不再冻结独立架构施工；真实失权仅阻断相应对象/动作。管理/材料/连续性/Web 等原路线继续，已完成窗口不重开。历史精华在[POC 档案](../evidence/topics/box-local-first-poc-2026-09.md)，临时资产按 AH-194 去依赖后退役，不能复制一套 POC writer/Loop 长期并存。
 
 ## 用户结果
 
@@ -67,7 +67,7 @@ AH-193 身份变化观察与既有维护票并行，长期升级原因未完全�
 
 [Web 工程与访问安全](WEB-02-web-foundation.md)已接通真实 TanStack 路由、请求隔离 SSR、固定同源桥、Console 登录与共享客户端。根 build 生成独立 `dist/web` 浏览器/SSR/Node 启动制品；正式 CLI 可前台运行 Web。生产制品复制到源码树外后，经真实 Chrome 验证模型操作、CLI 并发冲突、丢回执恢复、权限/SSR 隔离、本机测试 HTTPS 及 Web/管理服务各自重启。Node 最低版本为 22.12.0；此范围不代替目标宿主完整安装、实际外部入口和真实原生/Provider 验收。
 
-[2026-09-19 只读来源核验](../reports/2026-09-19-live-source-qualification.md)已获单独授权，实际使用 4 次有界 HTTP 请求及目录/stat 元数据，没有正文读取、原生写入、模型请求或服务切换。该次原生列表可读，但当时 HostStatus 缺少所需 ownership 观察字段，受管执行资格仍未验证；该事实不计候选 LIVE 通过。
+[2026-09-19 只读来源核验](../evidence/2026-09/2026-09-19-live-source-qualification.md)已获单独授权，实际使用 4 次有界 HTTP 请求及目录/stat 元数据，没有正文读取、原生写入、模型请求或服务切换。该次原生列表可读，但当时 HostStatus 缺少所需 ownership 观察字段，受管执行资格仍未验证；该事实不计候选 LIVE 通过。
 
 继续完成完整 CLI 发现/引用/输入合同、凭据管理、其他领域与 Web。模型 apply 的结构化文件/stdin 已接通；省略保留、显式清空、重复语义字段、UTF-8/大小约束仍由实际输入和共享领域规则检验。本地模型发布按本地文件读回确认，不把外部 Pi 投影的重新显现误判成一次本地写丢失。模型回执的公共只读查找已接通；有证据的 unknown 对账、精确恢复和安全保留维护仍未完成。Server 尚未承载全量 worker，也未完成独立 modeld 实执行寿命、安装、独立审查和集中 LIVE。没有切换现役服务、修改全局 shim、使用真实模型或清理原生资料。
 
@@ -245,7 +245,7 @@ A 还执行生产构建、tarball 实际安装与 Web 清单核对；B 保留原
 
 ### HOST-01：实际来源—Rust验证—原OBS—多入口的首个工作包
 
-接收[Host升级/健康整合交接](../roadmap/host-patch-health-integration-handoff.md)后，已从current-state固定闭合点切入W3平台依赖；没有重做705项阶段、切新平行工程或选择另一个parser。已有及并行的Cargo/协议/producer/空目标collector成果保留并整合。当前用例见[HOST-01](HOST-01-patch-health-verifier.md)，固定验证和磁盘来源复核见[阶段报告](../reports/2026-09-20-host-health-first-integration.md)。
+接收[Host升级/健康整合交接](../roadmap/host-patch-health-integration-handoff.md)后，已从current-state固定闭合点切入W3平台依赖；没有重做705项阶段、切新平行工程或选择另一个parser。已有及并行的Cargo/协议/producer/空目标collector成果保留并整合。当前用例见[HOST-01](HOST-01-patch-health-verifier.md)，固定验证和磁盘来源复核见[阶段报告](../evidence/2026-09/2026-09-20-host-health-first-integration.md)。
 
 原TS apply是唯一transform；真实candidate经过Node只读快照FD→正式Rust/Oxc→原provenance→原OBS installation condition/outbox，再由共享 `system host health` 与 `/host-health` 展示。新wire schema覆盖完整initialize/JSON-RPC包络，两端生成/核验；binary/lock/toolchain/schema/规则进入构建身份和tarball，安装后实际运行binary/FD并验证许可文本，不需runtime cargo或联网下载。
 
@@ -261,13 +261,13 @@ A 还执行生产构建、tarball 实际安装与 Web 清单核对；B 保留原
 
 ### Host 编译与运行代阶段
 
-接续已有编译/运行观察施工成果，完成 preload 正负 marker→准确进程身份→原 provenance/OBS→CLI/Web 的组合，并修正中断的 model-management/transport 分层迁移。运行代与磁盘来源分别呈现；编译成功不代表 native 挂接/实际使用，静态通过不能修复正在运行的未打补丁代。未安装旁路 controller 或修改实际 Host 配方。固定细节归[编译健康报告](../reports/2026-09-20-host-compilation-health.md)。
+接续已有编译/运行观察施工成果，完成 preload 正负 marker→准确进程身份→原 provenance/OBS→CLI/Web 的组合，并修正中断的 model-management/transport 分层迁移。运行代与磁盘来源分别呈现；编译成功不代表 native 挂接/实际使用，静态通过不能修复正在运行的未打补丁代。未安装旁路 controller 或修改实际 Host 配方。固定细节归[编译健康报告](../evidence/2026-09/2026-09-20-host-compilation-health.md)。
 
 源码 `b7fb831cc870e970dd7d810f1c0b905357b6f0cad6c405bfffd2830b563a3d3a`，1161个输入，两组前后固定：core334/36文件、integration22/16文件，合计356 pass/0 fail；20个 Rust 测试、协议生成和根/Web typecheck通过。包装内部编译 Node11、Chrome65等不与356相加。安装后binary/Node、搬移Web、原其他管理域都按当前源码复验，不沿用旧705项。分层反例保持纯合同不能导入Effect，未放宽任意出口或恢复旧writer。
 
 ### 同代注册与实际边界见证
 
-已接续并完成 preload 原引用注册→原认证 getHostStatus challenge→管理 Server 独立采样→原 runtime provenance/OBS→CLI/Web。session、retry、context 记录有界实际边界；原对象/方法被替换可检测，getter不执行；没有机会覆盖时不推断 bypass。错误旧回复也核运行代，丢失原回执文件不重置稳定来源序列；心跳不制造持久事件或重复通知。详细实现、反例及剩余范围归[固定见证报告](../reports/2026-09-20-host-capability-witness.md)。
+已接续并完成 preload 原引用注册→原认证 getHostStatus challenge→管理 Server 独立采样→原 runtime provenance/OBS→CLI/Web。session、retry、context 记录有界实际边界；原对象/方法被替换可检测，getter不执行；没有机会覆盖时不推断 bypass。错误旧回复也核运行代，丢失原回执文件不重置稳定来源序列；心跳不制造持久事件或重复通知。详细实现、反例及剩余范围归[固定见证报告](../evidence/2026-09/2026-09-20-host-capability-witness.md)。
 
 固定源码 `2d1c173370c46232c964c24d8e459f5acbb2ab5ed24b32fd65cb55648a51745b`、1168个输入，两组前后相同：core375/42文件、integration23/17文件，398项/0失败；Rust20、根/Web类型及实际打包/安装通过。包装内部 witness Node19、Chrome66 不与398重复相加。仍 `qualified=false`，没有真实Host/Provider/外部投递或部署。
 
@@ -281,10 +281,10 @@ A 还执行生产构建、tarball 实际安装与 Web 清单核对；B 保留原
 
 **独立后续，不改变本节排程：** [Box-only 语音委托](../roadmap/voice-delegation-spec.md)及 [VOICE-01～03](README.md#voice-delegation)已按用户要求保存，待当前手头工作推进完后回访。它们复用本次重建结果，不插队 HOST-01、handover/compact 或其他现有领域，也不新增本票 W4/W5 的完成门槛。本次只落文档，不授权语音实现、客户端修改或现场通话。
 
-**当前W3落点与分工（2026-09-22）：** 已提交管理基线`fc346bca`包含模型/current-state/Compact/handover、通知、[Job](../reports/2026-09-22-job-management.md)和[文件](../reports/2026-09-22-file-management.md)，不重开这些迁移。后续唯一调度入口是[并行拓扑及路线卡](../roadmap/agent-first-cli/parallel-delivery.md)：A/R/F/E与D1先汇聚运行核心；B/C/D2/E2/F2/W并行继续完整产品。每个路线出口从v2切worktree、阶段性回流v2。用户随后要求将原工作树全部剩余成果接入共同基线：VOICE已独立提交，桌面管理/CLI/Web/测试及旧消费者修正按[全量接入报告](../reports/2026-09-22-desktop-v2-intake.md)一并提交并线性回流v2。F/W直接继承，D/F继续原生seat cleanup与现场资格；不再将未提交旧目录作为并行依赖。
+**当前W3落点与分工（2026-09-22）：** 已提交管理基线`fc346bca`包含模型/current-state/Compact/handover、通知、[Job](../evidence/2026-09/2026-09-22-job-management.md)和[文件](../evidence/2026-09/2026-09-22-file-management.md)，不重开这些迁移。后续唯一调度入口是[并行拓扑及路线卡](../roadmap/agent-first-cli/parallel-delivery.md)：A/R/F/E与D1先汇聚运行核心；B/C/D2/E2/F2/W并行继续完整产品。每个路线出口从v2切worktree、阶段性回流v2。用户随后要求将原工作树全部剩余成果接入共同基线：VOICE已独立提交，桌面管理/CLI/Web/测试及旧消费者修正按[全量接入报告](../evidence/2026-09/2026-09-22-desktop-v2-intake.md)一并提交并线性回流v2。F/W直接继承，D/F继续原生seat cleanup与现场资格；不再将未提交旧目录作为并行依赖。
 
-[HOST-01](HOST-01-patch-health-verifier.md)的固定配方/ABI和健康成果保留其原输入；[新来源校准](../reports/2026-09-22-native-material-source-drift.md)使当前Host/worker适配成为A的优先出口。所部署/可达的必要能力与非干扰资格在J2前闭合，实际loaded/调用/原生App证据在受控采用后进入J3；不以HOST-01全票完成阻塞无关施工，也不放宽本候选必需项。T40目标宿主和独立modeld须前置，不把现场风险都拖到W4。
+[HOST-01](HOST-01-patch-health-verifier.md)的固定配方/ABI和健康成果保留其原输入；[新来源校准](../evidence/2026-09/2026-09-22-native-material-source-drift.md)使当前Host/worker适配成为A的优先出口。所部署/可达的必要能力与非干扰资格在J2前闭合，实际loaded/调用/原生App证据在受控采用后进入J3；不以HOST-01全票完成阻塞无关施工，也不放宽本候选必需项。T40目标宿主和独立modeld须前置，不把现场风险都拖到W4。
 
-C1（AH-133）已在原 CONT owner 交付 self-reset 持久排队、受源屏障约束的一次消费、逐职责结果/显式对账和 GC 引用保护，见 [固定回执](../reports/2026-09-22-self-reset-queue.md)与 [CONT-07](CONT-07-current-context-control.md)。AH-139/AH-140 继续提供真实原生安全点及完整恢复；本地存储验证不关闭这些出口。
+C1（AH-133）已在原 CONT owner 交付 self-reset 持久排队、受源屏障约束的一次消费、逐职责结果/显式对账和 GC 引用保护，见 [固定回执](../evidence/2026-09/2026-09-22-self-reset-queue.md)与 [CONT-07](CONT-07-current-context-control.md)。AH-139/AH-140 继续提供真实原生安全点及完整恢复；本地存储验证不关闭这些出口。
 
 DATA-01的原生管理写入/同步/Project附件fileRef和CONT的self-reset/完整恢复/关系交接/退役分别由B/C完成；普通named-root文件通路已经闭合。E继续T45确定未受理重试、上游对账与独立投递；D/F退出剩余产品/daemon/系统消费者；W完成自有Web。核心实际经过的Memory、必要保全和已启用后台副作用仍为J2/J3前置，不能随整个B/C/E后置。J4可先日用，J5完整功能合流后进入W4/W5；blocked/unknown不是取消必需功能的理由。当前实际采用判据及结果只进入[核心LIVE集合](LIVE-integration-validation.md#core-runtime-lane)，不从规划或合并获得费用、现役修改或公开发布权限。

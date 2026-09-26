@@ -18,7 +18,7 @@
 
 CONT私有管理库显式升级到v3：意图与源保护原子登记，未知创建也阻止同源换operation ID重做；实际新ID与成功记录原子持久后再查ownership。读回失败保留创建事实，创建响应丢失保持unknown；GET不迁移。已有current-state CLI也收紧为真正local-only，不先解析Profile覆盖调用上下文。
 
-公开验证入口`node scripts/verify-runtime-rebuild.mjs continuity-duplicate`覆盖生产策略/Effect/真实SQLite/CLI/本地HTTP、并发和独立Node强杀恢复；`GROKBOX_TEST_NATIVE_CONTINUITY=1 node scripts/verify-runtime-rebuild.mjs continuity-duplicate-qualified`执行当前固定原生复制函数及既有身份清理slice。测试依赖现实、计数与复审边界见[固定报告](../reports/2026-09-19-native-agent-duplicate.md)，操作方式唯一归[指南](../maintainers/native-agent-duplicate.md)。
+公开验证入口`node scripts/verify-runtime-rebuild.mjs continuity-duplicate`覆盖生产策略/Effect/真实SQLite/CLI/本地HTTP、并发和独立Node强杀恢复；`GROKBOX_TEST_NATIVE_CONTINUITY=1 node scripts/verify-runtime-rebuild.mjs continuity-duplicate-qualified`执行当前固定原生复制函数及既有身份清理slice。测试依赖现实、计数与复审边界见[固定报告](../evidence/2026-09/2026-09-19-native-agent-duplicate.md)，操作方式唯一归[指南](../maintainers/native-agent-duplicate.md)。
 
 实际原生新对象、Box/Temporal源与目标注册、App选择和复制Routine行为另在[LIVE-NATIVE-DUPLICATE](LIVE-integration-validation.md#live-native-duplicate)登记，测试对象有限且可清理。未取得的独立外部review仍是来源票缺口，不将它伪称现场验证。
 

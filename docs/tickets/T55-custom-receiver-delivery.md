@@ -34,7 +34,7 @@ HTTP 状态保持原 `native-accepted/definitely-not-accepted/unknown`。任务�
 
 ## 已有证明与缺口
 
-原预检探针与早期局限保留在 [接收者选模回执](../reports/2026-09-18-receiver-model-preflight.md)。本轮定向原用例保留，`notification-task.test.ts` 补合同/权限/注入反例；`packages/server/test/notification-tasks.node.ts` 纳入原 `test/notification-management.test.ts`，使用隔离配置根、SQLite、端口和自有 HTTP 接收端，验证明确分析授权、认领先到/HTTP 应答丢失、原 unknown 保留、重启续报、并行事实以及错误凭据/跨任务/内容升级拒绝。
+原预检探针与早期局限保留在 [接收者选模回执](../evidence/2026-09/2026-09-18-receiver-model-preflight.md)。本轮定向原用例保留，`notification-task.test.ts` 补合同/权限/注入反例；`packages/server/test/notification-tasks.node.ts` 纳入原 `test/notification-management.test.ts`，使用隔离配置根、SQLite、端口和自有 HTTP 接收端，验证明确分析授权、认领先到/HTTP 应答丢失、原 unknown 保留、重启续报、并行事实以及错误凭据/跨任务/内容升级拒绝。
 
 该 HTTP 用例在原通知 attempt 边界装载符合 AH-188 合同的自有固定样例，不声称已经跑过尚未进入 v2 的真实 producer。Q 合流后须检查 AH-188 原 episode→固定 revision→此消费者；真实来源的 source-evidence 私有附件读取/分析授权不是本票的 `notifications.tasks` 能力。
 

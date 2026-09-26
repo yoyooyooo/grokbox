@@ -1,6 +1,6 @@
 # CONT-07 — 唯一当前上下文的原生控制
 
-**状态：partial implementation；原生初始化基础及外部空闲Bot的reset/recover已接线，self-reset 的 CONT 持久队列与消费合同已实现，原生安全点接通仍未实现。** capture/initialize/reconcile/hold release与新的原生compose、历史补齐floor、Memory/指令保留进入有限RPC/CLI和CONT持久层；完整profile叠加compact通过限定原生验证。见[本轮集成证据](../reports/2026-09-19-continuity-lifecycle-integration.md)。
+**状态：partial implementation；原生初始化基础及外部空闲Bot的reset/recover已接线，self-reset 的 CONT 持久队列与消费合同已实现，原生安全点接通仍未实现。** capture/initialize/reconcile/hold release与新的原生compose、历史补齐floor、Memory/指令保留进入有限RPC/CLI和CONT持久层；完整profile叠加compact通过限定原生验证。见[本轮集成证据](../evidence/2026-09/2026-09-19-continuity-lifecycle-integration.md)。
 
 现有原生入口的活动回合自身调用仍明确not_prepared，不能宣称后台已排队；AH-133 新增的本地队列尚未接入该入口，安全收尾与后续输入归属由 AH-139/AH-140 继续完成。附件/全历史资源覆盖、真实原App/首次及重启后模型窗口、独立review仍各自有门，未修改现役profile。
 
@@ -18,9 +18,9 @@
 
 同操作重入不重新捕获/生成材料；目标有B2新进度不重导B0。原生结果unknown不盲重试；显式reconcile向原生只读取证但会写本地结算，不能当GET或重新激活。application marker与持久准备状态已由下述worker和主Host适配实现，并非官方原本已有的字段。完整Memory/转录/附件导入、self-reset和语义恢复仍需实现；整条原生业务回合尚待现场验证。
 
-[协调程序固定报告](../reports/2026-09-18-continuity-current-state.md)记录105项组合/711断言，真实CONT SQLite、owned合成原生协议、生产window codec与Node进程强杀；不是真实Host/Provider执行。
+[协调程序固定报告](../evidence/2026-09/2026-09-18-continuity-current-state.md)记录105项组合/711断言，真实CONT SQLite、owned合成原生协议、生产window codec与Node进程强杀；不是真实Host/Provider执行。
 
-后续[原生checkpoint切片](../reports/2026-09-18-continuity-native-checkpoint.md)已解除源码读取阻断，新增`host/native-checkpoint.ts`具体capture adapter与严格root/全图读回。使用单独固定Host/worker对的原schema和AgentStore，在owned端口及独立Node进程中完成源移除后的持久往返；不是再用合成protobuf代替原生。旧whole-Host pin不变。该历史报告当时尚缺的worker事务/预算读取、持久应用凭据、主Host准备屏障和RPC已经在下一切片接线，见[当前操作指南](../maintainers/current-state-control.md)与[2026-09-19集成回执](../reports/2026-09-19-continuity-native-binding.md)。原生worker在owned数据库上实际启动，主Host注册/runner/checkpoint/profile接缝通过固定原源资格；整Host/真实Bot的第一轮及重启后续轮仍须LIVE，不把worker往返当整条用户旅程。
+后续[原生checkpoint切片](../evidence/2026-09/2026-09-18-continuity-native-checkpoint.md)已解除源码读取阻断，新增`host/native-checkpoint.ts`具体capture adapter与严格root/全图读回。使用单独固定Host/worker对的原schema和AgentStore，在owned端口及独立Node进程中完成源移除后的持久往返；不是再用合成protobuf代替原生。旧whole-Host pin不变。该历史报告当时尚缺的worker事务/预算读取、持久应用凭据、主Host准备屏障和RPC已经在下一切片接线，见[当前操作指南](../maintainers/current-state-control.md)与[2026-09-19集成回执](../evidence/2026-09/2026-09-19-continuity-native-binding.md)。原生worker在owned数据库上实际启动，主Host注册/runner/checkpoint/profile接缝通过固定原源资格；整Host/真实Bot的第一轮及重启后续轮仍须LIVE，不把worker往返当整条用户旅程。
 
 ```bash
 node scripts/verify-runtime-rebuild.mjs continuity-current-state
@@ -36,7 +36,7 @@ node scripts/verify-runtime-rebuild.mjs continuity-current-state
 
 [管理组合](../../test/context-management.test.ts)和[生产浏览器旅程](../../apps/web/test/context-browser.node.ts)通过共享 API 消费原生 owner/RPC/checkpoint worker，实际测试 Node HTTP、SQLite、打包 CLI、SIGKILL 后原标记对账、未知原生 apply 不重发、独立解除和 B2 不回退。Web 只保存原定位，丢解除回执后从历史取首次解除 revision，不用刷新后的新 revision 替代。读源、写上下文、解除和历史权限分开，最后授权撤销、客户端断连、关闭结算与元数据泄漏都有对应反例。
 
-手动压缩现通过同一个 Server 的 `bot context compact` 与 compaction 域原操作入口执行，见[管理切片](../reports/2026-09-21-compaction-management.md)。声明、派发与结算使用原 CONT queued-control 表，并与未完成 current-state 修改在同一事务内互斥；不能换 UUID 或换领域绕过未知原生效果。它保留 Host 默认 current root 的原生 summarize 行为，不是本票 self-reset 安全队列，不能据此签署活动 Bot 自重置已完成。
+手动压缩现通过同一个 Server 的 `bot context compact` 与 compaction 域原操作入口执行，见[管理切片](../evidence/2026-09/2026-09-21-compaction-management.md)。声明、派发与结算使用原 CONT queued-control 表，并与未完成 current-state 修改在同一事务内互斥；不能换 UUID 或换领域绕过未知原生效果。它保留 Host 默认 current root 的原生 summarize 行为，不是本票 self-reset 安全队列，不能据此签署活动 Bot 自重置已完成。
 
 未完成准备与等待解除的来源/备份/候选在原 CONT GC 事务中受保护。有限 cancel 仅在没有任何原生应用声明和解除声明时保留原取消墓碑，不能取消未知 apply；来源不存在在预留前拒绝。完整 self-reset、附件、源资源独立和真实账号资格仍未关闭；固定源码及扩大回归归 [CLI-05](CLI-05-implementation-follow-through.md)。
 
@@ -44,13 +44,13 @@ node scripts/verify-runtime-rebuild.mjs continuity-current-state
 
 ## 当前Host/worker ABI资格（2026-09-21）
 
-前一[配对工作包](../reports/2026-09-21-native-checkpoint-pair.md)的2380…来源资格属于历史窗口。当前Host已更新为6be750…，并完成28项隔离原生验证：原schema/AgentStore、完整引用图、实际worker事务/持久marker/GC hold、重启/解除/B2、startup、duplicate和disposal。生产仅保留当前准确元组，旧元组与旧配方回退已退出；preload、worker与主Host注册使用同一当前身份，证据与先拒绝后验证的顺序见[单版本收束](../reports/2026-09-21-current-host-contract-convergence.md)。
+前一[配对工作包](../evidence/2026-09/2026-09-21-native-checkpoint-pair.md)的2380…来源资格属于历史窗口。当前Host已更新为6be750…，并完成28项隔离原生验证：原schema/AgentStore、完整引用图、实际worker事务/持久marker/GC hold、重启/解除/B2、startup、duplicate和disposal。生产仅保留当前准确元组，旧元组与旧配方回退已退出；preload、worker与主Host注册使用同一当前身份，证据与先拒绝后验证的顺序见[单版本收束](../evidence/2026-09/2026-09-21-current-host-contract-convergence.md)。
 
 新的显式资格入口是 `node scripts/verify-host-health.mjs native-pair`，需Bun1.3.14及显式native continuity、idle-candidate和native Node配置。它只访问指定源和自有测试库，不自动发布profile、启动Bot或执行真实Provider。原source/candidate/worker静态资格同步通过；整Host实际使用、self-reset、附件独立、完整用户恢复与独立审查不由这个ABI实验代签。
 
 ## self-reset 本地队列与消费合同
 
-`openSelfResetQueue` 在原 CONT 控制表登记不可变请求，登记不调用原生 owner。消费要求 `SelfResetOwner.withSource(request, work)` 持有源观察至消费结算的屏障；未结算回合继续 queued，revision/generation 变化写 blocked，成功 claim 先落 effect_unknown。重开不再次派发；显式 reconcile 绑定原请求摘要，保留已完成职责。材料、职责结果及 workflow 引用与 GC 同事务保护。接口、反例和原生/fixture 边界见 [C1 固定报告](../reports/2026-09-22-self-reset-queue.md)。
+`openSelfResetQueue` 在原 CONT 控制表登记不可变请求，登记不调用原生 owner。消费要求 `SelfResetOwner.withSource(request, work)` 持有源观察至消费结算的屏障；未结算回合继续 queued，revision/generation 变化写 blocked，成功 claim 先落 effect_unknown。重开不再次派发；显式 reconcile 绑定原请求摘要，保留已完成职责。材料、职责结果及 workflow 引用与 GC 同事务保护。接口、反例和原生/fixture 边界见 [C1 固定报告](../evidence/2026-09/2026-09-22-self-reset-queue.md)。
 
 本地队列不安装 Host hook；真实迟到工具/checkpoint/Memory 隔离、下一输入和重启仍需原生 owner 证明。
 
@@ -74,4 +74,4 @@ per-Bot屏障区分已接收旧输入与切换后新输入，迟到旧工具/che
 
 ## 当前 safe-point 的 Memory producer 边界
 
-当前回合/checkpoint hold 不约束原 Memory writer：选定实际提取 await 返回后仍能越过 hold 写入，且 current-state revision 不变。AH-139 已将这项依赖回到 AH-155 原材料 writer/回调接缝，不使用两次读或一个实例的 wrapper 代替跨 writer 隔离。准确来源、可复现负例与证据限制见 [原生屏障边界报告](../reports/2026-09-23-native-continuity-fence-boundary.md)。本结论不重开已完成的 C1 存储交付，不签 self-reset 或条件删除完成。
+当前回合/checkpoint hold 不约束原 Memory writer：选定实际提取 await 返回后仍能越过 hold 写入，且 current-state revision 不变。AH-139 已将这项依赖回到 AH-155 原材料 writer/回调接缝，不使用两次读或一个实例的 wrapper 代替跨 writer 隔离。准确来源、可复现负例与证据限制见 [原生屏障边界报告](../evidence/2026-09/2026-09-23-native-continuity-fence-boundary.md)。本结论不重开已完成的 C1 存储交付，不签 self-reset 或条件删除完成。

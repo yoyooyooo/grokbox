@@ -1,6 +1,6 @@
 # 默认本地上下文维护，而非等待上游溢出
 
-日期：2026-09-17。状态：**accepted；默认Box会话主链已有源码实现，独立review与现场资格分层取证**。本页固定决策，不维护当前运行状态；实现、采纳选择和证明见[CTX来源票](../tickets/README.md#context-maintenance)及[固定离线报告](../reports/2026-09-17-context-maintenance-offline.md)，实际部署进度只在LIVE。初始文档规划与后续执行授权不能混为一次操作回执。
+日期：2026-09-17。状态：**accepted；默认Box会话主链已有源码实现，独立review与现场资格分层取证**。本页固定决策，不维护当前运行状态；实现、采纳选择和证明见[CTX来源票](../tickets/README.md#context-maintenance)及[固定离线报告](../evidence/2026-09/2026-09-17-context-maintenance-offline.md)，实际部署进度只在LIVE。初始文档规划与后续执行授权不能混为一次操作回执。
 
 ## 问题与决策
 

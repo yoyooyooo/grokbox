@@ -31,7 +31,7 @@ bun scripts/verify-runtime-rebuild.mjs context-reuse
 
 入口真实执行 `context-reuse.test.ts`、`context-maintenance-summary.test.ts`、`context-maintenance-packed.test.ts` 和import fence，不需要全局Pi、用户配置、真实provider或运行时下载。CTX-R01–R07的目标仍由S12.8定义；Fake只替外部能力，算法来自上述真实采纳代码，expected不是调用被测函数生成。
 
-[离线收口报告](../reports/2026-09-17-context-maintenance-offline.md)记录实际SDK/local HTTP/Unix、超过2000字符后的工具事实、sourceRef保留、Node20实际制品十轮维护/新进程回读、失败反例和工具链。没有将Node22可import冒充Node20支持，未将仅检查源文本的测试冒充完整运行。
+[离线收口报告](../evidence/2026-09/2026-09-17-context-maintenance-offline.md)记录实际SDK/local HTTP/Unix、超过2000字符后的工具事实、sourceRef保留、Node20实际制品十轮维护/新进程回读、失败反例和工具链。没有将Node22可import冒充Node20支持，未将仅检查源文本的测试冒充完整运行。
 
 ## Remaining / exit
 

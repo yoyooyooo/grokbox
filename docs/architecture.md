@@ -139,4 +139,4 @@ Config/modeld/Host 需要相容的 schema/wire/profile；精确 wire 常量在 [
 
 短效 runtime 状态、durable configuration/material 与 CLI 安装树分开；实际布局由 [path source](../packages/runtime-kernel/src/internal/config/path.ts) 和配置指南拥有。路径被命名为 durable 不证明平台 Reset 一定保留它。契约切片和保留 bundle 仅是受保护本机证据，不作为公开 Git 依赖、不恢复未知 Host、不成为第二补丁 writer。
 
-历史 POC 内部 API、阶段图、旧 review 编排不再是兼容义务；有用理由与精确基线见 [archive](archive/README.md)。不得重新建立第二 admission/Agent loop/配置投影 writer 来满足旧施工叙述。
+历史 POC 内部 API、阶段图、旧 review 编排不再是兼容义务；有用理由与精确基线见 [archive](evidence/topics/README.md)。不得重新建立第二 admission/Agent loop/配置投影 writer 来满足旧施工叙述。

@@ -23,7 +23,7 @@ bun scripts/verify-runtime-rebuild.mjs context-summary
 bun scripts/verify-runtime-rebuild.mjs context-maintenance
 ```
 
-实际测试使用选定算法、真实SDK/本地HTTP/Unix与原生facade，只有外部能力替换；摘要返回依据实际收到的事实材料生成，不硬编码最终答案。覆盖工具尾部sentinel、早期事实、当前输入、bounded分段/合并、空输出/工具输出/缺finish、请求预算耗尽、同请求并发取消、source/material读回不符、十轮压缩/新进程恢复和key轮换之后零额外主HTTP。原T32/stream/provider-recovery负例继续回归；具体计数与依赖现实见[离线报告](../reports/2026-09-17-context-maintenance-offline.md)。
+实际测试使用选定算法、真实SDK/本地HTTP/Unix与原生facade，只有外部能力替换；摘要返回依据实际收到的事实材料生成，不硬编码最终答案。覆盖工具尾部sentinel、早期事实、当前输入、bounded分段/合并、空输出/工具输出/缺finish、请求预算耗尽、同请求并发取消、source/material读回不符、十轮压缩/新进程恢复和key轮换之后零额外主HTTP。原T32/stream/provider-recovery负例继续回归；具体计数与依赖现实见[离线报告](../evidence/2026-09/2026-09-17-context-maintenance-offline.md)。
 
 ## Remaining / scope
 

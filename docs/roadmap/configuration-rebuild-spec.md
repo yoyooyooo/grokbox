@@ -1,6 +1,6 @@
 # Configuration rebuild — compatibility routes
 
-Current configuration fields, layout, writer behavior, migration and commands are owned by [Configuration](../configuration.md), its linked schemas and [Architecture](../architecture.md). This old rebuild path no longer carries a historical schema example as a current contract. Original staged design is recoverable from [the rebuild archive](../archive/runtime-rebuild.md).
+Current configuration fields, layout, writer behavior, migration and commands are owned by [Configuration](../configuration.md), its linked schemas and [Architecture](../architecture.md). This old rebuild path no longer carries a historical schema example as a current contract. Original staged design is recoverable from [the rebuild archive](../evidence/topics/runtime-rebuild.md).
 
 | Historical anchor | Current owner |
 | --- | --- |

@@ -7,4 +7,4 @@ The current contract is [Host compatibility, provenance and recovery](../runtime
 
 [HCR current contract](../runtime/host-compatibility.md#hcr-current-controlled-capability-and-operation-recovery) owns same-source capability upgrades, loaded wrapper/reader qualification and explicit operation-metadata recovery. [HCR tickets](../tickets/README.md#host-capability-recovery) own implementation/review gaps; [LIVE](../tickets/LIVE-integration-validation.md#live-host-capability-recovery) alone owns current live results.
 
-Historical upstream upgrade observations and the original plan remain recoverable at the exact [rebuild archive baseline](../archive/runtime-rebuild.md). Their old defaults and proposed command flags are not current source facts or permission to upgrade, publish a profile, signal a Host or adopt.
+Historical upstream upgrade observations and the original plan remain recoverable at the exact [rebuild archive baseline](../evidence/topics/runtime-rebuild.md). Their old defaults and proposed command flags are not current source facts or permission to upgrade, publish a profile, signal a Host or adopt.

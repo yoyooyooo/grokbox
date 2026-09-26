@@ -8,23 +8,23 @@
 
 **可复用历史证据**：Local-first 曾由原 Server 接受为 Box；受控窗口连通普通私聊、两个正常群、原生共享 Memory、自身手动/定时 Routine、原生 ack 与用户 Mac→手机续聊；官方对照保留原路。**仍保留的失败/缺口**：一次正常升级后同一身份变 Temporal；费用归因 `billing not observed`，网页及群界面跨端等未单独验。旧实验目标/binding不因此恢复许可，当前现场执行仍逐对象核验。
 
-主题精华已归[普通 Box Bot POC 档案](../archive/box-local-first-poc-2026-09.md)；[固定日期报告](../reports/2026-09-26-box-creation-feasibility.md)保存原始窗口叙述，不作为当前开工锁。AH-194 按引用/保留集合/活动资源退役临时代码，本轮不删除仍被集成引用的 POC 或原请求证据。源码整合、实际加载、真实创建、业务验收与最终用户接受分别记录。
+主题精华已归[普通 Box Bot POC 档案](../evidence/topics/box-local-first-poc-2026-09.md)；[固定日期报告](../evidence/2026-09/2026-09-26-box-creation-feasibility.md)保存原始窗口叙述，不作为当前开工锁。AH-194 按引用/保留集合/活动资源退役临时代码，本轮不删除仍被集成引用的 POC 或原请求证据。源码整合、实际加载、真实创建、业务验收与最终用户接受分别记录。
 
 **源头早测的位置**：最小正式创建切片可用即在明确授权的候选窗口运行一次静默创建→原登记→独立 Server/local 读回→准确清理，先于昂贵业务旅程；AST健康、已加载和Server合同各自有结果。相关变化使旧结论过期；低频周期复验须明确授权，不在普通健康查询中暗建Bot。失败只阻断相关创建/发布，不停止独立架构施工。当前 canary 为未实施/未运行，不显示健康。
 
 ### 固定 POC 历史入口
 
-早期未补丁创建、字段修复、房间替代、普通本地对象、Local-first 实际登记、ack 缺口与受控完整业务的逐阶段事实，统一进入[2026-09-26 固定报告](../reports/2026-09-26-box-creation-feasibility.md)和[主题档案](../archive/box-local-first-poc-2026-09.md)。不在本索引重复过时的“当前停点”；历史成功、失败和原 unknown 均未改写。
+早期未补丁创建、字段修复、房间替代、普通本地对象、Local-first 实际登记、ack 缺口与受控完整业务的逐阶段事实，统一进入[2026-09-26 固定报告](../evidence/2026-09/2026-09-26-box-creation-feasibility.md)和[主题档案](../evidence/topics/box-local-first-poc-2026-09.md)。不在本索引重复过时的“当前停点”；历史成功、失败和原 unknown 均未改写。
 
-原 AH-124 采用/恢复与 A/B/C 原请求的固定事实仍见[2026-09-24 窗口](../reports/2026-09-24-controlled-dual-bot.md)及[2026-09-25 收场](../reports/2026-09-25-host-intake-recovery.md#13740-实际加载c-结果与收场)。它们不因新架构施工被重放，也不因历史摘要退回报告而清空 unknown 或原资源责任。
+原 AH-124 采用/恢复与 A/B/C 原请求的固定事实仍见[2026-09-24 窗口](../evidence/2026-09/2026-09-24-controlled-dual-bot.md)及[2026-09-25 收场](../evidence/2026-09/2026-09-25-host-intake-recovery.md#13740-实际加载c-结果与收场)。它们不因新架构施工被重放，也不因历史摘要退回报告而清空 unknown 或原资源责任。
 
 ### 安装级观察恢复（2026-09-25）
 
-接手时正式读面确认 Host 变化已识别，但无 Bot collector 配置使 OBS intake 不可用，64 条 health 记录未确认；实际来源的快速压缩附件也超过原 8 MiB。已实现默认安装级本地 intake、0755 安装根下私有观测存储和异步标准压缩，源码与实际来源存储读回检查见[定向修正](../reports/2026-09-25-host-intake-recovery.md)。`e468ba99` 已独立安装并替换现役管理 Server/Web；13:10 UTC 原 64 条积压确认入库，新的 `8aeda5f9` 官方来源及附件自动发布，Host/runtime intake 均 committed。观察开启时固定安装的五秒 API 与十秒退出判据通过；源码大计算已改为协作让出，未以关闭观察通过。此范围没有新增 Bot/模型/创建重放或 Host 采用，全局 CLI shim 未改。`8aeda5f9/0378b9f4` 的 40 项原生隔离和两项接收模型/存储切换检查已通过，仍不代签实际运行。
+接手时正式读面确认 Host 变化已识别，但无 Bot collector 配置使 OBS intake 不可用，64 条 health 记录未确认；实际来源的快速压缩附件也超过原 8 MiB。已实现默认安装级本地 intake、0755 安装根下私有观测存储和异步标准压缩，源码与实际来源存储读回检查见[定向修正](../evidence/2026-09/2026-09-25-host-intake-recovery.md)。`e468ba99` 已独立安装并替换现役管理 Server/Web；13:10 UTC 原 64 条积压确认入库，新的 `8aeda5f9` 官方来源及附件自动发布，Host/runtime intake 均 committed。观察开启时固定安装的五秒 API 与十秒退出判据通过；源码大计算已改为协作让出，未以关闭观察通过。此范围没有新增 Bot/模型/创建重放或 Host 采用，全局 CLI shim 未改。`8aeda5f9/0378b9f4` 的 40 项原生隔离和两项接收模型/存储切换检查已通过，仍不代签实际运行。
 
 ### AH-188 Host 更新分级待验窗口（2026-09-25）
 
-**`partial`；来源集成与安装级实际观察已取得证据，完整四类更新/真实通知仍未验收。** [T44 更新事件合同](T44-host-ops-continuous-sensing.md#source-change-events)与 AH-143 公共观察配置、任务投递已在同一候选通过自有来源 → 原 producer → 固定 provenance → OBS/outbox → 自有 HTTP 接收/回执的隔离纵切。准确范围见[联合集成回执](../reports/2026-09-25-host-notification-integration.md)；实际合入提交由原票记录。合入与源码测试不更换 AH-124 固定候选，不授权部署或修复/采用。
+**`partial`；来源集成与安装级实际观察已取得证据，完整四类更新/真实通知仍未验收。** [T44 更新事件合同](T44-host-ops-continuous-sensing.md#source-change-events)与 AH-143 公共观察配置、任务投递已在同一候选通过自有来源 → 原 producer → 固定 provenance → OBS/outbox → 自有 HTTP 接收/回执的隔离纵切。准确范围见[联合集成回执](../evidence/2026-09/2026-09-25-host-notification-integration.md)；实际合入提交由原票记录。合入与源码测试不更换 AH-124 固定候选，不授权部署或修复/采用。
 
 同一候选完成 Q 合流与必要复核后，仅沿原 [采集寿命](#live-monitor-persistence)、[通知寿命](#live-ops-observer-lifetime)、[证据](#live-obs-evidence)、[隐私](#live-alert-privacy)及[容量](#live-obs-storage)补验：实际官方来源的窗口外更新零唤醒；相关同形/结构变化/无法判断分别形成可消费事件；连续来源与同 episode 风险升级不被旧 open incident 吞掉；前后固定私有引用可读回且公共面无源码/路径；新磁盘、已验证候选、实际运行代与用户影响不混。核验公共 observation 开关与 execution/notification 开关独立生效，以及真实消费者接收和原 outbox 证据保全。不能以自有 fixture、HTTP 受理或未返回结论的审查代签这些判据。
 
@@ -118,7 +118,7 @@
 
 | 稳定场景 / Gate | 本候选结果与证据范围 | 待完成动作与通过判据 | 阻断、下一步、来源 |
 |---|---|---|---|
-| <a id="live-core-runtime-candidate"></a>**LIVE-CORE-RUNTIME-CANDIDATE**<br>G0 | [ ] `planned`；`not-run` | ①固定已整合运行核心源码/锁/实际制品与原生来源；②适用整体检查及独立审查；③目标宿主、保全/恢复、加载风险/后台有效策略闭包；④窗口目标/费用/动作许可；⑤结论仅允许J2受控采用取证，不代表已loaded或可日用 | [当前 core 与审查回流：固定范围通过，宿主/采用未放行](../reports/2026-09-24-core-review-config-read.md)、[拓扑J2](../roadmap/agent-first-cli/parallel-delivery.md#joins)、[T40](T40-persistent-release-and-rollback.md)、[T49](T49-modeld-qualification-and-release.md) |
+| <a id="live-core-runtime-candidate"></a>**LIVE-CORE-RUNTIME-CANDIDATE**<br>G0 | [ ] `planned`；`not-run` | ①固定已整合运行核心源码/锁/实际制品与原生来源；②适用整体检查及独立审查；③目标宿主、保全/恢复、加载风险/后台有效策略闭包；④窗口目标/费用/动作许可；⑤结论仅允许J2受控采用取证，不代表已loaded或可日用 | [当前 core 与审查回流：固定范围通过，宿主/采用未放行](../evidence/2026-09/2026-09-24-core-review-config-read.md)、[拓扑J2](../roadmap/agent-first-cli/parallel-delivery.md#joins)、[T40](T40-persistent-release-and-rollback.md)、[T49](T49-modeld-qualification-and-release.md) |
 | <a id="live-core-runtime-acceptance"></a>**LIVE-CORE-RUNTIME-ACCEPTANCE**<br>G0 | [ ] `planned`；`not-run` | ①本节核心子判据逐项在实际候选上有证据，含三模型六格/原版App/原生持久往返/退出；②必要保全、独立寿命与至少24小时实际观察；③安全失败/资源/unknown收束；④用户明确接受该固定核心范围才到J4；⑤全产品未完成项仍保留，不自动发布 | [核心采用Spec](../roadmap/agent-first-cli/spec.md#core-runtime-adoption)、[Q集成与资格](../roadmap/agent-first-cli/routes/q-integration-and-qualification.md)、[执行手册](../maintainers/live-end-to-end.md) |
 
 核心通过后，仅固定安装制品用于日常运行；v2与各worktree继续施工不自动升级现役。以下E0–E6继续维护完整产品判据/结果；核心集合的partial子项不将这些整行改写为通过。
@@ -127,7 +127,7 @@
 
 | 稳定场景 / Gate | 本候选结果与证据范围 | 待完成动作与通过判据 | 阻断、下一步、来源 |
 |---|---|---|---|
-| <a id="live-release-candidate"></a>**LIVE-RELEASE-CANDIDATE**<br>G0 | [ ] `partial`；`not-run` | ①固定完整候选源码/锁/CLI/Server/Web/modeld/Host 适配与实际制品；②适用全仓/安装回归及独立审查有结论；③登记所选场景、原生数据保全、对象/预算与安全停止路径；④结构预检、工程资格、用户验收和发布分开 | 来源与实施差额：[前置证据](../reports/2026-09-19-pre-e2e-closeout.md#测试独立审查与证据层级) · [窗口手册](../maintainers/live-end-to-end.md#window-record) |
+| <a id="live-release-candidate"></a>**LIVE-RELEASE-CANDIDATE**<br>G0 | [ ] `partial`；`not-run` | ①固定完整候选源码/锁/CLI/Server/Web/modeld/Host 适配与实际制品；②适用全仓/安装回归及独立审查有结论；③登记所选场景、原生数据保全、对象/预算与安全停止路径；④结构预检、工程资格、用户验收和发布分开 | 来源与实施差额：[前置证据](../evidence/2026-09/2026-09-19-pre-e2e-closeout.md#测试独立审查与证据层级) · [窗口手册](../maintainers/live-end-to-end.md#window-record) |
 | <a id="live-package-install"></a>**LIVE-PACKAGE-INSTALL**<br>G1 | [ ] `partial`；`not-run` | ①从固定发行制品在隔离前缀安装 CLI、Server、Web/modeld 所需内容，离开源码可运行；②支持的 Node/平台与原生依赖实测；③grokbox/gbox 同义且帮助/Skill 同版本；④重复安装/卸载不丢原生资料；⑤制品覆盖 apps、客户端及部署配置，不以 dev server 代签 | 来源与实施差额：[release](../maintainers/release.md#candidate-gate) · [包入口](../../package.json) |
 | <a id="live-cli-connections"></a>**LIVE-CLI-CONNECTIONS**<br>G1 | [ ] `partial`；`not-run` | ①默认固定本机、显式 connection 不修改共享当前目标；②连接管理与身份/能力诊断准确；③普通业务统一经管理服务；④远端失败不回退特权本地；⑤bootstrap/离线诊断/外部恢复明确例外，不把旧 local/direct/daemon 三路当兼容门 | 来源与实施差额：[Profile合同](../product-contract.md#5-profile-合同) · [CLI registry](../../packages/cli/src/registry.ts) |
 | <a id="live-network-boundary"></a>**LIVE-NETWORK-BOUNDARY**<br>G1/G3 | [ ] `partial`；`not-run` | ①默认/本地init不调用Tailscale、不自动选远端；②外部自管HTTPS入口在无Tailscale CLI客户端上doctor准确且不读Serve；③认证/能力/监听器失败拒绝mutation，健康recover无SSH即no-op；④受控已安装daemon仅SSH ensure，wake只在provider确认休眠后；⑤旧peer/bootstrap/Serve/recovery选项、字段和写路径全部退出，拒绝旧输入且不修改既有外部网络配置；现成端点验证不伪称已执行服务换代 | 来源与实施差额：[网络合同](../product-contract.md#2-默认入口与连接) · [NET-01现行入口与退役](NET-01-box-local-network-boundary.md#compatibility-and-operator-migration) |
@@ -145,7 +145,7 @@
 | <a id="live-initial-adoption"></a>**LIVE-INITIAL-ADOPTION**<br>G0 | [ ] `planned`；`not-run` | ①干净新版安装并接入原生 Bot/Memory/Project/文件，身份不重置；②必要模型/连接配置一次性导入，秘密不外泄；③旧 writer 退出，未知外部效果不重复；④派生索引重建并披露历史起点；⑤不要求旧内部 DB/日志迁入或通用降级 | [CLI-05](CLI-05-implementation-follow-through.md)、[T59](T59-config-migration-cutover.md)、[数据范围](../roadmap/agent-first-cli/spec.md#数据兼容范围) |
 | <a id="live-agent-discovery"></a>**LIVE-AGENT-DISCOVERY**<br>G1 | [ ] `planned`；`not-run` | ①从按需发现到真实身份/能力、解析和读取；②名称歧义、self 缺证、错安装拒绝；③写入用稳定 ref，旧 Bot ref 不指向继任者；④严格输入、机器输出、有界分页与不兼容版本错误 | [CLI-01](CLI-01-discovery-and-targeting.md)、[CLI-04](CLI-04-command-cutover.md) |
 | <a id="live-cli-api"></a>**LIVE-CLI-API**<br>G1 | [ ] `partial`；`not-run` | ①真实 CLI/API/浏览器读取和修改同一 Bot，进入同一领域用例；②并发 revision 冲突不丢更新/草稿；③权限和错误语义一致；④GET 不建库/启动/修复，Web 不执行 CLI；⑤原生无 CAS 的真实限制可见 | [T29](T29-runtime-webui.md)、[WEB-02](WEB-02-web-foundation.md)、[CLI-02](CLI-02-operation-contract.md) |
-| <a id="live-operation-recovery"></a>**LIVE-OPERATION-RECOVERY**<br>G1 | [ ] `partial`；`not-run` | ①同键同语义返回原回执、异义冲突；②已接受且成功改变 revision/plan 已过期后仍可找回，重放不再首次准入；③断连/刷新/重启/迟到无重复效果；④服务不可达时凭提交前信息定位生命周期/外部恢复 owner；⑤cancel/resume/reconcile 各按真实范围 | [CLI-02](CLI-02-operation-contract.md)、[R01/R05](../reports/2026-09-19-agent-first-cli-review.md) |
+| <a id="live-operation-recovery"></a>**LIVE-OPERATION-RECOVERY**<br>G1 | [ ] `partial`；`not-run` | ①同键同语义返回原回执、异义冲突；②已接受且成功改变 revision/plan 已过期后仍可找回，重放不再首次准入；③断连/刷新/重启/迟到无重复效果；④服务不可达时凭提交前信息定位生命周期/外部恢复 owner；⑤cancel/resume/reconcile 各按真实范围 | [CLI-02](CLI-02-operation-contract.md)、[R01/R05](../evidence/2026-09/2026-09-19-agent-first-cli-review.md) |
 
 ## E1 — Bot、模型、effort、工具与 compact
 
@@ -174,16 +174,16 @@
 | <a id="live-session-roundtrip"></a>**LIVE-SESSION-ROUNDTRIP**<br>G1 | [ ] `partial`；`not-run` | ①完成本节官方→三模型六档→官方→SOL完整路径；②每次读取前序事实/工具标记；③至少一个真实compact跨Provider/官方继续；④Host重启后读取原生checkpoint，而非只凭模型猜中事实 | 来源与实施差额：[T39](T39-native-model-roundtrip.md) · [上下文连续性](../maintainers/managed-context-continuity.md) |
 | <a id="live-ctx-adoption"></a>**LIVE-CTX-ADOPTION**<br>G1 | [ ] `partial`；`not-run` | ①当前有效context budget/触发策略与captured一致；②手动compact从正式入口经原生安全点；③在途/未知/非支持session拒绝；④操作ID可读，未调用provider的no-op与真正compact分开 | 来源与实施差额：[CTX-02](CTX-02-host-context-maintenance.md) · [配置](../configuration.md) |
 | <a id="live-context-native-continuity"></a>**LIVE-CONTEXT-NATIVE-CONTINUITY**<br>G1 | [ ] `partial`；`not-run` | ①主动阈值compact与确认overflow后的恢复分开；②已有pending维护只有一个owner；③同请求有界resume且无普通错误无限retry；④工具/episode/root/terminal/交付可关联；⑤取消或迟到摘要不装回旧root | 来源与实施差额：[T32](T32-runtime-confirmed-compact.md) · [T35](T35-host-compact-wait-point.md) · [CTX-04](CTX-04-context-entrypoints-and-proof.md) |
-| <a id="live-ctx-next-input"></a>**LIVE-CTX-NEXT-INPUT**<br>G1 | [ ] `partial`；`not-run` | ①受控summary失败/主请求失败分别留旧回执；②用户明确换到另一授权模型后发全新nonce；③新输入能继续且旧操作不重放；④错误恢复不制造自动换模/重复工具 | 来源与实施差额：[CTX-04](CTX-04-context-entrypoints-and-proof.md) · [失败证据](../reports/2026-09-17-context-provider-failure-evidence.md) |
+| <a id="live-ctx-next-input"></a>**LIVE-CTX-NEXT-INPUT**<br>G1 | [ ] `partial`；`not-run` | ①受控summary失败/主请求失败分别留旧回执；②用户明确换到另一授权模型后发全新nonce；③新输入能继续且旧操作不重放；④错误恢复不制造自动换模/重复工具 | 来源与实施差额：[CTX-04](CTX-04-context-entrypoints-and-proof.md) · [失败证据](../evidence/2026-09/2026-09-17-context-provider-failure-evidence.md) |
 | <a id="live-ctx-durability"></a>**LIVE-CTX-DURABILITY**<br>G1 | [ ] `partial`；`not-run` | ①先成功compact并记旧/新root与checkpoint；②正式modeld换代、必要Host重启；③新原生消费者读取真实状态/工具结果；④回官方再受管不丢历史；⑤unknown提交保持并可对账 | 来源与实施差额：[CTX-02](CTX-02-host-context-maintenance.md) · [T39](T39-native-model-roundtrip.md) |
 
 ## E2 — 原版 App、材料与功能 Web
 
 | 稳定场景 / Gate | 本候选结果与证据范围 | 待完成动作与通过判据 | 阻断、下一步、来源 |
 |---|---|---|---|
-| <a id="live-materials-search"></a>**LIVE-MATERIALS-SEARCH**<br>G1 | [ ] `planned`；`not-run` | ①跨已授权 agent/user/project 与 Project 文件检索并定位原来源；②metadata 与正文权限分开；③来源缺失/同步延迟/索引年龄与空结果区分；④重建索引不修改源或补造历史；⑤原生 membership 不从目录猜测 | [DATA-01](DATA-01-memory-project-files.md)、[CLI-03](CLI-03-observation-and-wait.md)；[只读来源核验](../reports/2026-09-19-live-source-qualification.md)只证有限元数据，不签本行通过 |
+| <a id="live-materials-search"></a>**LIVE-MATERIALS-SEARCH**<br>G1 | [ ] `planned`；`not-run` | ①跨已授权 agent/user/project 与 Project 文件检索并定位原来源；②metadata 与正文权限分开；③来源缺失/同步延迟/索引年龄与空结果区分；④重建索引不修改源或补造历史；⑤原生 membership 不从目录猜测 | [DATA-01](DATA-01-memory-project-files.md)、[CLI-03](CLI-03-observation-and-wait.md)；[只读来源核验](../evidence/2026-09/2026-09-19-live-source-qualification.md)只证有限元数据，不签本行通过 |
 | <a id="live-materials-write"></a>**LIVE-MATERIALS-WRITE**<br>G1 | [ ] `planned`；`not-run` | ①合成源材料经真实 owner 修改并独立读回；②CLI/Web 并发、外部 writer 限制、版本冲突和 unknown 有证据；③源提交与索引追赶分开；④只读来源不虚构 CRUD，file 入口不绕权限；⑤范围不足保留实现差额 | [DATA-01](DATA-01-memory-project-files.md)、[CLI-02](CLI-02-operation-contract.md) |
-| <a id="live-event-continuity"></a>**LIVE-EVENT-CONTINUITY**<br>G1 | [ ] `planned`；`not-run` | ①快照/cursor/filter 同边界接续；②重复/乱序/重连/旧代/超保留期明确 gap；③原生缺 replay 不补造历史；④慢订阅有界、不阻管理操作；⑤无页面持续采集，Gateway 观察者断开对原生焦点的影响经版本资格验证 | [CLI-03](CLI-03-observation-and-wait.md)、[T41](T41-continuous-observation-and-alerting.md)、[来源研究](../reports/2026-09-19-webui-source-feasibility.md) |
+| <a id="live-event-continuity"></a>**LIVE-EVENT-CONTINUITY**<br>G1 | [ ] `planned`；`not-run` | ①快照/cursor/filter 同边界接续；②重复/乱序/重连/旧代/超保留期明确 gap；③原生缺 replay 不补造历史；④慢订阅有界、不阻管理操作；⑤无页面持续采集，Gateway 观察者断开对原生焦点的影响经版本资格验证 | [CLI-03](CLI-03-observation-and-wait.md)、[T41](T41-continuous-observation-and-alerting.md)、[来源研究](../evidence/2026-09/2026-09-19-webui-source-feasibility.md) |
 | <a id="live-web-foundation"></a>**LIVE-WEB-FOUNDATION**<br>G1 | [ ] `planned`；`not-run` | ①实际打包 Web/SSR/API，本地及自管外部 HTTPS 到同一 Box；②会话、Origin/Host/CSRF、代理信任、权限拒绝与秘密隔离；③SSR 请求缓存不串身份，hydration 不重复开服务；④URL 恢复、刷新/后退和切对象不串草稿/缓存/订阅 | [WEB-02](WEB-02-web-foundation.md)、[T29](T29-runtime-webui.md) |
 | <a id="live-web-functional"></a>**LIVE-WEB-FUNCTIONAL**<br>G1 | [ ] `planned`；`not-run` | ①Bot、材料、运行/日志、异常、保护和系统管理的接受功能接真服务；②正常/空/加载/无权限/stale/冲突/unknown 可辨识且可恢复；③必要操作与 CLI 一致，键盘/窄屏基本可用；④低保真不豁免安全或可靠性，不要求聊天/审批回复 | [WEB-03](WEB-03-functional-prototype.md)、[页面目标](../roadmap/future/webui-console.md) |
 
@@ -200,17 +200,17 @@
 | <a id="live-modeld-app"></a>**LIVE-MODELD-APP**<br>G1 | [ ] `partial`；`not-run` | ①未修改原版App发输入并关联同session/run/代；②增量文本/工具/失败/完成显示；③Working、typing、发送队列、父任务和监听子任务区分；④断连重连与迟到事件不复活；⑤标题/历史不丢 | 来源与实施差额：[Working判据](../maintainers/composer-working-status.md) · [T36](T36-composer-working-activity.md) |
 | <a id="live-auth-availability-app"></a>**LIVE-AUTH-AVAILABILITY-APP**<br>G1 | [ ] `partial`；`not-run` | ①权限等待/过期/超时/拒绝和上游503文案有区别；②动作建议不误导重放或抢归属；③控制帧不进模型正文；④App与CLI关联同一次故障 | 来源与实施差额：[结果观察](../maintainers/run-outcome-observation.md) · [AUTH票](AUTH-ownership-evidence-availability.md) |
 | <a id="live-stream-error-recovery"></a>**LIVE-STREAM-ERROR-RECOVERY**<br>G1 | [ ] `partial`；`not-run` | ①正常stream/工具多步/终态无重复；②自然503/限流/认证错误分层；③空流/畸形/中断仅隔离注入，payload校验未释放工具；④原生Working收束；⑤新nonce正常请求可继续，retry off保持 | 来源与实施差额：[Provider手册](../maintainers/chat-provider-compatibility.md) · [working恢复](../maintainers/working-state-recovery.md) |
-| <a id="live-ownership-alignment"></a>**LIVE-OWNERSHIP-ALIGNMENT**<br>G1/G3 | [ ] `partial`；`failed`（本次正常升级连续性） | ①新Bot confirmed_box；②普通profile更新不写ownership；③temporal/冲突对象拒受管执行；④历史冲突与保全/校准单独列明，不混成干净Bot失败 | [10:57 POC](../reports/2026-09-26-box-creation-feasibility.md)：新local-first Box完成业务、普通重启/reconcile仍Box；一次官方版本升级后同一Server身份确认为Temporal，已停用。仅此POC范围，不签整行/所有路线失败。[T37](T37-server-ownership-admission.md) · [T38](T38-identity-write-alignment.md) |
+| <a id="live-ownership-alignment"></a>**LIVE-OWNERSHIP-ALIGNMENT**<br>G1/G3 | [ ] `partial`；`failed`（本次正常升级连续性） | ①新Bot confirmed_box；②普通profile更新不写ownership；③temporal/冲突对象拒受管执行；④历史冲突与保全/校准单独列明，不混成干净Bot失败 | [10:57 POC](../evidence/2026-09/2026-09-26-box-creation-feasibility.md)：新local-first Box完成业务、普通重启/reconcile仍Box；一次官方版本升级后同一Server身份确认为Temporal，已停用。仅此POC范围，不签整行/所有路线失败。[T37](T37-server-ownership-admission.md) · [T38](T38-identity-write-alignment.md) |
 
 ## E3 — 原生 Routine、提醒与受托自主
 
 | 稳定场景 / Gate | 本候选结果与证据范围 | 待完成动作与通过判据 | 阻断、下一步、来源 |
 |---|---|---|---|
 | <a id="live-ops-routines"></a>**LIVE-OPS-ROUTINES**<br>G2 | [ ] `partial`；`not-run` | ①固定blueprint→disabled apply→outcome/readback→安全更新；②同operation不重复create，unknown只精确ID reconcile；③配对preview零key调用、确认bind后capsule私有；④明确enable后正式Webhook一次；⑤disable后无新fire，in-flight单独结算；⑥本轮资源清理 | 来源与实施差额：[T43](T43-native-webhook-contract.md) · [T53](T53-agent-routines-cli.md) · [Routine步骤](../maintainers/live-end-to-end.md#webhook-journey) |
-| <a id="live-ops-receivers"></a>**LIVE-OPS-RECEIVERS**<br>G2 | [ ] `partial`；`not-run` | ①verify同帧能力/模型与新鲜所有权；②实际Webhook回合记录三种授权Provider至少high，另选一个xhigh；③普通提醒正文/incident/revision正确且只提醒；专用维护目标经独立分析授权领取固定任务并回报，凭据回执不代签真实Bot回合/用户展示；④只验证过的模型档位列入接收者支持；⑤异常结果不广播备用 | 来源与实施差额：[T55](T55-custom-receiver-delivery.md) · [接收者证据](../reports/2026-09-18-receiver-model-preflight.md) |
-| <a id="live-ops-observer-lifetime"></a>**LIVE-OPS-OBSERVER-LIFETIME**<br>G2 | [ ] `partial`；`not-run` | ①必要配置/授权齐备可显式启用，无须先测试或人工声明收到；②独立可选 test 产生真实 test work/attempt，不伪造 incident，verify 不发送；③新异常→后台 outbox→原生提醒且无需外部 Agent 常驻；④关页面/CLI 后继续，off/未授权零投递；⑤未知先对账，不补旧积压 | 来源与实施差额：[T45](T45-template-webhook-delivery.md) · [自动链证据](../reports/2026-09-19-automatic-notification.md) |
+| <a id="live-ops-receivers"></a>**LIVE-OPS-RECEIVERS**<br>G2 | [ ] `partial`；`not-run` | ①verify同帧能力/模型与新鲜所有权；②实际Webhook回合记录三种授权Provider至少high，另选一个xhigh；③普通提醒正文/incident/revision正确且只提醒；专用维护目标经独立分析授权领取固定任务并回报，凭据回执不代签真实Bot回合/用户展示；④只验证过的模型档位列入接收者支持；⑤异常结果不广播备用 | 来源与实施差额：[T55](T55-custom-receiver-delivery.md) · [接收者证据](../evidence/2026-09/2026-09-18-receiver-model-preflight.md) |
+| <a id="live-ops-observer-lifetime"></a>**LIVE-OPS-OBSERVER-LIFETIME**<br>G2 | [ ] `partial`；`not-run` | ①必要配置/授权齐备可显式启用，无须先测试或人工声明收到；②独立可选 test 产生真实 test work/attempt，不伪造 incident，verify 不发送；③新异常→后台 outbox→原生提醒且无需外部 Agent 常驻；④关页面/CLI 后继续，off/未授权零投递；⑤未知先对账，不补旧积压 | 来源与实施差额：[T45](T45-template-webhook-delivery.md) · [自动链证据](../evidence/2026-09/2026-09-19-automatic-notification.md) |
 | <a id="live-notice-requalification"></a>**LIVE-NOTICE-REQUALIFICATION**<br>G2 | [ ] `partial`；`not-run` | ①绑定/模型/权限/代际变化后重核真实资格；②失效停发且原因可查；③恢复经新合同的显式授权路径，测试不成为隐含门槛；④旧 unknown/积压不重投；⑤重启不扩大已有授权 | 来源与实施差额：[T46](T46-template-ops-pairing.md) · [T55](T55-custom-receiver-delivery.md) |
-| <a id="live-obs-evidence"></a>**LIVE-OBS-EVIDENCE**<br>G1/G2 | [ ] `partial`；`not-run` | ①未知tray/queue failed/无STEP实际产生incident，已知失败也正确归类；②现场含事发制品/关联/副作用/覆盖缺口；③同revision在下一输入/滚动后命令仍可读；④过期降摘要不回空健康；⑤J1接纳不等CONT职责完成 | 来源与实施差额：[源边界证明](../reports/2026-09-19-pre-e2e-observation.md#producer-boundaries) · [OBS-00](OBS-00-evidence-contracts.md) · [OBS-02](OBS-02-incident-evidence-snapshots.md) · [T45](T45-template-webhook-delivery.md) |
+| <a id="live-obs-evidence"></a>**LIVE-OBS-EVIDENCE**<br>G1/G2 | [ ] `partial`；`not-run` | ①未知tray/queue failed/无STEP实际产生incident，已知失败也正确归类；②现场含事发制品/关联/副作用/覆盖缺口；③同revision在下一输入/滚动后命令仍可读；④过期降摘要不回空健康；⑤J1接纳不等CONT职责完成 | 来源与实施差额：[源边界证明](../evidence/2026-09/2026-09-19-pre-e2e-observation.md#producer-boundaries) · [OBS-00](OBS-00-evidence-contracts.md) · [OBS-02](OBS-02-incident-evidence-snapshots.md) · [T45](T45-template-webhook-delivery.md) |
 | <a id="live-alert-privacy"></a>**LIVE-ALERT-PRIVACY**<br>G1/G2 | [ ] `partial`；`not-run` | ①测试prompt/tool/config中注入合成敏感哨兵；②检查实际发出body、日志、公共摘要和错误输出无泄露；③必要真实ID仅到指定私有目标，公共视图一致别名；④命令由registry生成，无任意shell/URL；⑤秘密不进report/git | 来源与实施差额：[OBS-03](OBS-03-evidence-privacy-views.md) · [安全](../product-contract.md#14-安全边界) |
 | <a id="live-ops-autonomy"></a>**LIVE-OPS-AUTONOMY**<br>G3 | [ ] `partial`；`not-run` | ①同一个接收Bot先只提醒；②用户明确委托后自主选取incident/trace、查证据、归类；③用户指明换模型时执行并验下一TURN；④仅排障不擅自重启/公开；⑤缺工具权限可解释而非编造成功 | 来源与实施差额：[T47](T47-bounded-ops-diagnosis.md) · [Skill](../../skills/grokbox/SKILL.md) |
 | <a id="live-skills-templates"></a>**LIVE-SKILLS-TEMPLATES**<br>G1/G2 | [ ] `partial`；`not-run` | ①安装包中小入口+按需topic可用，命令和版本一致；②recipe pack不嵌历史数据/key/绑定/授权；③现有通用模板在私有测试范围stage/import并核对独立身份；④双实例不继承endpoint；⑤独立ledger模板尚缺则不宣称已有市场产品 | 来源与实施差额：[T46](T46-template-ops-pairing.md) · [templates](../../skills/grokbox/templates.md) |
@@ -225,9 +225,9 @@
 |---|---|---|---|
 | <a id="live-modeld-restart"></a>**LIVE-MODELD-RESTART**<br>G1 | [ ] `partial`；`not-run` | ①正式expect-epoch replace/停止启动/借用同root；②新代健康及下一消息，旧STEP不重放；③必要Host重启后实际profile/worker加载；④官方选择/无补丁Host/旧schema退路分别取证；⑤通知绑定代际改变时停止且能显式重新资格 | 来源与实施差额：[T40](T40-persistent-release-and-rollback.md) · [正式退路](../maintainers/official-rollback-acceptance.md) |
 | <a id="live-runtime-persistence"></a>**LIVE-RUNTIME-PERSISTENCE**<br>G2 | [ ] `partial`；`not-run` | ①受支持service owner安装幂等；②父shell/网页退出服务仍活；③正常退出/重新启动单实例；④Box重启/环境重建后配置/凭据与加载恢复；⑤on/off不暗切Host或越权 | 来源与实施差额：[服务注册](../maintainers/runtime-service-registration.md) · [T40](T40-persistent-release-and-rollback.md) |
-| <a id="live-monitor-persistence"></a>**LIVE-MONITOR-PERSISTENCE**<br>G2 | [ ] `partial`；`not-run` | ①canonical runRoot/durableRoot和明确目标集合；②collector随正确宿主存续且重启接续cursor；③慢RPC不挡本地故障，scope/缺源显示gap；④ack/snooze/固定现场持久；⑤无UI也持续生产新work | 来源与实施差额：[累计丢失公共投影：隔离资格，非现场通过](../reports/2026-09-24-observation-loss-projection.md) · [服务内证明](../reports/2026-09-19-pre-e2e-observation.md#collector-lifetime) · [T41](T41-continuous-observation-and-alerting.md) · [T44](T44-host-ops-continuous-sensing.md) · [T50](T50-template-ops-release-proof.md) |
-| <a id="live-obs-storage"></a>**LIVE-OBS-STORAGE**<br>G2 | [ ] `partial`；`not-run` | ①真实文件系统滚动/缩额/闲置GC计量含索引/辅助/暂存；②通知off仍GC；③至少跨三个维护周期及窗口内受控到期，查询无隐式GC；④24小时扩展观察另留窗口；⑤未覆盖owner与旧writer明确，不签全安装或OS quota | 来源与实施差额：[诊断接纳证据](../reports/2026-09-19-diagnostic-admission.md#固定执行证据) · [OBS-04](OBS-04-bounded-observation-storage.md) |
-| <a id="live-obs-safe-retirement"></a>**LIVE-OBS-SAFE-RETIREMENT**<br>G2/G3 | [ ] `partial`；`not-run` | ①引用闭包/最后可靠点不被诊断GC删除；②旧STEP/commit_unknown/notify unknown/provision在GC及新进程后拒重复副作用；③明细退役保留精确保护，未结前缀不饿死其余GC；④验证支持的通知DB恢复与服务epoch边界，容量满不清账本 | 来源与实施差额：[owner边界](../reports/2026-09-19-pre-e2e-closeout.md#安全退役最小保护由执行入口消费) · [OBS-05](OBS-05-safe-state-retirement.md) · [CONT存储](CONT-02-continuity-snapshots.md) |
+| <a id="live-monitor-persistence"></a>**LIVE-MONITOR-PERSISTENCE**<br>G2 | [ ] `partial`；`not-run` | ①canonical runRoot/durableRoot和明确目标集合；②collector随正确宿主存续且重启接续cursor；③慢RPC不挡本地故障，scope/缺源显示gap；④ack/snooze/固定现场持久；⑤无UI也持续生产新work | 来源与实施差额：[累计丢失公共投影：隔离资格，非现场通过](../evidence/2026-09/2026-09-24-observation-loss-projection.md) · [服务内证明](../evidence/2026-09/2026-09-19-pre-e2e-observation.md#collector-lifetime) · [T41](T41-continuous-observation-and-alerting.md) · [T44](T44-host-ops-continuous-sensing.md) · [T50](T50-template-ops-release-proof.md) |
+| <a id="live-obs-storage"></a>**LIVE-OBS-STORAGE**<br>G2 | [ ] `partial`；`not-run` | ①真实文件系统滚动/缩额/闲置GC计量含索引/辅助/暂存；②通知off仍GC；③至少跨三个维护周期及窗口内受控到期，查询无隐式GC；④24小时扩展观察另留窗口；⑤未覆盖owner与旧writer明确，不签全安装或OS quota | 来源与实施差额：[诊断接纳证据](../evidence/2026-09/2026-09-19-diagnostic-admission.md#固定执行证据) · [OBS-04](OBS-04-bounded-observation-storage.md) |
+| <a id="live-obs-safe-retirement"></a>**LIVE-OBS-SAFE-RETIREMENT**<br>G2/G3 | [ ] `partial`；`not-run` | ①引用闭包/最后可靠点不被诊断GC删除；②旧STEP/commit_unknown/notify unknown/provision在GC及新进程后拒重复副作用；③明细退役保留精确保护，未结前缀不饿死其余GC；④验证支持的通知DB恢复与服务epoch边界，容量满不清账本 | 来源与实施差额：[owner边界](../evidence/2026-09/2026-09-19-pre-e2e-closeout.md#安全退役最小保护由执行入口消费) · [OBS-05](OBS-05-safe-state-retirement.md) · [CONT存储](CONT-02-continuity-snapshots.md) |
 | <a id="live-cleanup"></a>**LIVE-CLEANUP**<br>G0 | [ ] `partial`；`not-run` | ①收束本轮通知/测试 Routine、在途 run/Job 和租约；②unknown 与必要记录保留；③精确恢复本次改动或说明新版保留状态，不要求回旧开发版；④自有已终结资源按授权回收，文件进入可恢复回收站；⑤独立读回原生资料和非目标未受损 | 来源与实施差额：[执行手册](../maintainers/live-end-to-end.md#cleanup) · [release](../maintainers/release.md#live-window-procedure) |
 
 ## E3 补充 — 保护、当前状态与交接
@@ -237,14 +237,14 @@
 | 稳定场景 / Gate | 本候选结果与证据范围 | 待完成动作与通过判据 | 阻断、下一步、来源 |
 |---|---|---|---|
 | <a id="live-native-duplicate"></a>**LIVE-NATIVE-DUPLICATE**<br>G1 | [ ] `partial`；`not-run` | ①只读计划及scope/精确源ID；②持久单次派发→实际新ID→独立归属读回；③App活动聊天变化、复制的人设/设置和Routine状态；④源有current-state标记时新对象正确清理；⑤超时/丢回执不重复创建，operations可离线读 | 来源与实施差额：[CONT-06](CONT-06-native-duplicate-cli.md) · [操作指南](../maintainers/native-agent-duplicate.md) |
-| <a id="live-current-context"></a>**LIVE-CURRENT-CONTEXT**<br>G1 | [ ] `partial`；`not-run` | ①匹配profile/worker后初始化与释放；②实际下一输入及重启后沿目标最新状态；③reset不复活旧摘要/历史补齐，Memory/指令保留；④unknown不重复写，活动自调用明确拒绝 | 来源与实施差额：[CONT-07](CONT-07-current-context-control.md) · [代码验证回执](../reports/2026-09-19-continuity-lifecycle-integration.md) |
-| <a id="live-continuity-material"></a>**LIVE-CONTINUITY-MATERIAL**<br>G1 | [ ] `partial`；`not-run` | ①实际事务捕获及字节/依赖；②Memory/历史有界来源和缺口；③重启/并发GC保持工作流引用；④memory/resume/archive的实际采集与容量表现 | 来源与实施差额：[CONT-02](CONT-02-continuity-snapshots.md) · [代码验证回执](../reports/2026-09-19-continuity-lifecycle-integration.md) |
+| <a id="live-current-context"></a>**LIVE-CURRENT-CONTEXT**<br>G1 | [ ] `partial`；`not-run` | ①匹配profile/worker后初始化与释放；②实际下一输入及重启后沿目标最新状态；③reset不复活旧摘要/历史补齐，Memory/指令保留；④unknown不重复写，活动自调用明确拒绝 | 来源与实施差额：[CONT-07](CONT-07-current-context-control.md) · [代码验证回执](../evidence/2026-09/2026-09-19-continuity-lifecycle-integration.md) |
+| <a id="live-continuity-material"></a>**LIVE-CONTINUITY-MATERIAL**<br>G1 | [ ] `partial`；`not-run` | ①实际事务捕获及字节/依赖；②Memory/历史有界来源和缺口；③重启/并发GC保持工作流引用；④memory/resume/archive的实际采集与容量表现 | 来源与实施差额：[CONT-02](CONT-02-continuity-snapshots.md) · [代码验证回执](../evidence/2026-09/2026-09-19-continuity-lifecycle-integration.md) |
 | <a id="live-ownership-continuity"></a>**LIVE-OWNERSHIP-CONTINUITY**<br>G1 | [ ] `planned`；`not-run` | ①默认材料保全→确认丢失→后台按证据推进继任；②可靠 checkpoint 优先，降级路径逐项有原生能力与缺口说明；③新 Bot 可工作、关系交接、旧 Bot 可退役分别验；④独立步骤可继续、unknown 不重放，Bot 判断不替代执行回执 | 来源与实施差额：[CONT-05](CONT-05-continuity-acceptance.md) · [Spec S13](../roadmap/box-runtime-impl-spec.md#continuity-delivery) |
-| <a id="live-ownership-loss-protection"></a>**LIVE-OWNERSHIP-LOSS-PROTECTION**<br>G1 | [ ] `partial`；`not-run` | ①确认 Box-owned 后默认观察与保全，可逐 Bot 调整/关闭；②真实归属丢失与断连/stale/gap 区分；③只按合格事实和有效策略启动后台保护；④通知与替换各有回执，保护不借通知授权扩权 | 来源与实施差额：[CONT-01](CONT-01-ownership-loss-notification.md) · [代码验证回执](../reports/2026-09-19-continuity-lifecycle-integration.md) |
-| <a id="live-continuity-primitives"></a>**LIVE-CONTINUITY-PRIMITIVES**<br>G1 | [ ] `partial`；`not-run` | ①clone/replace 的真实新身份和材料来源；②准备/激活/运行分开；③后台推进与重启恢复，不要求调用者循环 advance；④unknown 不重建，旧 ref 不重定向，材料不足诚实阻断而非假成功 | 来源与实施差额：[CONT-03](CONT-03-native-box-clone.md) · [代码验证回执](../reports/2026-09-19-continuity-lifecycle-integration.md) |
-| <a id="live-continuity-spawn"></a>**LIVE-CONTINUITY-SPAWN**<br>G1 | [ ] `partial`；`not-run` | 初始化前零请求；真实新turn及首Provider请求；普通用户输入不受启动载体过滤影响；指令跨compact/重启和unknown不重复启动 | 来源与实施差额：[CONT-08](CONT-08-instructed-spawn.md) · [代码验证回执](../reports/2026-09-19-continuity-lifecycle-integration.md) |
-| <a id="live-continuity-handover"></a>**LIVE-CONTINUITY-HANDOVER**<br>G1 | [ ] `partial`；`not-run` | ①真实前后继及已接受关系清单；②逐项群/DM/Routine 的原生效果，保留已有成员/启用意图；③程序后台推进、Bot 可辅助但不可自签；④未知不重放，独立关系可继续；⑤不足以兑现的关系保留缺口，不以新 Bot 可用签整链完成 | 来源与实施差额：[CONT-09](CONT-09-relationship-handover.md) · [代码验证回执](../reports/2026-09-19-continuity-lifecycle-integration.md) |
-| <a id="live-continuity-retirement"></a>**LIVE-CONTINUITY-RETIREMENT**<br>G1 | [ ] `partial`；`not-run` | ①确认旧入站覆盖、quiet/gap 与依赖，不用时间到期推导可退役；②缺关键事实或可靠原生能力时保留旧对象；③已授权且具备条件时通过真实 owner 退役并读回；④缺能力的接受目标仍挂实施差额，不用安全拒绝代签实现完成 | 来源与实施差额：[CONT-10](CONT-10-inbound-convergence-retirement.md) · [代码验证回执](../reports/2026-09-19-continuity-lifecycle-integration.md) |
+| <a id="live-ownership-loss-protection"></a>**LIVE-OWNERSHIP-LOSS-PROTECTION**<br>G1 | [ ] `partial`；`not-run` | ①确认 Box-owned 后默认观察与保全，可逐 Bot 调整/关闭；②真实归属丢失与断连/stale/gap 区分；③只按合格事实和有效策略启动后台保护；④通知与替换各有回执，保护不借通知授权扩权 | 来源与实施差额：[CONT-01](CONT-01-ownership-loss-notification.md) · [代码验证回执](../evidence/2026-09/2026-09-19-continuity-lifecycle-integration.md) |
+| <a id="live-continuity-primitives"></a>**LIVE-CONTINUITY-PRIMITIVES**<br>G1 | [ ] `partial`；`not-run` | ①clone/replace 的真实新身份和材料来源；②准备/激活/运行分开；③后台推进与重启恢复，不要求调用者循环 advance；④unknown 不重建，旧 ref 不重定向，材料不足诚实阻断而非假成功 | 来源与实施差额：[CONT-03](CONT-03-native-box-clone.md) · [代码验证回执](../evidence/2026-09/2026-09-19-continuity-lifecycle-integration.md) |
+| <a id="live-continuity-spawn"></a>**LIVE-CONTINUITY-SPAWN**<br>G1 | [ ] `partial`；`not-run` | 初始化前零请求；真实新turn及首Provider请求；普通用户输入不受启动载体过滤影响；指令跨compact/重启和unknown不重复启动 | 来源与实施差额：[CONT-08](CONT-08-instructed-spawn.md) · [代码验证回执](../evidence/2026-09/2026-09-19-continuity-lifecycle-integration.md) |
+| <a id="live-continuity-handover"></a>**LIVE-CONTINUITY-HANDOVER**<br>G1 | [ ] `partial`；`not-run` | ①真实前后继及已接受关系清单；②逐项群/DM/Routine 的原生效果，保留已有成员/启用意图；③程序后台推进、Bot 可辅助但不可自签；④未知不重放，独立关系可继续；⑤不足以兑现的关系保留缺口，不以新 Bot 可用签整链完成 | 来源与实施差额：[CONT-09](CONT-09-relationship-handover.md) · [代码验证回执](../evidence/2026-09/2026-09-19-continuity-lifecycle-integration.md) |
+| <a id="live-continuity-retirement"></a>**LIVE-CONTINUITY-RETIREMENT**<br>G1 | [ ] `partial`；`not-run` | ①确认旧入站覆盖、quiet/gap 与依赖，不用时间到期推导可退役；②缺关键事实或可靠原生能力时保留旧对象；③已授权且具备条件时通过真实 owner 退役并读回；④缺能力的接受目标仍挂实施差额，不用安全拒绝代签实现完成 | 来源与实施差额：[CONT-10](CONT-10-inbound-convergence-retirement.md) · [代码验证回执](../evidence/2026-09/2026-09-19-continuity-lifecycle-integration.md) |
 | <a id="live-config-home-reset"></a>**LIVE-CONFIG-HOME-RESET**<br>D | [ ] `partial`；`excluded` | 真实平台Reset下durable/config/models/secrets、aliases、安装身份/原off保留；不把进程restart当Reset | 来源与实施差额：[T59](T59-config-migration-cutover.md) · [T60](T60-config-ops-integration-proof.md) |
 | <a id="live-provider-minimax"></a>**LIVE-PROVIDER-MINIMAX**<br>G3 | [ ] `partial`；`excluded` | 若版本仍承诺MiniMax，需在明确授权/可用通道重验多步工具/inline continuation/空辅助结果；Routine基础由E3统一测 | 来源与实施差额：[Provider手册](../maintainers/chat-provider-compatibility.md#regression-and-live-acceptance) |
 | <a id="live-optional-capabilities"></a>**LIVE-OPTIONAL-CAPABILITIES**<br>G3 | [ ] `partial`；`not-run` | quota只读归一化/无凭据明确；box status与已许可wake/keepalive区分；desktop keep/prune仅专用屏幕且可恢复；不支持平台/无capability正确拒绝 | 来源与实施差额：[quota](../quota.md) · [Sandbox](../cursor-sandbox-control-plane.md) · [desktop](../product-contract.md#6-capability-路由) |
@@ -327,7 +327,7 @@
 
 通过用`[x]`配`passed`，未通过用`[ ]`配具体结果（既有未勾选行按其结果读取）。勾选表示本条全部必需判据及适用清理在明确候选/范围下成立，不表示跑过命令；只通过部分子项不勾整行，细分结果留报告。已完成行保留稳定ID、精简判据和证据链接，不复制成另一张完成表；相关改变使证据不足时取消勾选并标`needs-revalidation`，不删除旧事实，也不因纯文档变化重跑。
 
-证据入口须指向`../reports/<日期>-live-<主题>.md#<场景或证据汇总锚点>`。多窗口共同支撑时由该报告章节逐项引用原窗口；不把承接的旧证据冒充本轮重跑。仍然有效的阻断详细说明按[证据与阻断流转](../maintainers/live-end-to-end.md#evidence-lifecycle)归位，解除后移除入口里的旧阻断叙事。
+证据入口须指向`../evidence/YYYY-MM/YYYY-MM-DD-live-<主题>.md#<场景或证据汇总锚点>`；`topics/` 是跨窗口提炼，不能代替本候选的固定验收回执。多窗口共同支撑时由该报告章节逐项引用原窗口；不把承接的旧证据冒充本轮重跑。仍然有效的阻断详细说明按[证据与阻断流转](../maintainers/live-end-to-end.md#evidence-lifecycle)归位，解除后移除入口里的旧阻断叙事。
 
 1. **登记**：给出来源Spec/Ticket、入口与前置、对象/代际/身份、正常旅程与失败/重启反例、成功oracle、不可证明项、风险/费用/清理、需要的原生环境；用下述模板。新leaf同步命令覆盖表。
 2. **集成**：需要的修改进入一个固定候选后，完成适用整体回归、制品与独立审查。来源→候选→实际制品关系可追溯，不固定分支名，不把每次合入变成部署；不切全局 shim 到施工 worktree。
@@ -349,29 +349,29 @@
 <a id="window-20260917"></a>
 ### H-W17 — 2026-09-17
 
-A `7994b92`与B `dc03066`：配置迁移、所选Provider/工具/Memory/effort、官方回程及进程重启已有有限现场回执；App、完整checkpoint旅程及普遍兼容未因此通过。曾包含上游503和stock强关联未知，不能删去这些失败。实际身份、授权/消费与清理留[原报告](../reports/2026-09-17-live-integration-window.md)，不在本页复制PID、长摘要和累计测试数。
+A `7994b92`与B `dc03066`：配置迁移、所选Provider/工具/Memory/effort、官方回程及进程重启已有有限现场回执；App、完整checkpoint旅程及普遍兼容未因此通过。曾包含上游503和stock强关联未知，不能删去这些失败。实际身份、授权/消费与清理留[原报告](../evidence/2026-09/2026-09-17-live-integration-window.md)，不在本页复制PID、长摘要和累计测试数。
 
 <a id="window-context-v8-20260917"></a>
 ### H-CTX — CTX-V8与后续补丁
 
-`6fb4b48`及后续`5f2afdb`相关加载、config3/wire8、端点和modeld换代证据见[CTX-V8](../reports/2026-09-17-context-v8-live-window.md)与[失败边界](../reports/2026-09-17-context-provider-failure-evidence.md)。当时真实消息/compact链未闭合；历史工具拦截不是本轮永久环境判定，执行时重新检验正常获授权入口，仍不得绕过当前工具拒绝。
+`6fb4b48`及后续`5f2afdb`相关加载、config3/wire8、端点和modeld换代证据见[CTX-V8](../evidence/2026-09/2026-09-17-context-v8-live-window.md)与[失败边界](../evidence/2026-09/2026-09-17-context-provider-failure-evidence.md)。当时真实消息/compact链未闭合；历史工具拦截不是本轮永久环境判定，执行时重新检验正常获授权入口，仍不得绕过当前工具拒绝。
 
 <a id="history-cont"></a>
 ### H-CONT — 2026-09-19原生状态集成
 
-[原生绑定回执](../reports/2026-09-19-continuity-native-binding.md)拥有worker/CLI/持久状态的限定隔离证明与旧入口保全；不等于业务Bot恢复、全量Memory/历史或关系迁移。
+[原生绑定回执](../evidence/2026-09/2026-09-19-continuity-native-binding.md)拥有worker/CLI/持久状态的限定隔离证明与旧入口保全；不等于业务Bot恢复、全量Memory/历史或关系迁移。
 
 <a id="history-notification"></a>
 ### H-NOTICE — 2026-09-18至19通知链集成
 
-[显式发送](../reports/2026-09-18-explicit-native-notification.md)与[自动通知](../reports/2026-09-19-automatic-notification.md)保存源码、合成HTTP、真实SQLite/Node/daemon、source→v2映射和缺失末组回归。sender/激活代码已存在；生产TLS、实际接收者与collector持久安装不能由这些离线事实推导。
+[显式发送](../evidence/2026-09/2026-09-18-explicit-native-notification.md)与[自动通知](../evidence/2026-09/2026-09-19-automatic-notification.md)保存源码、合成HTTP、真实SQLite/Node/daemon、source→v2映射和缺失末组回归。sender/激活代码已存在；生产TLS、实际接收者与collector持久安装不能由这些离线事实推导。
 
 <a id="ah-143-delivery-gap"></a>
 ### AH-143 — 固定维护任务已接收口，真实默认出口与现场闭环未完成
 
 **现场状态仍为 partial / not-run；联合源码已通过组合验证，不是已部署或 AH-143 整票 Done。** 实际合流提交在原票；当前实现合同见 [operations](../runtime/operations.md#maintenance-task-delivery)、[T45](T45-template-webhook-delivery.md)、[T54](T54-ops-targets-and-routing.md)、[T55](T55-custom-receiver-delivery.md)。原有 LIVE-ID 不变，不新增平行现场入口。
 
-2026-09-25 自有隔离证明：原 outbox 有限明确拒绝重试（每 work 最多三次、30秒/120秒、固定身份/到期）、unknown 不重投；专用分析授权与固定任务；实际 Node HTTP 自有 Webhook 接收端先认领再丢 HTTP 确认，原库保留独立 unknown/claim，重启按原 claim 续报而没有第二次 POST。最初样例仅在原通知 attempt 边界按 AH-188 合同构造；本次联合候选已增加真正生产代码的公开自有来源 producer→原 OBS/outbox→自动 HTTP 投递→授权认领/结果，覆盖无关更新不发、同形与结构变化分流。仍不是官方来源、原生 Bot 或用户展示的验收，完整结果见[联合集成回执](../reports/2026-09-25-host-notification-integration.md)。普通 packed 子进程已通过自有 `ops.observation.enabled=false` 明确隔离不相关观察，不靠执行 disabled 推导观察关闭。
+2026-09-25 自有隔离证明：原 outbox 有限明确拒绝重试（每 work 最多三次、30秒/120秒、固定身份/到期）、unknown 不重投；专用分析授权与固定任务；实际 Node HTTP 自有 Webhook 接收端先认领再丢 HTTP 确认，原库保留独立 unknown/claim，重启按原 claim 续报而没有第二次 POST。最初样例仅在原通知 attempt 边界按 AH-188 合同构造；本次联合候选已增加真正生产代码的公开自有来源 producer→原 OBS/outbox→自动 HTTP 投递→授权认领/结果，覆盖无关更新不发、同形与结构变化分流。仍不是官方来源、原生 Bot 或用户展示的验收，完整结果见[联合集成回执](../evidence/2026-09/2026-09-25-host-notification-integration.md)。普通 packed 子进程已通过自有 `ops.observation.enabled=false` 明确隔离不相关观察，不靠执行 disabled 推导观察关闭。
 
 | 原场景 / 阻断 | 仍需的真实或合流证据 |
 | --- | --- |
@@ -381,4 +381,4 @@ A `7994b92`与B `dc03066`：配置迁移、所选Provider/工具/Memory/effort�
 | AH-188 公共观察配置与代码组合 | 已在同一候选验证真实 producer 的 episode/classification→维护消费者、无关更新不发、同形/结构变化分流，以及实际配置开/关/读取失败与取消。Host-health 19、witness 26、notification 48、原 handover 20 项均通过；使用实际 Node/Rust/SQLite/packed 组件和自有来源，不签官方来源或实际 Bot。 |
 | 独立复核与部署 | 分类/任务/授权入口、outbox 恢复及 producer/provenance 必要分段复核与修后复查已取得 Accepted，具体发现及范围见联合报告；早期超时没有计通过。合流不更换 AH-124 固定现场候选，不动现役 Host/modeld/全局 shim；真实通知及模型费用仅在原有效授权窗口执行。 |
 
-本次基线重整没有产生新的现场通过。旧 `RC-E2E-20260919` 的规划与判据见[原清单重整回执](../reports/2026-09-19-live-e2e-checklist-rebaseline.md)，其前置实现见[固定收口证据](../reports/2026-09-19-pre-e2e-closeout.md)；这些不是新版的施工或采用前置。已有历史锚点保留，后续窗口写入[报告目录](../reports/README.md)，本页只替换受影响场景的当前结果。
+本次基线重整没有产生新的现场通过。旧 `RC-E2E-20260919` 的规划与判据见[原清单重整回执](../evidence/2026-09/2026-09-19-live-e2e-checklist-rebaseline.md)，其前置实现见[固定收口证据](../evidence/2026-09/2026-09-19-pre-e2e-closeout.md)；这些不是新版的施工或采用前置。已有历史锚点保留，后续窗口写入[报告目录](../evidence/2026-09/README.md)，本页只替换受影响场景的当前结果。

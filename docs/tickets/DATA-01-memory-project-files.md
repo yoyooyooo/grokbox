@@ -18,7 +18,7 @@
 
 ## 当前实现与来源资格
 
-材料对象是带安装/来源绑定的**文档**，不是新的 Memory fact 身份，也不是完整上游账号清单。原生布局核对延续[来源可行性记录](../reports/2026-09-19-webui-source-feasibility.md)：本轮读取原生源码副本中的 `MemoryService`、Project membership 与 Gateway/transcript 管理入口，确认 Agent、User、Project 分片及独立 `projects.json`。已观察到的 `getAgentMemories/deleteAgentMemory` 不能推出全局 User/Project 的写入 API；本轮没有通过直接编辑分片来冒充该能力。
+材料对象是带安装/来源绑定的**文档**，不是新的 Memory fact 身份，也不是完整上游账号清单。原生布局核对延续[来源可行性记录](../evidence/2026-09/2026-09-19-webui-source-feasibility.md)：本轮读取原生源码副本中的 `MemoryService`、Project membership 与 Gateway/transcript 管理入口，确认 Agent、User、Project 分片及独立 `projects.json`。已观察到的 `getAgentMemories/deleteAgentMemory` 不能推出全局 User/Project 的写入 API；本轮没有通过直接编辑分片来冒充该能力。
 
 | 来源 | 已接入范围 | 修改边界 |
 |---|---|---|
@@ -28,7 +28,7 @@
 | 索引文件来源 | 显式材料根内的受限UTF-8文本/全文检索 | 既有writable文件通过原材料writer替换；索引来源不能同时成为named-root写别名 |
 | Named-root文件 | 绑定安装/根策略/inode的目录元数据、显式正文与64MiB内二进制 | 原Box描述符writer承载新建/替换/mkdir/upload/download/trash/restore；metadata/content/write/delete/restore独立授权，完整原生Project附件不在此证明内 |
 
-[B1 当前材料合同报告](../reports/2026-09-22-material-contract.md)固定当前来源、身份、权限与 Project fileRef 缺口；[纯合同](../../packages/runtime-kernel/src/materials.ts)、[源适配](../../packages/box-runtime/src/internal/io/material-source.node.ts)、[索引与操作存储](../../packages/box-runtime/src/internal/io/material-store.node.ts)、[后台宿主](../../packages/box-runtime/src/internal/roots/materials.runtime.ts)和[管理用例](../../packages/server/src/materials.ts)分别拥有边界。管理 Server 持有 indexer；扫描不做原生 RPC/模型请求或源写入。配置只读面不初始化存储；显式启用的后台进行初始扫描和周期校准。源绑定包含配置、声明的账号 scope、真实根目录 inode，声明 scope 不冒充最新原生登录，所有来源保留 `upstreamSync=not-observed`。
+[B1 当前材料合同报告](../evidence/2026-09/2026-09-22-material-contract.md)固定当前来源、身份、权限与 Project fileRef 缺口；[纯合同](../../packages/runtime-kernel/src/materials.ts)、[源适配](../../packages/box-runtime/src/internal/io/material-source.node.ts)、[索引与操作存储](../../packages/box-runtime/src/internal/io/material-store.node.ts)、[后台宿主](../../packages/box-runtime/src/internal/roots/materials.runtime.ts)和[管理用例](../../packages/server/src/materials.ts)分别拥有边界。管理 Server 持有 indexer；扫描不做原生 RPC/模型请求或源写入。配置只读面不初始化存储；显式启用的后台进行初始扫描和周期校准。源绑定包含配置、声明的账号 scope、真实根目录 inode，声明 scope 不冒充最新原生登录，所有来源保留 `upstreamSync=not-observed`。
 
 索引按源有界扫描、逐项增量更新；不变内容不重写正文、不使游标失效。新鲜度、缺源、partial 与空结果分开；慢/坏来源不伪装完整结果。一个源的快照与 cursor generation 在同一 SQLite 事务发布，索引器用真实进程身份互斥，网络/源读取不持数据库事务。配置只比较 materials 领域，不因 CLI Profile/其他领域变更丢弃有效扫描。关页面不停止后台；关闭管理服务取消并等待真实扫描，不留晚写。
 
@@ -46,7 +46,7 @@ Linux descriptor-backed 本地根是当前资格平台，逐层拒绝符号链�
 
 32KiB块、完整SHA/size、固定原描述符和并发打开容量分别验证；正文和可复用审批不进浏览器localStorage。首次声明或发布回执丢失保持原unknown，真实Server SIGKILL后也不重发。暂存上传与发布分开，原owner在到期/取消/关闭时只能将已证明未发布的暂存结算cancelled；新服务不能猜测旧commit是否发生。删除保留原trash与请求，恢复仅用同主体原成功删除，不能覆盖当下存在的目标。新建文件和CLI下载使用原子no-clobber，替换与目录恢复不承诺外部writer参与CAS。目录revision是metadata，不是递归内容快照。
 
-`/files`提供源审阅、显式内容/二进制、版本冲突保留草稿、上传与原操作恢复；`/operations`接入file域。文本索引、原生Memory/Project与普通文件仍按各自权限和绑定处理，不用复制上游片段冒充源修改。证明与剩余边界见[文件管理报告](../reports/2026-09-22-file-management.md)。
+`/files`提供源审阅、显式内容/二进制、版本冲突保留草稿、上传与原操作恢复；`/operations`接入file域。文本索引、原生Memory/Project与普通文件仍按各自权限和绑定处理，不用复制上游片段冒充源修改。证明与剩余边界见[文件管理报告](../evidence/2026-09/2026-09-22-file-management.md)。
 
 ### 剩余差额
 

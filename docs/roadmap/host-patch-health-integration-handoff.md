@@ -26,13 +26,13 @@
 
 ### 起点：不是新版 App 多了功能，而是原生依赖真的发生变化
 
-用户最初要求比较 `~/code/grok-bot` 最近版本与 grokbox 的关系。[版本影响报告](../reports/2026-09-20-grok-bot-upstream-impact.md)分清了 App 0.47→0.57.1、研究库旧 Host、Box 磁盘新 Host与当前工作树，不把它们当成同一版本。
+用户最初要求比较 `~/code/grok-bot` 最近版本与 grokbox 的关系。[版本影响报告](../evidence/2026-09/2026-09-20-grok-bot-upstream-impact.md)分清了 App 0.47→0.57.1、研究库旧 Host、Box 磁盘新 Host与当前工作树，不把它们当成同一版本。
 
 在报告的固定来源上，基础配方39片中9片不匹配，current-state19片中2片不匹配；checkpoint3片能匹配，但不能据此继承整个Host/worker配对资格。问题涉及retry、tool/alert观察、手动Compact和startup，且新Host增加idle compaction相关控制流。旧Memory RPC移除也影响仍然使用它的材料回退，不能把它误判成整个新材料查询失效。
 
 ### 第二步：用户明确要求看旧机制，而不是把破坏重建中的缺口算成升级故障
 
-[旧健康链审计](../reports/2026-09-20-host-patch-health-chain-audit.md)因此追了精确apply、字符串窗口、Golden、AST、编译回执、watchdog实际入口、monitor intake和通知。
+[旧健康链审计](../evidence/2026-09/2026-09-20-host-patch-health-chain-audit.md)因此追了精确apply、字符串窗口、Golden、AST、编译回执、watchdog实际入口、monitor intake和通知。
 
 结论不是“什么都没有”：精确加载门、profile发布、HCR、原生见证、持久incident/outbox等已有价值。真正的缺口是检测覆盖与常驻接线不完整，部分诊断停留在离线工具；合法升级事件可以进入evidence却不形成incident；依赖本机Host资格的接收Bot还可能与故障同失效。
 
@@ -46,8 +46,8 @@
 
 | 文档 | 接收时的用途 |
 | --- | --- |
-| [版本影响报告](../reports/2026-09-20-grok-bot-upstream-impact.md) | 解释眼前上游变化、具体失败切片、原生接口与业务影响；是固定证据，不是部署事实 |
-| [旧健康链审计](../reports/2026-09-20-host-patch-health-chain-audit.md) | 明确旧机制可复用项、真实调用链断点和四个审计反例；避免重复造轮子或复活退休执行器 |
+| [版本影响报告](../evidence/2026-09/2026-09-20-grok-bot-upstream-impact.md) | 解释眼前上游变化、具体失败切片、原生接口与业务影响；是固定证据，不是部署事实 |
+| [旧健康链审计](../evidence/2026-09/2026-09-20-host-patch-health-chain-audit.md) | 明确旧机制可复用项、真实调用链断点和四个审计反例；避免重复造轮子或复活退休执行器 |
 | [健康方案](host-patch-health-proposal.md) | 唯一详细方案；§3–6定义健康与识别，§7–12定义集成、监控、告警和验收 |
 | [方案§15：包、协议与制品](host-patch-health-proposal.md#package-layout) | Rust/Oxc、现有TS包、stdio/FD边界、目录、三种合同与正式交付布局 |
 | [HOST-01](../tickets/HOST-01-patch-health-verifier.md) | 新增静态内核及健康链集成的施工入口、范围与阶段出口 |

@@ -8,11 +8,11 @@
 
 `monitor.runtime.ts`已将远端采样、本地journal drain、周期维护分成同一Effect生命周期的三个有界子任务，网络不持本地writer许可；DB提交/发布串行，取消等待各任务结算后才finish collector。once仍合并为一次输出；持续drain逐批发布不累积无限结果数组。`monitor-scheduling-review.test.ts`加入挂起RPC时本地原生失败仍ready、随后source收到取消的实测反例，并保留6000条积压不加速ownership读的原有测试。
 
-canonical runRoot/目标集合及daemon所属collector已接通，原生run-observer同帧健康进入周期检测；读取文件成功仍不代表producer存活。Host与control journal独立游标/状态，未创建来源、失联、截断和实际退役分开。配置移除/停用/改目标时先结算旧collector才替换，坏配置不复活默认采集。HSO其他来源、动态目标、Box开机安装和完整原生现场仍未闭合，不把daemon子任务或手工重启当boot资格。[限定回执](../reports/2026-09-18-observation-storage-followup.md)。
+canonical runRoot/目标集合及daemon所属collector已接通，原生run-observer同帧健康进入周期检测；读取文件成功仍不代表producer存活。Host与control journal独立游标/状态，未创建来源、失联、截断和实际退役分开。配置移除/停用/改目标时先结算旧collector才替换，坏配置不复活默认采集。HSO其他来源、动态目标、Box开机安装和完整原生现场仍未闭合，不把daemon子任务或手工重启当boot资格。[限定回执](../evidence/2026-09/2026-09-18-observation-storage-followup.md)。
 
-必要存储维护另已接入实际modeld listener的子Scope，不再仅依赖本collector；其固定回执、闲置日志回收和真实Node/退出证明归[OBS-04](OBS-04-bounded-observation-storage.md)与[回执](../reports/2026-09-18-modeld-storage-lifetime.md)。这不是把modeld变成新collector，也没有因此完成目标集合、原生告警或通知投递。
+必要存储维护另已接入实际modeld listener的子Scope，不再仅依赖本collector；其固定回执、闲置日志回收和真实Node/退出证明归[OBS-04](OBS-04-bounded-observation-storage.md)与[回执](../evidence/2026-09/2026-09-18-modeld-storage-lifetime.md)。这不是把modeld变成新collector，也没有因此完成目标集合、原生告警或通知投递。
 
-`runtime monitor install`仍用于显式配置 Bot 目标和 Host/control journal，不启动服务。已有有效安装配置的管理 Server 在 `ops.observation.enabled=true` 时，使用同一个 collector owner 提供零 Bot、零原生 RPC 的安装级 intake；因此 Host 变化不再等待 Bot monitor 配置才能进入 OBS。仅全新观测目录可初始化原 SQLite，旧目录缺库/损坏/旧 schema 不重建、不迁移；0755 安装根不被擅自 chmod，私有观测子目录与文件仍要求 0700/0600。显式 Bot monitor 生效时由同一 Scope 替换为对应目标/journal，旧 owner 先结算；关闭 Host 观察与关闭 Bot 观察分别生效。旧 daemon 接线和 `runtime monitor service` 已退出，状态由 `system service get server` 读取。当前 Node 管理集成验证启动、竞争、关闭取消和恢复，见 [CLI-05](CLI-05-implementation-follow-through.md)。原 daemon 窗口的 CLI 退出后采集、强杀恢复及无晚写证据保留在[固定回执](../reports/2026-09-19-pre-e2e-observation.md)，不迁为新版现场通过。
+`runtime monitor install`仍用于显式配置 Bot 目标和 Host/control journal，不启动服务。已有有效安装配置的管理 Server 在 `ops.observation.enabled=true` 时，使用同一个 collector owner 提供零 Bot、零原生 RPC 的安装级 intake；因此 Host 变化不再等待 Bot monitor 配置才能进入 OBS。仅全新观测目录可初始化原 SQLite，旧目录缺库/损坏/旧 schema 不重建、不迁移；0755 安装根不被擅自 chmod，私有观测子目录与文件仍要求 0700/0600。显式 Bot monitor 生效时由同一 Scope 替换为对应目标/journal，旧 owner 先结算；关闭 Host 观察与关闭 Bot 观察分别生效。旧 daemon 接线和 `runtime monitor service` 已退出，状态由 `system service get server` 读取。当前 Node 管理集成验证启动、竞争、关闭取消和恢复，见 [CLI-05](CLI-05-implementation-follow-through.md)。原 daemon 窗口的 CLI 退出后采集、强杀恢复及无晚写证据保留在[固定回执](../evidence/2026-09/2026-09-19-pre-e2e-observation.md)，不迁为新版现场通过。
 
 ## HOST-01 新架构接入（2026-09-20）
 
@@ -24,11 +24,11 @@ canonical runRoot/目标集合及daemon所属collector已接通，原生run-obse
 
 ## 运行编译来源增量
 
-管理 Server 已独立读取原 preload-marker 的严格正负编译观察，核对真实 PID/start/UID/exe/argv；磁盘静态结果、运行代结果和两路 OBS intake 分别显示。原 marker 回滚、进程退出、缺 marker 不修复失败；恢复需要准确较新编译正证据。运行事件复用 provenance 和 OBS，停 Server 不 signal Host。固定测试与范围见[编译健康报告](../reports/2026-09-20-host-compilation-health.md)，完整 attachment/exercised 及实际来源适配仍由 HOST-01 承接。
+管理 Server 已独立读取原 preload-marker 的严格正负编译观察，核对真实 PID/start/UID/exe/argv；磁盘静态结果、运行代结果和两路 OBS intake 分别显示。原 marker 回滚、进程退出、缺 marker 不修复失败；恢复需要准确较新编译正证据。运行事件复用 provenance 和 OBS，停 Server 不 signal Host。固定测试与范围见[编译健康报告](../evidence/2026-09/2026-09-20-host-compilation-health.md)，完整 attachment/exercised 及实际来源适配仍由 HOST-01 承接。
 
 ## 同代注册见证接线
 
-管理Server已从原getHostStatus的只读challenge采样原preload注册引用和有限实际边界，独立于Bot/ownership采样。实际handle/method替换与检测器读取故障分别入原OBS；读心跳不追加持久事件，缺证不消除注册失配。前后准确marker/进程核对覆盖负回复，停用/关闭结算实际请求，不signal Host。注册引用与真正调用机会分开，未触发不判bypass；固定实现和验证见[同代见证报告](../reports/2026-09-20-host-capability-witness.md)。
+管理Server已从原getHostStatus的只读challenge采样原preload注册引用和有限实际边界，独立于Bot/ownership采样。实际handle/method替换与检测器读取故障分别入原OBS；读心跳不追加持久事件，缺证不消除注册失配。前后准确marker/进程核对覆盖负回复，停用/关闭结算实际请求，不signal Host。注册引用与真正调用机会分开，未触发不判bypass；固定实现和验证见[同代见证报告](../evidence/2026-09/2026-09-20-host-capability-witness.md)。
 
 <a id="source-change-events"></a>
 ## Host 更新分级与可消费证据（AH-188）
@@ -54,7 +54,7 @@ Host 正文使用异步 gzip level 6，避免实际 27 MB 来源在快速压缩�
 
 定向入口为 `test/host-source-change.test.ts`（已进入原 core 清单）及 `test/host-health-management.test.ts`。前者涵盖分级、浏览器公共合同、固定私有输入与失败/容量/GC；后者使用实际 Node Server、packed Rust、原 provenance/OBS 和自有 JS 来源，覆盖连续任务、风险升级、旧故障恢复、重启、迟到结果和开关独立性。它们不代签真实官方来源、用户接收者或部署；现场仅登记原 [LIVE](LIVE-integration-validation.md) 观察/证据/隐私/容量场景。
 
-**联合候选已通过本阶段组合检查与必要分段复核。** 公共观察配置与 producer 在同一候选生效，普通与 packed 领域 fixture 分别显式隔离；原 handover 20 项保持原断言/超时通过，先前 `handover_wait:0` 失败保留。新增真实公开来源 producer → OBS/outbox → 自有 HTTP 维护接收端 → 认领/结果回执纵切通过，无关更新零额外投递，相关同形和结构变化分别生成任务。复核提出的保全/清理与恢复队首问题已在原边界修正并复查接受；早期审查超时未计通过。准确提交、测试和原生/现场限制见[联合集成回执](../reports/2026-09-25-host-notification-integration.md)，实际合流由原两票记录，不因此切换现场或签全部用户通知完成。
+**联合候选已通过本阶段组合检查与必要分段复核。** 公共观察配置与 producer 在同一候选生效，普通与 packed 领域 fixture 分别显式隔离；原 handover 20 项保持原断言/超时通过，先前 `handover_wait:0` 失败保留。新增真实公开来源 producer → OBS/outbox → 自有 HTTP 维护接收端 → 认领/结果回执纵切通过，无关更新零额外投递，相关同形和结构变化分别生成任务。复核提出的保全/清理与恢复队首问题已在原边界修正并复查接受；早期审查超时未计通过。准确提交、测试和原生/现场限制见[联合集成回执](../evidence/2026-09/2026-09-25-host-notification-integration.md)，实际合流由原两票记录，不因此切换现场或签全部用户通知完成。
 
 ## Depends-on / Modules
 

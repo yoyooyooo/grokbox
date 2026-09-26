@@ -2,7 +2,7 @@
 
 **状态：Partial implementation。分阶段 replace、创建/选模/初始化/激活及 active_with_handover 已接通；完整外部任务和逐职责效果约束仍未交付，不能从生命周期 ready/active 推导全部工作已接替或源可删除。**
 
-当前实现入口为 [生命周期程序](../../packages/box-runtime/src/internal/roots/bot-lifecycle.runtime.ts)和 [handover 程序](../../packages/box-runtime/src/internal/roots/bot-handover.runtime.ts)，限定证明归 [生命周期报告](../reports/2026-09-19-continuity-lifecycle-integration.md)，操作归 [指南](../maintainers/bot-lifecycle.md)。下文完整目标与独立验收继续保留。
+当前实现入口为 [生命周期程序](../../packages/box-runtime/src/internal/roots/bot-lifecycle.runtime.ts)和 [handover 程序](../../packages/box-runtime/src/internal/roots/bot-handover.runtime.ts)，限定证明归 [生命周期报告](../evidence/2026-09/2026-09-19-continuity-lifecycle-integration.md)，操作归 [指南](../maintainers/bot-lifecycle.md)。下文完整目标与独立验收继续保留。
 
 新版[管理保护服务](../../packages/box-runtime/src/internal/roots/protection-service.runtime.ts)已复用上述生命周期程序自动推进有效 prepare/auto-replace 策略；默认 alert 仍不创建替身。共享原生适配位于 box-runtime，不在 Server 中执行 CLI。已验证原 subject 与新 Bot 分离、未知创建/未关联目标不再登记新主体、一次创建跨重启保留，以及继任激活后未完 handover 仍可从 CLI/Web 定位。原生能力缺失时阻断，不以空 Bot 或合成恢复材料作为生产 fallback。[本轮集成和证明范围](CLI-05-implementation-follow-through.md)仍不签完整职责接管、实际 Provider 首轮、源资源独立或退役许可；人工 clone/replace/spawn 与原操作续接现已迁入统一管理 API，并保留原主体权限；后台保护不得代替该主体续接人工工作流。独立 clone/spawn 完成后允许默认保护接纳其新身份，pending 目标与 replacement 前后继仍不重复登记。剩余 current-state/独立 handover 控制及其完整职责仍归来源票。
 

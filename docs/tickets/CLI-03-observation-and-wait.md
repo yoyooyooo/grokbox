@@ -8,7 +8,7 @@ Agent 或未来页面先读取 Bot 快照，再接续变化；断线后能识别
 
 ## 方案范围
 
-收口[决策 D07、D09](../roadmap/agent-first-cli/decisions.md)。覆盖 Bot activity、message/run/operation/job 等待、持久观察快照/事件、Memory/Project 跨授权来源检索、管理异常和有界日志。采集与异常跟踪由常驻管理服务承担；模型执行仍归独立 modeld。数据依据见[固定研究记录](../reports/2026-09-19-webui-source-feasibility.md)。
+收口[决策 D07、D09](../roadmap/agent-first-cli/decisions.md)。覆盖 Bot activity、message/run/operation/job 等待、持久观察快照/事件、Memory/Project 跨授权来源检索、管理异常和有界日志。采集与异常跟踪由常驻管理服务承担；模型执行仍归独立 modeld。数据依据见[固定研究记录](../evidence/2026-09/2026-09-19-webui-source-feasibility.md)。
 
 ## 验收产物
 
@@ -26,13 +26,13 @@ Agent 或未来页面先读取 Bot 快照，再接续变化；断线后能识别
 
 ## Job 观察与等待（2026-09-22）
 
-[Job 管理用例](../reports/2026-09-22-job-management.md)已接入管理 Server、共享客户端与 Web：`job get/wait/logs` 绑定安装、主体及原 Job，等待只在声明窗口观察，不重新执行、延长期限或随页面关闭取消。已知接纳不标作执行成功；未知或缺日志不能宣称输出完整。列表及精确读取使用同一已发布记录，不用正在写入的内存终态签成功。原请求及取消分别以 `operation get --domain job|job-cancel` 恢复，缺当前策略不抹去原历史。
+[Job 管理用例](../evidence/2026-09/2026-09-22-job-management.md)已接入管理 Server、共享客户端与 Web：`job get/wait/logs` 绑定安装、主体及原 Job，等待只在声明窗口观察，不重新执行、延长期限或随页面关闭取消。已知接纳不标作执行成功；未知或缺日志不能宣称输出完整。列表及精确读取使用同一已发布记录，不用正在写入的内存终态签成功。原请求及取消分别以 `operation get --domain job|job-cancel` 恢复，缺当前策略不抹去原历史。
 
 旧 daemon Job RPC、`events --sources job` 与 Profile 的 process capability 承诺已退出；既有 Job 状态等待及有界输出由上述管理用例接管，不提供空的旧事件源或再挂一个 daemon writer。其他 Gateway/消息事件的统一接续、全域事件关联及全仓最终验收仍按本票/CLI-05 推进，不能从本片外推为所有事件域已迁完。
 
 ## 文件观察与原请求（2026-09-22）
 
-[文件管理](../reports/2026-09-22-file-management.md)提供准确根/目录snapshot与有界正文、固定下载描述符/完整SHA、独立file operation查询。目录cursor绑定当前metadata窗口；目录revision不代表递归文件内容，原文件来源的新鲜度和文本索引追赶分别呈现。浏览器仅保存安装/主体/源引用/原request定位，不缓存可重用审批或二进制。查询历史不检查当前源才能返回，不隐式修复/补投；原暂存上传取消是写动作，不伪装GET对账。
+[文件管理](../evidence/2026-09/2026-09-22-file-management.md)提供准确根/目录snapshot与有界正文、固定下载描述符/完整SHA、独立file operation查询。目录cursor绑定当前metadata窗口；目录revision不代表递归文件内容，原文件来源的新鲜度和文本索引追赶分别呈现。浏览器仅保存安装/主体/源引用/原request定位，不缓存可重用审批或二进制。查询历史不检查当前源才能返回，不隐式修复/补投；原暂存上传取消是写动作，不伪装GET对账。
 
 原生Project fileRef、账号/同步与跨域变化订阅仍归DATA-01及本票剩余合同；不能把二进制下载或一个现行file receipt称为所有材料已被原生Bot采用。
 
@@ -53,4 +53,4 @@ Agent 或未来页面先读取 Bot 快照，再接续变化；断线后能识别
 ## 实施前验证
 
 持续采集与存储差额继续归 [T41](T41-continuous-observation-and-alerting.md)。本票不复制 collector 实现票，也不宣称新增 Host 补丁已通过资格。
-消息管理授权的最终派发边界、原请求恢复与寿命复验证据见 [消息授权报告](../reports/2026-09-23-message-dispatch-authorization.md)。
+消息管理授权的最终派发边界、原请求恢复与寿命复验证据见 [消息授权报告](../evidence/2026-09/2026-09-23-message-dispatch-authorization.md)。

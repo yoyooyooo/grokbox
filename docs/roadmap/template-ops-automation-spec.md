@@ -1,6 +1,6 @@
 # Native operations specification — compatibility routes
 
-The current contract is [Native Bot operations, evidence and storage](../runtime/operations.md). This old path retains stable anchors for tickets and receipts, not a second specification or progress ledger. The former staged descriptions are recoverable from [the fixed rebuild baseline](../archive/runtime-rebuild.md); they do not describe the current sender or configuration. Current live results remain only in [LIVE](../tickets/LIVE-integration-validation.md).
+The current contract is [Native Bot operations, evidence and storage](../runtime/operations.md). This old path retains stable anchors for tickets and receipts, not a second specification or progress ledger. The former staged descriptions are recoverable from [the fixed rebuild baseline](../evidence/topics/runtime-rebuild.md); they do not describe the current sender or configuration. Current live results remain only in [LIVE](../tickets/LIVE-integration-validation.md).
 
 | Prior section | Current owner |
 | --- | --- |

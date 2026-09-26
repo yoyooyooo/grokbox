@@ -2,7 +2,7 @@
 
 本页说明已注册的有限 clone/replace/spawn、lifecycle、protection 和 handover 操作。语义与剩余产品边界归 [连续性合同](../runtime/continuity.md)，当前状态的 capture/initialize/reset/recover 归 [当前状态指南](current-state-control.md)，官方式 duplicate 归 [复制指南](native-agent-duplicate.md)。这些不是同一条复制命令的别名。
 
-命令源码：[管理命令](../../packages/cli/src/management-registry.ts)、[共享管理用例](../../packages/server/src/lifecycle.ts)、[持久分阶段程序](../../packages/box-runtime/src/internal/roots/bot-lifecycle.runtime.ts)。当前迁入状态与验证归 [CLI-05](../tickets/CLI-05-implementation-follow-through.md)；[早期生命周期报告](../reports/2026-09-19-continuity-lifecycle-integration.md)只描述其原窗口，现场结果在 [LIVE](../tickets/LIVE-integration-validation.md#live-ownership-continuity)。
+命令源码：[管理命令](../../packages/cli/src/management-registry.ts)、[共享管理用例](../../packages/server/src/lifecycle.ts)、[持久分阶段程序](../../packages/box-runtime/src/internal/roots/bot-lifecycle.runtime.ts)。当前迁入状态与验证归 [CLI-05](../tickets/CLI-05-implementation-follow-through.md)；[早期生命周期报告](../evidence/2026-09/2026-09-19-continuity-lifecycle-integration.md)只描述其原窗口，现场结果在 [LIVE](../tickets/LIVE-integration-validation.md#live-ownership-continuity)。
 
 ## 前置条件与影响
 
@@ -77,7 +77,7 @@ grokbox operation reconcile --domain handover --scope-id <original-scope> --requ
 
 退役仍须源资源独立性和删除前屏障。当前原生 adapter 没有可靠的条件删除/入站排空能力，因此显式或自动退役都会保留对应 blocker，不绕回普通 delete。`operation reconcile --domain handover` 对退役只核原持久删除回执，没有 native port，不新采样或删除。`resume` 仅在原职责/退役 guard 下推进；未知单项不被重放。只有尚未派发的管理 preparation 可以 cancel。
 
-Web `/protection` 与 `/operations` 共享上述用例，冲突保留原选择，刷新后先查原请求。浏览器仅保留安装、主体、handover 定位和请求 UUID，不保存审批、证据输入、材料正文或凭据。原生失联不影响已保留历史读取。实现与固定验证见[管理交接报告](../reports/2026-09-21-handover-management.md)。
+Web `/protection` 与 `/operations` 共享上述用例，冲突保留原选择，刷新后先查原请求。浏览器仅保留安装、主体、handover 定位和请求 UUID，不保存审批、证据输入、材料正文或凭据。原生失联不影响已保留历史读取。实现与固定验证见[管理交接报告](../evidence/2026-09/2026-09-21-handover-management.md)。
 
 ## 验收与停止边界
 

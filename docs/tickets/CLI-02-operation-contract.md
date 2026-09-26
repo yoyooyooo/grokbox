@@ -24,10 +24,10 @@ Agent 为 Bot 选择原生、跟随默认或指定模型，提交后连接断开
 
 ## 多视角 review 待处理
 
-[固定审查](../reports/2026-09-19-agent-first-cli-review.md)保留原窗口。用户已确认上层语义，以下精确协议仍未闭合：
+[固定审查](../evidence/2026-09/2026-09-19-agent-first-cli-review.md)保留原窗口。用户已确认上层语义，以下精确协议仍未闭合：
 
-- [R01](../reports/2026-09-19-agent-first-cli-review.md#r01)：区分已接受请求重放与首次准入，明确 revision/plan/代际检查的顺序。
-- [R05](../reports/2026-09-19-agent-first-cli-review.md#r05)：外部 Box 或服务生命周期操作，在管理服务仍不可达时，如何凭提交前的信息找回原回执。
+- [R01](../evidence/2026-09/2026-09-19-agent-first-cli-review.md#r01)：区分已接受请求重放与首次准入，明确 revision/plan/代际检查的顺序。
+- [R05](../evidence/2026-09/2026-09-19-agent-first-cli-review.md#r05)：外部 Box 或服务生命周期操作，在管理服务仍不可达时，如何凭提交前的信息找回原回执。
 - 配合 CLI-04：在用模型拒绝删除、在用默认拒绝清空，引用检查须与配置写入的并发合同一致；通知测试为独立可选操作，不能在 verify/enable 中隐式发送。相关产品取舍已定，补齐输入、回执和验收样例。
 
 ## 实施前验证

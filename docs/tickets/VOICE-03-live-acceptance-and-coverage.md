@@ -10,7 +10,7 @@
 
 启动时重新固定 App/Host/companion、运行代、有效语音 Harness 路由、目标 Bot 权威归属、实际模型/API 类别和捕获 revision。角色描述可消费不代表委托策略有效；磁盘 bundle 默认值不能代表账号开关。目标选择、模型费用、通话/麦克风及可逆测试动作进入明确窗口；不得从这次文档提交继承现场授权。
 
-实际用例就绪后，同批更新 `docs/tickets/LIVE-integration-validation.md`、`docs/maintainers/live-end-to-end.md` 以及现有 `scripts/live-validation.mjs` / checklist 测试的相关覆盖。新增语音场景与本窗口绑定，不污染旧候选结果。固定取证写入 `docs/reports/`，只有 LIVE 保存当前现场结果，本票保留实施/资格差额。现在不登记尚不存在的语音命令或测试脚本。
+实际用例就绪后，同批更新 `docs/tickets/LIVE-integration-validation.md`、`docs/maintainers/live-end-to-end.md` 以及现有 `scripts/live-validation.mjs` / checklist 测试的相关覆盖。新增语音场景与本窗口绑定，不污染旧候选结果。固定取证写入 `docs/evidence/YYYY-MM/`，只有 LIVE 保存当前现场结果，本票保留实施/资格差额。现在不登记尚不存在的语音命令或测试脚本。
 
 ## 核心闭环验收
 

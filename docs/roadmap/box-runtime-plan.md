@@ -22,6 +22,6 @@ Existing mechanisms are reused, not rebuilt because an old phase says to start T
 
 ## Historical Phases 0–4
 
-The old reconstruction explained the move from the POC to one kernel, the Host import fence, protected fact writers and layered evidence. Those enduring constraints now live in the homes above. The rationale and exact Git recovery route are preserved in [runtime reconstruction history](../archive/runtime-rebuild.md).
+The old reconstruction explained the move from the POC to one kernel, the Host import fence, protected fact writers and layered evidence. Those enduring constraints now live in the homes above. The rationale and exact Git recovery route are preserved in [runtime reconstruction history](../evidence/topics/runtime-rebuild.md).
 
 Historical provider/Bot choices, worktree cleanup snapshots, model-specific review loops and “execute these two slices now” instructions are not current operational policy. Their former proof and limits remain in the relevant source tickets or fixed reports. Source integration does not grant live adoption, costs, identity changes, data deletion or publication.

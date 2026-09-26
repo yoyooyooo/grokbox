@@ -25,7 +25,7 @@ Native synchronous API shape, identity, mixed-content order and validated tool m
 | Source/profile, loaded capability and controller recovery | [Host compatibility](runtime/host-compatibility.md) | [HCR](tickets/README.md#host-capability-recovery), [rollback](maintainers/official-rollback-acceptance.md) |
 | Resource/error/cancellation composition | [Effect standard](effect-box-runtime.md) | Affected production program and its tests |
 
-These are independent reading scopes, not an ordered startup checklist. Accepted remainder is explicit inside its domain and routed through [roadmap](roadmap/README.md). Old rebuild phases, initial wire versions and model-specific review choreography are [history](archive/README.md), not current implementation instructions.
+These are independent reading scopes, not an ordered startup checklist. Accepted remainder is explicit inside its domain and routed through [roadmap](roadmap/README.md). Old rebuild phases, initial wire versions and model-specific review choreography are [history](evidence/topics/README.md), not current implementation instructions.
 
 ## 4. Completion and limits
 

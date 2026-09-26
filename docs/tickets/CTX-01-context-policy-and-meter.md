@@ -23,7 +23,7 @@ bun scripts/verify-runtime-rebuild.mjs context-policy
 bun scripts/verify-runtime-rebuild.mjs config-unification
 ```
 
-这些case均有真实测试映射；unknown/缺输入/zero/skip不作通过。实际政策/配置证明包括128000/16384的严格边界、500K与128K对照、输出大于预留、invalid/小窗口/无容量声明、无assistant/无usage与Unicode/tools、model→Bot覆盖、schema2拒绝及显式迁移、alias/CAS/作用域、current-vs-next-TURN和credential轮换拒绝。组合Node制品和具体运行计数见[离线报告](../reports/2026-09-17-context-maintenance-offline.md)。
+这些case均有真实测试映射；unknown/缺输入/zero/skip不作通过。实际政策/配置证明包括128000/16384的严格边界、500K与128K对照、输出大于预留、invalid/小窗口/无容量声明、无assistant/无usage与Unicode/tools、model→Bot覆盖、schema2拒绝及显式迁移、alias/CAS/作用域、current-vs-next-TURN和credential轮换拒绝。组合Node制品和具体运行计数见[离线报告](../evidence/2026-09/2026-09-17-context-maintenance-offline.md)。
 
 source tests在 `runtime-kernel/test/context-policy.test.ts`、`context-selection.test.ts`、`unified-config.test.ts`、`box-runtime/test/config-migration.test.ts` 和既有config CLI/packed家族。预算策略扩展不另建配置writer或第三文件。
 

@@ -36,7 +36,7 @@ R2遵守LIVE已有模型矩阵，不暗中缩水为一个模型。真实Provider
 
 `native-model-switch-pipeline.test.ts`复用公开模型切换业务断言，但将JSON重启替身换成原AgentStore→原worker SQLite→独立Node完整图读回，再继续真实modeld/Unix/kernel/SDK请求。外部Provider、official session及工具效果仍是隔离能力；这证明组合程序与原生存储接缝，不是完整原版Agent loop或真实模型/App成功。原摘要、overflow/取消、辅助purpose、B2及管理HTTP边界按同组或对应原生窗口分别取证，不把一种替身结果替代另一层资格。
 
-普通公开测试保持无需私有来源；原生源码只在本机受控声明内执行。固定来源结果可签收对应实现，持续新版本由HOST-01/AH-159另记变化和受影响回归，不要求上游停更。固定回执见[本轮R1原生验证](../../../reports/2026-09-23-native-runtime-qualification.md)。
+普通公开测试保持无需私有来源；原生源码只在本机受控声明内执行。固定来源结果可签收对应实现，持续新版本由HOST-01/AH-159另记变化和受影响回归，不要求上游停更。固定回执见[本轮R1原生验证](../../../evidence/2026-09/2026-09-23-native-runtime-qualification.md)。
 
 ## 交付
 
@@ -45,4 +45,4 @@ R2遵守LIVE已有模型矩阵，不暗中缩水为一个模型。真实Provider
 
 ## 当前完整回归入口
 
-`verify-host-health.mjs core`与`verify-modeld-core.mjs release-offline`按原清单形成有限顺序组，显式文件、无遗漏重复、每组实际close结算及整个source窗口稳定；原单项预算保持。`native-runtime`与context artifact仍分别保留原生/制品的独立事实层。当前实测窗口及此前超时的边界见[有界完整回归](../../../reports/2026-09-23-bounded-verification.md)；实现签收不代A2/Q或实际Provider/App采用门。
+`verify-host-health.mjs core`与`verify-modeld-core.mjs release-offline`按原清单形成有限顺序组，显式文件、无遗漏重复、每组实际close结算及整个source窗口稳定；原单项预算保持。`native-runtime`与context artifact仍分别保留原生/制品的独立事实层。当前实测窗口及此前超时的边界见[有界完整回归](../../../evidence/2026-09/2026-09-23-bounded-verification.md)；实现签收不代A2/Q或实际Provider/App采用门。

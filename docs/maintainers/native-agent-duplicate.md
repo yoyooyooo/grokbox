@@ -40,4 +40,4 @@ grokbox bot ownership get "$TARGET_ID"
 
 原生 HTTP 超时、失败、身份回执缺失不证明未执行。同一 request 重入读取历史，不重放未知创建；换 request UUID 也不能越过该目标的未决效果。只有明确发生在传输前的本地拒绝可记录为 not-dispatched。返回字段 `nativeReceipt`、`readBack`、`cleanup` 分别表示回执、读回和清理结果，不能用 `state=complete` 概括对象可用或全部职责完成。
 
-`packages/server/test/products.test.ts` 在真实 Node HTTP/SQLite 和打包 CLI 上执行合成原生端点测试；`packages/box-runtime/test/native-product-qualification.test.ts` 与 `native-duplicate-qualification.test.ts` 需显式 `GROKBOX_TEST_NATIVE_CONTINUITY=1`，只执行固定原生源码的选定函数。两类证据均不签真实账号复制、App 展示或模型消费。当前施工审查及未解决项见 [AH-138 验证回执](../reports/2026-09-23-native-product-review.md)。
+`packages/server/test/products.test.ts` 在真实 Node HTTP/SQLite 和打包 CLI 上执行合成原生端点测试；`packages/box-runtime/test/native-product-qualification.test.ts` 与 `native-duplicate-qualification.test.ts` 需显式 `GROKBOX_TEST_NATIVE_CONTINUITY=1`，只执行固定原生源码的选定函数。两类证据均不签真实账号复制、App 展示或模型消费。当前施工审查及未解决项见 [AH-138 验证回执](../evidence/2026-09/2026-09-23-native-product-review.md)。

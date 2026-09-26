@@ -24,7 +24,7 @@
 
 ## 当前实现入口
 
-`runtime services install/status/uninstall`已提供明确的服务注册程序和实际CLI。只支持当前已可达且linger开启的systemd用户管理器；默认预览，确认必须带精确planDigest，固定已安装发行包/Node、两个unit与根范围。F1准备进一步把动态PID1/user-manager/linger观测、service owner、durableRoot、runRoot、userHome、releaseRoot、unitDir、安装epoch和可对账fault receipt写入登记与status；release与状态根重叠、位于源码checkout祖先或owner在确认间变化都会拒绝。真实解析器验证过单元语法，Node验证启动前制品变更拒绝；不修改官方Host/supervisor，不启动新通用守护进程。详见[操作手册](../maintainers/runtime-service-registration.md)和[前置收口证据](../reports/2026-09-19-pre-e2e-closeout.md)。
+`runtime services install/status/uninstall`已提供明确的服务注册程序和实际CLI。只支持当前已可达且linger开启的systemd用户管理器；默认预览，确认必须带精确planDigest，固定已安装发行包/Node、两个unit与根范围。F1准备进一步把动态PID1/user-manager/linger观测、service owner、durableRoot、runRoot、userHome、releaseRoot、unitDir、安装epoch和可对账fault receipt写入登记与status；release与状态根重叠、位于源码checkout祖先或owner在确认间变化都会拒绝。真实解析器验证过单元语法，Node验证启动前制品变更拒绝；不修改官方Host/supervisor，不启动新通用守护进程。详见[操作手册](../maintainers/runtime-service-registration.md)和[前置收口证据](../evidence/2026-09/2026-09-19-pre-e2e-closeout.md)。
 
 manager不可用是明确ENV阻断，安装器在任何单元写入前拒绝，不以tini、systemctl文件、桌面脚本或nohup冒充可用boot owner。安装读回、现役启动、退出调用者、系统重启和Host采用分别验收，不能把本节视为当前Box已安装。
 
@@ -53,7 +53,7 @@ modeld复用daemon的准确socket owner/advisory gate：仅对登记inode+确证
 
 ### 当前启动前置（2026-09-19）
 
-服务内collector装配、daemon/modeld准确socket恢复与systemd用户服务注册已实现，当前步骤是目标环境资格而非再次开发同义安装器。此前本机只读检查为tini且user manager不可用；没有适配器能够把不存在的管理器当成已注册，须在目标宿主资格检查及 E0 重查。环境不支持时，相应开机持久性场景保持ENV阻断，不擅改官方supervisor或用nohup代签；匹配环境的实际注册/独立进程/重启仍需现场证明。当前方法与证据见[服务注册](../maintainers/runtime-service-registration.md)、[前置收口](../reports/2026-09-19-pre-e2e-closeout.md)。
+服务内collector装配、daemon/modeld准确socket恢复与systemd用户服务注册已实现，当前步骤是目标环境资格而非再次开发同义安装器。此前本机只读检查为tini且user manager不可用；没有适配器能够把不存在的管理器当成已注册，须在目标宿主资格检查及 E0 重查。环境不支持时，相应开机持久性场景保持ENV阻断，不擅改官方supervisor或用nohup代签；匹配环境的实际注册/独立进程/重启仍需现场证明。当前方法与证据见[服务注册](../maintainers/runtime-service-registration.md)、[前置收口](../evidence/2026-09/2026-09-19-pre-e2e-closeout.md)。
 
 ### 单盒monitor的长期运行（T41）
 

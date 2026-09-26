@@ -30,26 +30,26 @@ Agent 只学习一套正式命令，按自身策略组合基础能力。已有�
 
 ## 多视角 review 处理状态
 
-[固定审查](../reports/2026-09-19-agent-first-cli-review.md)保留原证据窗口，当前处理情况如下：
+[固定审查](../evidence/2026-09/2026-09-19-agent-first-cli-review.md)保留原证据窗口，当前处理情况如下：
 
 | 发现 | 本轮已确定 | 剩余验收 |
 | --- | --- | --- |
-| [R02](../reports/2026-09-19-agent-first-cli-review.md#r02) 默认模型 | 明确跟随者为消费者；显式指定独立；在用默认拒绝清空，无默认不能选择跟随 | reset 输入/错误与引用信息、创建时明确选择、旧配置迁移及验收样例 |
-| [R03](../reports/2026-09-19-agent-first-cli-review.md#r03) 通知首装 | 测试独立、显式、可选；必要配置/授权齐备可启用，不强制测试成功或人工确认接收 | 固定测试内容、目标绑定、test work/attempt 与投递回执；覆盖健康首装、不测试启用、测试失败和结果未知 |
-| [R04](../reports/2026-09-19-agent-first-cli-review.md#r04) 模型目录影响 | 后续轮次采用更新，在途捕获保留；仍被 Bot 选择或默认引用时拒绝删除 | 引用检查与换绑/删除的并发、影响回执、历史保留、凭据/资格变化边界 |
-| [R05](../reports/2026-09-19-agent-first-cli-review.md#r05) 外部恢复 | 外部 Box 与服务生命周期入口保留独立恢复路径 | 与 CLI-02 定义目标服务不可达期间的 owner 定位和原回执查找 |
+| [R02](../evidence/2026-09/2026-09-19-agent-first-cli-review.md#r02) 默认模型 | 明确跟随者为消费者；显式指定独立；在用默认拒绝清空，无默认不能选择跟随 | reset 输入/错误与引用信息、创建时明确选择、旧配置迁移及验收样例 |
+| [R03](../evidence/2026-09/2026-09-19-agent-first-cli-review.md#r03) 通知首装 | 测试独立、显式、可选；必要配置/授权齐备可启用，不强制测试成功或人工确认接收 | 固定测试内容、目标绑定、test work/attempt 与投递回执；覆盖健康首装、不测试启用、测试失败和结果未知 |
+| [R04](../evidence/2026-09/2026-09-19-agent-first-cli-review.md#r04) 模型目录影响 | 后续轮次采用更新，在途捕获保留；仍被 Bot 选择或默认引用时拒绝删除 | 引用检查与换绑/删除的并发、影响回执、历史保留、凭据/资格变化边界 |
+| [R05](../evidence/2026-09/2026-09-19-agent-first-cli-review.md#r05) 外部恢复 | 外部 Box 与服务生命周期入口保留独立恢复路径 | 与 CLI-02 定义目标服务不可达期间的 owner 定位和原回执查找 |
 
 R01 的重放/首次准入顺序由 CLI-02 负责。R02/R03/R04 的产品取舍已定，剩余合同和验收样例直接按已确认原则收口，不再逐项请求拍板。方向确认不代表这些发现已完成协议验证，也不把候选命名或真实实现资格标为已验收。
 
 ## Job 领域切换（2026-09-22）
 
-原 `exec run`、`jobs list/show/logs/cancel`、daemon Job RPC/启动与关闭接线，及旧 Profile process capability/Job 事件源已退出；源码不存在兼容别名或转发 writer。`job policy/start/list/get/wait/logs/cancel`、两个原请求查询域和 `/jobs` 共用原 Box Job manager、进程/文件权限适配及持久记录。执行、shell、观察、输出、取消权限独立；未知首次发布或取消不会因同请求、换代或诊断保留期限而获得第二次执行。完整说明、确定性反例与实际 Node/Chrome/制品验证见 [Job 管理报告](../reports/2026-09-22-job-management.md)。
+原 `exec run`、`jobs list/show/logs/cancel`、daemon Job RPC/启动与关闭接线，及旧 Profile process capability/Job 事件源已退出；源码不存在兼容别名或转发 writer。`job policy/start/list/get/wait/logs/cancel`、两个原请求查询域和 `/jobs` 共用原 Box Job manager、进程/文件权限适配及持久记录。执行、shell、观察、输出、取消权限独立；未知首次发布或取消不会因同请求、换代或诊断保留期限而获得第二次执行。完整说明、确定性反例与实际 Node/Chrome/制品验证见 [Job 管理报告](../evidence/2026-09/2026-09-22-job-management.md)。
 
 未迁移的文件/桌面/Gateway 域仍有各自去向；现行 canonical 配置中的 `daemon.process/filesystem` 名称不是旧 daemon 的执行授权，后续配置命名收束不能复活旧执行器。此片不关闭 DATA-01 的完整文件/原生材料通路、全域观察关联或 W4 的服务宿主和集中验收。
 
 ## 文件领域切换（2026-09-22）
 
-`file root list/get`、named-root的`file stat/list/read/write/mkdir/upload/download/delete/restore`、file领域原请求查询及暂存取消，已由共享客户端/Server和Web消费原Box文件适配。旧八个fs命令、14个daemon文件RPC、handshake/Profile文件权限承诺及旧CLI writer退出；原文本材料消费者仍走真实源owner，共用原材料安全库中的physical path互斥，不新建万能操作库。未知首次声明/发布/服务换代不能靠改配置或换UUID重放；二进制核验、原删除恢复和独立权限有实际Node/Chrome路径，见[文件管理报告](../reports/2026-09-22-file-management.md)。
+`file root list/get`、named-root的`file stat/list/read/write/mkdir/upload/download/delete/restore`、file领域原请求查询及暂存取消，已由共享客户端/Server和Web消费原Box文件适配。旧八个fs命令、14个daemon文件RPC、handshake/Profile文件权限承诺及旧CLI writer退出；原文本材料消费者仍走真实源owner，共用原材料安全库中的physical path互斥，不新建万能操作库。未知首次声明/发布/服务换代不能靠改配置或换UUID重放；二进制核验、原删除恢复和独立权限有实际Node/Chrome路径，见[文件管理报告](../evidence/2026-09/2026-09-22-file-management.md)。
 
 [DATA-01](DATA-01-memory-project-files.md)的原生Memory/Project写入、附件fileRef、账号同步和长期安全维护继续保留；文件根能力不是这些来源的兼容替代。全域事件、桌面/消息等剩余管理迁移及W4候选资格仍有自己的阶段。
 

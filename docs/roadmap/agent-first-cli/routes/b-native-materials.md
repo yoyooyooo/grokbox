@@ -4,7 +4,7 @@
 
 ## 目标与先读入口
 
-现有原生身份和材料经真实owner读取/受支持修改，保留账号、来源、同步/回调、附件引用和独立读回；不能用本地索引或另一进程的原生store代替运行中的writer。先读[DATA-01](../../../tickets/DATA-01-memory-project-files.md)、[来源变化记录](../../../reports/2026-09-22-native-material-source-drift.md)、[文件已交付范围](../../../reports/2026-09-22-file-management.md)及[CLI-03](../../../tickets/CLI-03-observation-and-wait.md)。
+现有原生身份和材料经真实owner读取/受支持修改，保留账号、来源、同步/回调、附件引用和独立读回；不能用本地索引或另一进程的原生store代替运行中的writer。先读[DATA-01](../../../tickets/DATA-01-memory-project-files.md)、[来源变化记录](../../../evidence/2026-09/2026-09-22-native-material-source-drift.md)、[文件已交付范围](../../../evidence/2026-09/2026-09-22-file-management.md)及[CLI-03](../../../tickets/CLI-03-observation-and-wait.md)。
 
 ## 模块与边界
 
@@ -30,4 +30,4 @@ R/E在核心实际调用中的材料损坏、同步回调缺失或保全缺口�
 
 ## 回流
 
-B1 的当前来源、身份、权限、Project membership/fileRef 边界与 A3-M/C/D/R/E 交接要求见[材料合同报告](../../../reports/2026-09-22-material-contract.md)。B1/B2/B3分别提交，给直接消费者当前模块、source/版本/原生资格、引用闭包、测试范围和剩余缺口。材料能力与恢复能力共享一个合同，不让C复制第二套附件搬运。全DATA-01尚未实现的义务留原票，不因J4已日用而关闭。
+B1 的当前来源、身份、权限、Project membership/fileRef 边界与 A3-M/C/D/R/E 交接要求见[材料合同报告](../../../evidence/2026-09/2026-09-22-material-contract.md)。B1/B2/B3分别提交，给直接消费者当前模块、source/版本/原生资格、引用闭包、测试范围和剩余缺口。材料能力与恢复能力共享一个合同，不让C复制第二套附件搬运。全DATA-01尚未实现的义务留原票，不因J4已日用而关闭。

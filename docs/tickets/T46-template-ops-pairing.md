@@ -24,13 +24,13 @@
 
 采用单一私有原子capsule而非分离secret与metadata的部分写入：`state/ops-pairing/bindings.json`及固定暂存各64KiB、最多8槽、0600文件。查询不领取原生凭据、不创建owner，诊断GC不删除它。unknown不能用新operation绕过；并发unbind递增revision，使晚到credential不能重新发布。旧slot新绑定要求显式unbound revision，不以清目录恢复操作。
 
-原始准备阶段的历史验证：`ops-target-pairing.test.ts`11项，实际SQLite/provision/config/私有文件、并发与真实子进程SIGKILL；CLI测试覆盖预览、领取、重复操作与打包Node状态/解绑。`ops-pairing`组合106 pass，最新v2组合全仓2568 pass/19 skip/0 fail。准确边界见[固定回执](../reports/2026-09-18-private-target-pairing.md)。这不关闭真实原生HTTP、接收者model/行为/成本、完整备份恢复fence、首次初始化故障恢复、远端key撤销或物理安全擦除资格。
+原始准备阶段的历史验证：`ops-target-pairing.test.ts`11项，实际SQLite/provision/config/私有文件、并发与真实子进程SIGKILL；CLI测试覆盖预览、领取、重复操作与打包Node状态/解绑。`ops-pairing`组合106 pass，最新v2组合全仓2568 pass/19 skip/0 fail。准确边界见[固定回执](../evidence/2026-09/2026-09-18-private-target-pairing.md)。这不关闭真实原生HTTP、接收者model/行为/成本、完整备份恢复fence、首次初始化故障恢复、远端key撤销或物理安全擦除资格。
 
 ## 授权、可选测试与执行边界
 
 新 `notification receiver enable` 在必要配置、绑定、Routine 和当前模型/所有权资格齐备后记录显式未来授权，**不需要 accepted 测试记录或人工已读声明**；不启用原生 Routine、不领新 key、不发送。独立 `test` 使用测试 work 和原 outbox/预算，不制造 incident，unknown 不阻独立启用。disable/unbind 经同一管理服务保留历史回执并撤销未来资格，旧成功 enable 的重放不复活授权。
 
-管理 Server sender 继续原单次尝试与 unknown 防重放，模型/代际变化保持阻断。设置、私有绑定、原生调度 enable、接收者未来权限、可选测试和实际投递是六类不同事实。旧 [自动通知回执](../reports/2026-09-19-automatic-notification.md)只保留其原 seed/daemon 窗口，不能覆盖新版实际资格。当前真实结果仅归 [LIVE-OPS-ROUTINES](LIVE-integration-validation.md#live-ops-routines) 和 [重新资格旅程](LIVE-integration-validation.md#live-notice-requalification)。
+管理 Server sender 继续原单次尝试与 unknown 防重放，模型/代际变化保持阻断。设置、私有绑定、原生调度 enable、接收者未来权限、可选测试和实际投递是六类不同事实。旧 [自动通知回执](../evidence/2026-09/2026-09-19-automatic-notification.md)只保留其原 seed/daemon 窗口，不能覆盖新版实际资格。当前真实结果仅归 [LIVE-OPS-ROUTINES](LIVE-integration-validation.md#live-ops-routines) 和 [重新资格旅程](LIVE-integration-validation.md#live-notice-requalification)。
 
 ## Work
 

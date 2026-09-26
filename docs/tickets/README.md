@@ -1,6 +1,6 @@
 # Box-runtime tickets
 
-本页按责任发现来源票，不复制当前实现进度、协议版本、测试计数、部署状态或工作树清理清单。当前实现由源码/schema/可执行测试证明；来源票拥有该范围的实现、离线、独立 review 差额；[LIVE-integration-validation](LIVE-integration-validation.md)是当前现场结果唯一入口，[固定报告](../reports/README.md)保留每次观察的限定事实。
+本页按责任发现来源票，不复制当前实现进度、协议版本、测试计数、部署状态或工作树清理清单。当前实现由源码/schema/可执行测试证明；来源票拥有该范围的实现、离线、独立 review 差额；[LIVE-integration-validation](LIVE-integration-validation.md)是当前现场结果唯一入口，[固定报告](../evidence/2026-09/README.md)保留每次观察的限定事实。
 
 ## 使用与身份
 
@@ -205,7 +205,7 @@
 
 ## 历史交付票
 
-这些文件是原交付范围和证据入口，状态保持原时间/版本意义。POC 的内部 API/wire、旧模型/Bot/权限或审查编排不是当前施工合同；演变理由见 [Archive](../archive/README.md)。历史测试对象使用合成标识，新的现场对象和权限只能从实际窗口取得。
+这些文件是原交付范围和证据入口，状态保持原时间/版本意义。POC 的内部 API/wire、旧模型/Bot/权限或审查编排不是当前施工合同；演变理由见 [Archive](../evidence/topics/README.md)。历史测试对象使用合成标识，新的现场对象和权限只能从实际窗口取得。
 
 | 来源票 | 历史范围 |
 | --- | --- |

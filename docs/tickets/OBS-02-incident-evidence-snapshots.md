@@ -6,7 +6,7 @@
 
 已有同库不可变revision/manifest、共享fact引用与digest校验、离线incident/capture/lease命令、旧STEP入口coverage补接及公共安全摘要。增量实现每incident最多3份可读revision，通知与有效租约保护的revision不可淘汰；无可回收项则拒绝新capture。持久history watermark保证回收后不复用revision，缺失的已采集修订返回snapshot_revision_retired而非snapshot_not_captured，查询不借用新现场。
 
-实际新增测试名为`packages/box-runtime/test/incident-evidence-store.test.ts`和`test/monitor-incident-cli.test.ts`；原计划中的同义文件名不再额外创建。本轮补充Host/modeld事发制品、原生tool handler与executor接受、checkpoint和collector/native health的严格身份关联；组合source failure→固定revision→sender及打包Node读回已接线。全部跨来源、异步prepare worker、所有崩溃矩阵与独立review仍未关闭，不以局部补齐宣称全量原生覆盖。限定证据见[首片](../reports/2026-09-18-observation-evidence-first-slice.md)及[存储增量](../reports/2026-09-18-observation-storage-followup.md)。
+实际新增测试名为`packages/box-runtime/test/incident-evidence-store.test.ts`和`test/monitor-incident-cli.test.ts`；原计划中的同义文件名不再额外创建。本轮补充Host/modeld事发制品、原生tool handler与executor接受、checkpoint和collector/native health的严格身份关联；组合source failure→固定revision→sender及打包Node读回已接线。全部跨来源、异步prepare worker、所有崩溃矩阵与独立review仍未关闭，不以局部补齐宣称全量原生覆盖。限定证据见[首片](../evidence/2026-09/2026-09-18-observation-evidence-first-slice.md)及[存储增量](../evidence/2026-09/2026-09-18-observation-storage-followup.md)。
 
 ## Goal / Modules
 

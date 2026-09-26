@@ -26,7 +26,7 @@ GROKBOX_TEST_NATIVE_HOST=1 bun scripts/verify-runtime-rebuild.mjs context-native
 
 公共owner与实际Unix链分别在 `context-maintenance-{host,boundaries,lifetime,control}.test.ts`、kernel `context-selection.test.ts`及CLI命令测试。私有原生源码仅在维护者显式选择的隔离VM资格中读取，公共CI/fixture不包含私有实现。native方法测试使用固定SHA，外围blob/telemetry/privacy能力仍被隔离；版本变动需重验。
 
-[离线报告](../reports/2026-09-17-context-maintenance-offline.md)记录实际pipeline、取消/已有pending/错root、十轮/新进程、key轮换及native-isolated执行结果。合成Host方法与真实原生隔离结果分别标注，没有用mock最终成功代替实际调用链。
+[离线报告](../evidence/2026-09/2026-09-17-context-maintenance-offline.md)记录实际pipeline、取消/已有pending/错root、十轮/新进程、key轮换及native-isolated执行结果。合成Host方法与真实原生隔离结果分别标注，没有用mock最终成功代替实际调用链。
 
 ## Remaining / release boundary
 

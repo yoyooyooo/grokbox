@@ -1,6 +1,6 @@
 # Web UI V0 视觉基线
 
-状态：V0 保存为视觉探索参考，最终风格尚未定稿，不是功能开发或工程验收前置。图中文字、按钮、状态与流程必须服从[页面功能目标](../../../roadmap/future/webui-console.md)和[来源可行性](../../../reports/2026-09-19-webui-source-feasibility.md)。
+状态：V0 保存为视觉探索参考，最终风格尚未定稿，不是功能开发或工程验收前置。图中文字、按钮、状态与流程必须服从[页面功能目标](../../../roadmap/future/webui-console.md)和[来源可行性](../../../evidence/2026-09/2026-09-19-webui-source-feasibility.md)。
 
 ## 图稿与可用性
 

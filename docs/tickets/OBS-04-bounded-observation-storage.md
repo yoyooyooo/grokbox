@@ -4,29 +4,29 @@
 
 ## 当前切片与未完成范围
 
-**现行账本合同收束（2026-09-21）：** OBS 普通读取、初始化、维护和通知共享[当前 schema](../../packages/box-runtime/src/internal/io/monitor-schema.node.ts)，同时核对 meta 与物理 header；显式发送现以 schema 5 在原库关联 request/work/attempt，见[通知管理](../reports/2026-09-21-notification-send-management.md)。旧版本迁移、备份和 PID-only 升级锁恢复已退出。旧资料/锁保留，不投影为空记录或升级成功。既有 owner 目录丢失库时拒绝重建，防止通知 attempt 与管理历史被重置；只有新目录创建者可发布首次库，失败清理仅限自己的暂存文件及空目录。API/Web 不再提供 migrationRequired 占位。具体反例、当前初始化的只读行为及证据范围见[当前安全账本收束](../reports/2026-09-21-current-safety-store-contracts.md)，下述历史窗口不构成保留旧实时合同的要求。
+**现行账本合同收束（2026-09-21）：** OBS 普通读取、初始化、维护和通知共享[当前 schema](../../packages/box-runtime/src/internal/io/monitor-schema.node.ts)，同时核对 meta 与物理 header；显式发送现以 schema 5 在原库关联 request/work/attempt，见[通知管理](../evidence/2026-09/2026-09-21-notification-send-management.md)。旧版本迁移、备份和 PID-only 升级锁恢复已退出。旧资料/锁保留，不投影为空记录或升级成功。既有 owner 目录丢失库时拒绝重建，防止通知 attempt 与管理历史被重置；只有新目录创建者可发布首次库，失败清理仅限自己的暂存文件及空目录。API/Web 不再提供 migrationRequired 占位。具体反例、当前初始化的只读行为及证据范围见[当前安全账本收束](../evidence/2026-09/2026-09-21-current-safety-store-contracts.md)，下述历史窗口不构成保留旧实时合同的要求。
 
 已实现每个SQLite writer连接的文件增长护栏（默认128MiB，不是全安装预算）、预留元数据余量、压力批次游标/gap提交、物理页/空闲页/辅助文件计量、最多3份可读修订及受保护修订拒绝、每revision一个有总量/累计期限限制的租约、通知与修订历史的增量回收。`runtime storage status`分开报告monitor、processLogs、journals；各自来源缺失不会遮盖其他分区，仍明确installationBudgetEnforced=false。
 
-`observation-storage-pressure.test.ts`使用512KiB真实数据库验证持续高基数错误不越过文件上限、压力丢弃可见、重复批次不加倍、跨32个保留周期后无重启恢复新证据接纳；实际SQLite拒绝物理增长另有独立反例。`incident-evidence-store.test.ts`验证旧通知引用和leases不被修订数回收破坏。来源/结果见[增量回执](../reports/2026-09-18-observation-storage-followup.md)。
+`observation-storage-pressure.test.ts`使用512KiB真实数据库验证持续高基数错误不越过文件上限、压力丢弃可见、重复批次不加倍、跨32个保留周期后无重启恢复新证据接纳；实际SQLite拒绝物理增长另有独立反例。`incident-evidence-store.test.ts`验证旧通知引用和leases不被修订数回收破坏。来源/结果见[增量回执](../evidence/2026-09/2026-09-18-observation-storage-followup.md)。
 
-T51配置和原writer接线已有实现。2026-09-19新增安装范围内monitor/journal/process的共享写前接纳、rollback/备份空间预留、24轮真实存储soak及过期payload/未知attempt解耦；代码与限定测试见[联合接纳回执](../reports/2026-09-19-diagnostic-admission.md)。这推进了诊断池，不覆盖所有producer/Jobs/执行/恢复/制品，也不证明旧现役writer采用。服务自启、完整安全退役、未知旧锁/撕裂状态恢复、全部owner配额和独立review仍有差额；不能将本票改成全安装已强制有界。
+T51配置和原writer接线已有实现。2026-09-19新增安装范围内monitor/journal/process的共享写前接纳、rollback/备份空间预留、24轮真实存储soak及过期payload/未知attempt解耦；代码与限定测试见[联合接纳回执](../evidence/2026-09/2026-09-19-diagnostic-admission.md)。这推进了诊断池，不覆盖所有producer/Jobs/执行/恢复/制品，也不证明旧现役writer采用。服务自启、完整安全退役、未知旧锁/撕裂状态恢复、全部owner配额和独立review仍有差额；不能将本票改成全安装已强制有界。
 
 ## modeld 日志增量（2026-09-18）
 
-modeld服务自身的结构化生命周期writer、真实fd关闭/新段、固定数量/字节容量、borrower隔离和诊断失败非致命已实现；replacement不再追加raw stdout/stderr，旧raw文件仅计量。真实Node替换/独立fd检查、25代轮转及只读存储facet的范围与缺口见[本片回执](../reports/2026-09-18-modeld-process-log-rotation.md)。年龄清理在写入或重开时执行，闲置无增长不宣称定时TTL删除已经交付。其他producer、跨owner容量、配置与常驻维护仍未关闭本票。
+modeld服务自身的结构化生命周期writer、真实fd关闭/新段、固定数量/字节容量、borrower隔离和诊断失败非致命已实现；replacement不再追加raw stdout/stderr，旧raw文件仅计量。真实Node替换/独立fd检查、25代轮转及只读存储facet的范围与缺口见[本片回执](../evidence/2026-09/2026-09-18-modeld-process-log-rotation.md)。年龄清理在写入或重开时执行，闲置无增长不宣称定时TTL删除已经交付。其他producer、跨owner容量、配置与常驻维护仍未关闭本票。
 
 ## 结构化 journal 增量（2026-09-18）
 
 已接通原Host/modeld/control writer的共享锁字节轮转、8MiB段/128MiB每root数据预算、持久段ID/改名意图、关闭段退役与缺口、v1→v2消费游标、跨段离线incident读取。普通轮转过渡是deferred，不自动建故障；半行封存且不跨段拼接，GET不恢复/清理。旧watchdog不再改写受管活动inode。证据固定revision与源日志GC解耦。
 
-`verify-runtime-rebuild.mjs journal-rotation`实际完成79项/0失败，类型/构建/边界/隐私及source稳定通过；全仓2317 pass/15 skip/0 fail。详见[分段回执](../reports/2026-09-18-structured-journal-rotation.md)。测试证明有序中断点恢复，不宣称任意掉电、半写索引/死锁自动恢复；本片新增Host叶，原生采用需重新资格。数据上限不包含已单独计量的有界索引，不等于整安装共享容量。
+`verify-runtime-rebuild.mjs journal-rotation`实际完成79项/0失败，类型/构建/边界/隐私及source稳定通过；全仓2317 pass/15 skip/0 fail。详见[分段回执](../evidence/2026-09/2026-09-18-structured-journal-rotation.md)。测试证明有序中断点恢复，不宣称任意掉电、半写索引/死锁自动恢复；本片新增Host叶，原生采用需重新资格。数据上限不包含已单独计量的有界索引，不等于整安装共享容量。
 
 ## 共享配置候选（2026-09-18）
 
 [T51](T51-ops-capability-presets.md)已在09e6405基线上实现schema4、严格2/3迁移与support退役。monitor初始化/collector/显式capture和modeld过程日志消费canonical存储意图；storage有独立revision，关闭通知不删除保留策略。当前只支持既有writer硬上限内的缩减。真实collector按1日明细/3日摘要、modeld连续12代按8KiB测试预算运行已证明，GET不伪造统一applied。
 
-整安装物理预留、全体owner热加载/自启仍未完成；journal写入端采用与collector内维护在下述增量完成，分配416MiB、内部reserve64MiB及未分配32MiB的算术校验不构成磁盘强制上限。实际执行证据和schema4切换边界见[回执](../reports/2026-09-18-storage-config-v4.md)，现役采用仅归LIVE。
+整安装物理预留、全体owner热加载/自启仍未完成；journal写入端采用与collector内维护在下述增量完成，分配416MiB、内部reserve64MiB及未分配32MiB的算术校验不构成磁盘强制上限。实际执行证据和schema4切换边界见[回执](../evidence/2026-09/2026-09-18-storage-config-v4.md)，现役采用仅归LIVE。
 
 ## journal采用、维护与锁恢复增量（2026-09-18）
 
@@ -36,7 +36,7 @@ collector现有维护子Scope每轮调用两个显式root的分段维护；不�
 
 目录锁v2以不可复用的owner token、PID/UID/start确认进程丢失/换代，真实SIGKILL的四个轮转边界与并发恢复已验证；不按超时删除锁，不重放append/业务callback。64个准备槽有界，未知/空/撕裂slot保留；旧PID-only文件锁仍无自动退役资格，LevelDB LOCK/SST与执行账本完全独立。
 
-可重复入口`bun scripts/verify-runtime-rebuild.mjs journal-maintenance`：90 pass/0 fail，类型/构建/边界/隐私和source稳定通过；全仓2368 pass/15 skip/0 fail。详见[回执](../reports/2026-09-18-journal-policy-and-lock-recovery.md)。本票仍Partial，不能将上述slice签成全安装预算或原生通知首发。
+可重复入口`bun scripts/verify-runtime-rebuild.mjs journal-maintenance`：90 pass/0 fail，类型/构建/边界/隐私和source稳定通过；全仓2368 pass/15 skip/0 fail。详见[回执](../evidence/2026-09/2026-09-18-journal-policy-and-lock-recovery.md)。本票仍Partial，不能将上述slice签成全安装预算或原生通知首发。
 
 ## modeld 必要维护与诊断计量（2026-09-18）
 
@@ -44,7 +44,7 @@ collector现有维护子Scope每轮调用两个显式root的分段维护；不�
 
 新增两个固定16KiB回执槽和只读维护状态；真实进程身份失效后为interrupted，旧回执/活PID不当全域applied。footprint只扫描三个明确诊断命名空间，2048项/深度4上限，元数据计量备份/暂存/辅助文件并inode去重；缺口和未覆盖owner可见，不输出路径/正文、不删除计量对象。物理计量不是跨writer预留，全安装配额仍未签。
 
-`verify-runtime-rebuild.mjs storage-lifetime`63 pass/0 fail；全仓2381 pass/15 skip/0 fail。源码modeld/实际打包Node、SQLite、闲置fd、延迟结算、强杀、坏配置、符号链接和小文件洪峰的准确范围见[回执](../reports/2026-09-18-modeld-storage-lifetime.md)。Box重启自启、全安装预留、执行/CONT安全退役、原生投递与独立review仍是各自前置。
+`verify-runtime-rebuild.mjs storage-lifetime`63 pass/0 fail；全仓2381 pass/15 skip/0 fail。源码modeld/实际打包Node、SQLite、闲置fd、延迟结算、强杀、坏配置、符号链接和小文件洪峰的准确范围见[回执](../evidence/2026-09/2026-09-18-modeld-storage-lifetime.md)。Box重启自启、全安装预留、执行/CONT安全退役、原生投递与独立review仍是各自前置。
 
 ## OBS/CONT J1公共owner接线
 
@@ -78,7 +78,7 @@ SQLite现行新建及重开的真实auto_vacuum/回收模式分别验证；旧�
 
 ## Executable acceptance
 
-当前组合入口：`bun scripts/verify-runtime-rebuild.mjs pre-e2e-observation`；精确执行结果和源码身份归[固定回执](../reports/2026-09-19-diagnostic-admission.md)。已完成的局部轮转/维护不再作为缺实现重复施工；全安装所有owner、最终安全退役、自启、native/review/live仍分别保留差额。
+当前组合入口：`bun scripts/verify-runtime-rebuild.mjs pre-e2e-observation`；精确执行结果和源码身份归[固定回执](../evidence/2026-09/2026-09-19-diagnostic-admission.md)。已完成的局部轮转/维护不再作为缺实现重复施工；全安装所有owner、最终安全退役、自启、native/review/live仍分别保留差额。
 
 完整范围仍待新增：
 

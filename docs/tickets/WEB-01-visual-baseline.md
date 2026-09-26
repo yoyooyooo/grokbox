@@ -10,7 +10,7 @@
 
 - [V0 视觉参考](../design/webui/v0/README.md)：已有图、缺失资源、原始 PNG 校验信息与探索方向。
 - [页面目标](../roadmap/future/webui-console.md)：全局 Memory、Project 文件、活动、状态、日志与有限管理。
-- [来源研究](../reports/2026-09-19-webui-source-feasibility.md)：官方形象、活动标签、Gateway 事件、Memory/Project 与现有后台差额。
+- [来源研究](../evidence/2026-09/2026-09-19-webui-source-feasibility.md)：官方形象、活动标签、Gateway 事件、Memory/Project 与现有后台差额。
 
 ## 后续细化验收
 

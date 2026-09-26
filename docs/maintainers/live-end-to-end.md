@@ -41,7 +41,7 @@ grokbox skills list --json
 <a id="window-record"></a>
 ## 2. 候选、目标、授权与停止规则
 
-核心或全产品集中验收前登记一次可追溯候选，明确lane及适用判据。并行开发统一回流v2，实际运行使用其固定安装制品，不以分支名代替字节身份。独立局部原生探针也要固定输入和目标，但无需先完成整个产品。一个实际窗口一份 `docs/reports/<日期>-live-<主题>.md`，只放脱敏摘要；原始证据留在受控私有位置。
+核心或全产品集中验收前登记一次可追溯候选，明确lane及适用判据。并行开发统一回流v2，实际运行使用其固定安装制品，不以分支名代替字节身份。独立局部原生探针也要固定输入和目标，但无需先完成整个产品。一个实际窗口一份 `docs/evidence/YYYY-MM/YYYY-MM-DD-live-<主题>.md`，保留脱敏事实与明确边界；原始证据留在受控位置。跨窗口提炼放 `docs/evidence/topics/`，不能替代日期窗口给 LIVE 签收。
 
 ```text
 windowId / operator / startedAt / endedAt

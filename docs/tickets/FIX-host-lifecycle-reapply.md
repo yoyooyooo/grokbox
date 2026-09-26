@@ -27,6 +27,6 @@ Qualification receipt (2026-09-17): typecheck passed; control/operator suites 73
 
 A bounded, no-tools/no-extensions/no-session independent reviewer invocation against the fixed source patch returned HTTP 503 without a report. The requested Astra/max reviewer did not execute source tools or live operations; the prescribed Herdr transport was unavailable. This is `review_pending`, not an independent approval or a reason to label all live checks passed.
 
-Dated native evidence is retained in [W17-B §6](../reports/2026-09-17-live-integration-window.md#6-重启回退及现场修复) and C12 of that report. Current proved scope, remaining rollback requirements, blockers and revalidation decisions are maintained only in [LIVE-MODELD-RESTART](LIVE-integration-validation.md#live-modeld-restart), not a second live progress paragraph in this source ticket.
+Dated native evidence is retained in [W17-B §6](../evidence/2026-09/2026-09-17-live-integration-window.md#6-重启回退及现场修复) and C12 of that report. Current proved scope, remaining rollback requirements, blockers and revalidation decisions are maintained only in [LIVE-MODELD-RESTART](LIVE-integration-validation.md#live-modeld-restart), not a second live progress paragraph in this source ticket.
 
 Independent review remains a separate obligation. Do not treat a reviewer transport failure, implementer inspection or an authorized maintenance repair as broad production release qualification. No source worktree may adopt the live Host before its repair is integrated into v2.

@@ -1,6 +1,6 @@
 # Runtime review residue — current responsibility route
 
-Status: retained qualification/triage route, not an implementation stage or a model-specific review workflow. The fixed findings and subsequent scoped closures are preserved in [milestone review history](../archive/milestone-review-residue.md). Archiving the old accumulation does not create a new independent review or close a feature ticket.
+Status: retained qualification/triage route, not an implementation stage or a model-specific review workflow. The fixed findings and subsequent scoped closures are preserved in [milestone review history](../evidence/topics/milestone-review-residue.md). Archiving the old accumulation does not create a new independent review or close a feature ticket.
 
 ## Remaining responsibilities
 
@@ -21,4 +21,4 @@ The original M1–M4 accumulation contains early held findings followed by later
 <a id="tip-pre-publication-revision--2026-09-11"></a>
 ## Historical integration-tip route
 
-This stable anchor now points to [the fixed historical disposition](../archive/milestone-review-residue.md), including exact Git recovery of the old record. Sanitized revision labels and private evidence placeholders are not invented public sources. Old GATE permissions, Bot roles, asynchronous reviewer instructions and personal-memory references are no longer current repository instructions.
+This stable anchor now points to [the fixed historical disposition](../evidence/topics/milestone-review-residue.md), including exact Git recovery of the old record. Sanitized revision labels and private evidence placeholders are not invented public sources. Old GATE permissions, Bot roles, asynchronous reviewer instructions and personal-memory references are no longer current repository instructions.

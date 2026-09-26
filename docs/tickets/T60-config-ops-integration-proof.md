@@ -10,7 +10,7 @@
 
 **Configuration lane implemented and offline-verified; independent review remains open。** 当前现场进度由下方 LIVE 条目唯一维护。 T57–T59 的 schema、writer、迁移、bootstrap 与当前 CLI/领域消费者已接通。该状态只覆盖 AH-99/AH-100 的配置工程，不关闭原生 Routine、多 Bot 路由、诊断、issue 或 Host 自动维护的执行票。
 
-合同归 [配置 Spec](../roadmap/configuration-rebuild-spec.md)，操作入口归 [配置指南](../configuration.md)。实现提交 `80fe393` 已按用户指令原哈希线性合入 v2，集成从 `6f2fcd1` 快进至 `efa6557`；[本轮 v2 集成回执](../reports/2026-09-17-config-ops-v2-integration.md)记录实际工作区复验、磁盘候选及源码 shim 的下次调用影响。该源码集成回执没有执行生产迁移或 Host/modeld 切换。之后的现场执行证据从 [LIVE 窗口索引](LIVE-integration-validation.md#window-20260917)进入；本票不复制迁移/消费者/平台的当前验收结果，也不据现场证据豁免独立复审。[AH-99/AH-100 收口回执](../reports/2026-09-17-unified-configuration-closeout.md)记录固定 Bun 1.3.14 下配置专项 200/0、全仓 2152/6-skip/0、打包 15/0；严格 all 验收器因原生跳过仍未放行。
+合同归 [配置 Spec](../roadmap/configuration-rebuild-spec.md)，操作入口归 [配置指南](../configuration.md)。实现提交 `80fe393` 已按用户指令原哈希线性合入 v2，集成从 `6f2fcd1` 快进至 `efa6557`；[本轮 v2 集成回执](../evidence/2026-09/2026-09-17-config-ops-v2-integration.md)记录实际工作区复验、磁盘候选及源码 shim 的下次调用影响。该源码集成回执没有执行生产迁移或 Host/modeld 切换。之后的现场执行证据从 [LIVE 窗口索引](LIVE-integration-validation.md#window-20260917)进入；本票不复制迁移/消费者/平台的当前验收结果，也不据现场证据豁免独立复审。[AH-99/AH-100 收口回执](../evidence/2026-09/2026-09-17-unified-configuration-closeout.md)记录固定 Bun 1.3.14 下配置专项 200/0、全仓 2152/6-skip/0、打包 15/0；严格 all 验收器因原生跳过仍未放行。
 
 ## Implementation and actual consumers
 
