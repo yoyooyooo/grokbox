@@ -4,6 +4,7 @@ import { lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { OpsPairingError, OPS_PAIRING_POLICY, pairingFail, pairingAlias, pairingOperation, pairingReceipt, pairingScope, validatePairingCredential,
+  createNoticeReplayFence, validateNoticeReplaySnapshot, type NoticeReplaySnapshot, type NoticeReplayFence,
   validateNotificationTarget, validateNoticeAuthorization, validateReceiverManagementReceipt, type ReceiverManagementReceipt, type NoticeAuthorization, type PairingRecord, type PairingPlan, type PairingCredential, type NotificationBinding, type NativeNotificationResult } from "@grokbox/runtime-kernel/observation";
 import { routineAgentId, routineId, routineRevision } from "@grokbox/runtime-kernel/routines";
 import { acquireConfigurationLease } from "./config-lock.node.ts";
@@ -14,9 +15,12 @@ type Slot = PairingRecord & { credential: PairingCredential | null };
 export type PairingManagementIdentity = { operationId: string; requestDigest: string; databaseId: string; agentId: string };
 export type PairingManagementReceipt = PairingManagementIdentity & { bindingId: string; alias: string; routineId: string;
   beforeRevision: number; revision: number; state: "unknown" | "succeeded" };
-type Capsule = { schemaVersion: 1; owner: "ops-pairing"; rootId: string; slots: Slot[]; operations?: ReceiverManagementReceipt[]; pairingOperations?: PairingManagementReceipt[] };
+type Capsule = { schemaVersion: 1; owner: "ops-pairing"; rootId: string; slots: Slot[]; noticeReplay?: NoticeReplaySnapshot; operations?: ReceiverManagementReceipt[]; pairingOperations?: PairingManagementReceipt[] };
 export type ReceiverMutationIdentity = { operationId: string; requestDigest: string; bindingId: string };
 const NEW_GRANT_RECEIPTS = 64;
+// Fits the existing private capsule. Saturation refuses transport; expiry uses
+// the persisted high-water mark. Never evict an uncertain unexpired effect.
+const MAX_NOTICE_GUARDS = 64;
 // Reserve two revocations per slot (disable then unbind). A full ordinary
 // audit budget must not trap an enabled receiver in continued authorization.
 const MAX_RECEIVER_OPERATIONS = NEW_GRANT_RECEIPTS + 2 * OPS_PAIRING_POLICY.maxSlots;
@@ -36,6 +40,7 @@ export function openOpsBindings(durableRoot: string) {
     if (!value || typeof value !== "object") return pairingFail("store_unavailable");
     const v = value as Capsule;
     if (v.schemaVersion !== 1 || v.owner !== "ops-pairing" || v.rootId !== rootId || !Array.isArray(v.slots) || v.slots.length > OPS_PAIRING_POLICY.maxSlots) return pairingFail("store_unavailable");
+    if (v.noticeReplay !== undefined) validateNoticeReplaySnapshot(v.noticeReplay, MAX_NOTICE_GUARDS);
     if (v.operations !== undefined && (!Array.isArray(v.operations) || v.operations.length > MAX_RECEIVER_OPERATIONS
       || new Set(v.operations.map(row => validateReceiverManagementReceipt(row).operationId)).size !== v.operations.length)) return pairingFail("store_unavailable");
     if (v.pairingOperations !== undefined) {
@@ -135,6 +140,42 @@ export function openOpsBindings(durableRoot: string) {
     return receipt;
   }
   return {
+    /** Upgrade without a checkpoint starts a new safe floor. New grants create
+     * it at consent, so post-consent unsent work can survive the first restart.
+     * The private capsule is not an observation backup or a delivery receipt. */
+    noticeReplay: async (nowMs: number) => {
+      const existing = (await read())?.noticeReplay;
+      if (existing) {
+        const fence = createNoticeReplayFence(nowMs, MAX_NOTICE_GUARDS, existing);
+        if (fence.check(nowMs)) return pairingFail("store_unavailable");
+        return fence;
+      }
+      return mutation(async value => {
+        const fence = createNoticeReplayFence(nowMs, MAX_NOTICE_GUARDS, value.noticeReplay);
+        if (fence.check(nowMs)) return pairingFail("store_unavailable");
+        value.noticeReplay = fence.snapshot(); await publish(value);
+        return createNoticeReplayFence(nowMs, MAX_NOTICE_GUARDS, value.noticeReplay);
+      });
+    },
+    claimNoticeEffect: (input: Parameters<NoticeReplayFence["claim"]>[0]) => mutation(async value => {
+      // Before any ongoing grant exists, later consent will exclude this old
+      // occurrence. Explicit delivery need not create automatic runtime state.
+      if (!value.noticeReplay && !value.slots.some(slot => slot.automatic)) return null;
+      const fence = createNoticeReplayFence(input.nowMs, MAX_NOTICE_GUARDS, value.noticeReplay);
+      // Old explicit work cannot become automatic after the immutable floor.
+      // Still advance the clock; the outbox continues to own its explicit claim.
+      const beforeFloor = input.createdAtMs <= fence.startedAtMs || input.occurrenceAtMs <= fence.startedAtMs;
+      const reason = beforeFloor ? fence.check(input.nowMs) : fence.claim(input);
+      if (reason) return reason;
+      value.noticeReplay = fence.snapshot(); await publish(value);
+      return null;
+    }),
+    rejectNoticeEffect: (input: Parameters<NoticeReplayFence["definitelyRejected"]>[0]) => mutation(async value => {
+      if (!value.noticeReplay) return false;
+      const fence = createNoticeReplayFence(input.nowMs, MAX_NOTICE_GUARDS, value.noticeReplay);
+      if (!fence.definitelyRejected(input)) return false;
+      value.noticeReplay = fence.snapshot(); await publish(value); return true;
+    }),
     record, managementReceipt: lookup,
     pairingOperation: async (operationId: string): Promise<PairingManagementReceipt | null> => {
       pairingOperation(operationId);
@@ -230,6 +271,7 @@ export function openOpsBindings(durableRoot: string) {
         || authorization.bindingRevision !== slot.revision + 1) return pairingFail("operation_conflict");
       await current();
       slot.revision = authorization.bindingRevision; slot.state = "prepared"; slot.automatic = authorization; slot.updatedAtMs = authorization.activatedAtMs;
+      value.noticeReplay ??= createNoticeReplayFence(authorization.activatedAtMs, MAX_NOTICE_GUARDS).snapshot();
       if (identity) recordOperation(value, slot, identity, "enable");
       await publish(value); return projected(slot);
     }),

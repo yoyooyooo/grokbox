@@ -64,7 +64,7 @@ AH-143 的最小维护用途复用上面的事件、原配对和 outbox，不是
 
 `POST /v1/notification-task-claims` 以原 database/work/attempt/taskDigest/request UUID 原子认领；`GET /v1/notification-tasks/:databaseId/:workId` 查原回执，后缀 `/evidence` 仅按有效原认领取任务未过期的固定 revision 公开摘要；`POST /v1/notification-task-results` 增加原 claimId、有限结论和报告 digest。结论只有 no-action-proposed、repair-proposed、inconclusive、blocked，不能签“修复/采用已完成”。字段与资格细则见 [T55](../tickets/T55-custom-receiver-delivery.md)。
 
-原 attempt 内分别保存 HTTP 结果和 `source=receiver-credential` 的 claim/result。`nativeTurnObserved=false` 与用户展示未观察保持明确；认领/报告不会把 HTTP unknown 改为 accepted。重启能查询及补报同一已领取任务，重复同 request 幂等；尚未投递的旧 backlog / 不明预留仍受原恢复围栏保护，完整自动冷启动接续未交付。新接口不授私有 Host 源码、本地诊断明细、模型工具、修复或采用权限；AH-189/AH-190 分别承接后续职责。
+原 attempt 内分别保存 HTTP 结果和 `source=receiver-credential` 的 claim/result。`nativeTurnObserved=false` 与用户展示未观察保持明确；认领/报告不会把 HTTP unknown 改为 accepted。重启能查询及补报同一已领取任务，重复同 request 幂等。自动 worker 可接续当前授权之后、仍有效且未确认/未 snooze 的待发工作；每次继续核验当前目标、模型、授权与预算。原配对 capsule 保存有界发送围栏，在进入传输前持久记录 occurrence/work/attempt，确定原生拒绝完成 outbox 结算后才允许精确下一次重试。恢复旧观测库不能抹掉该围栏，旧前缀隔离为 unknown；reserved/attempting/unknown 不被重开为待发。旧 capsule 无围栏时从首次接续检查建立新时间下界，不猜测历史是否发过；配对/授权 capsule 本身不属于可回滚的观测备份。新接口不授私有 Host 源码、本地诊断明细、模型工具、修复或采用权限；AH-189/AH-190 分别承接后续职责。
 
 **当前默认出口缺口：**最小只读原生能力核实尚未得到可用于本路径的任意用户告警写接口。没有维护 Bot 的普通用户仍缺已资格化的默认可达出口；本地页面、文件、日志或 HTTP200 都不能代签用户已看到。结构风险需要用户提醒，这项不会被维护分析任务替代。待验统一回 [LIVE 的 AH-143 段](../tickets/LIVE-integration-validation.md#ah-143-delivery-gap)，整票不能仅凭合入 Done。
 

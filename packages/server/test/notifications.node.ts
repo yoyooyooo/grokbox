@@ -88,7 +88,11 @@ test("management lifetime delivers new authorized work without a caller and owns
     assert.ok(!JSON.stringify(status).includes("PRIVATE"));
     await server.close(); assert.equal(server.status().notifications?.state, "stopped");
     const after = await readFile(f.store.path); await tick(30); assert.deepEqual(await readFile(f.store.path), after);
-    await f.emit(); await tick(30); assert.equal(f.requests.length, 2); assert.equal(f.state.unexpectedReads, 0);
+    const pending = await f.emit(); await tick(30); assert.equal(f.requests.length, 2); assert.equal(f.state.unexpectedReads, 0);
+    const restarted = await f.start();
+    await until(() => f.store.notificationDelivery(pending), row => "attempt" in row && row.attempt?.state === "native-accepted");
+    assert.equal(f.requests.length, 3); assert.equal(JSON.parse(f.requests[2]!).workId, pending);
+    assert.equal((await f.client(restarted).notificationWorker()).data.userRead, "not_observed");
   } finally { await f.close(); }
 });
 

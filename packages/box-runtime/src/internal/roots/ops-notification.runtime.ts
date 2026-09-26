@@ -6,6 +6,7 @@ import { canonicalJson, sha256Text } from "@grokbox/runtime-kernel/hash";
 import { monitorUuid } from "@grokbox/runtime-kernel/monitor";
 import { NotificationError, NOTIFICATION_DELIVERY_POLICY, selectNotificationTarget, validateNotificationBinding,
   projectNativeNotificationResult, type NoticeReplayFence, type NotificationBinding, type NotificationEnvelope, type NotificationScope, type NotificationTarget } from "@grokbox/runtime-kernel/observation";
+import { openOpsBindings } from "../io/ops-bindings.node.ts";
 import { openMonitorStore, type MonitorStoreOptions } from "../io/monitor-store.node.ts";
 import { openConfigStore } from "../io/config-store.node.ts";
 import { rootConfigLayout } from "../io/config-layout.node.ts";
@@ -17,6 +18,7 @@ import { readStorageConfiguration } from "../io/storage-configuration.node.ts";
  * inspect must prove identity/model/routine/data and return no secret. send must
  * use only that exact binding and obey AbortSignal; no redirects or retries. */
 export type PairedNotificationDriver = {
+  durableReplay?: true;
   inspect: (input: { target: NotificationTarget; scope: NotificationScope; signal?: AbortSignal }) => Promise<NotificationBinding | null>;
   send: (input: { binding: NotificationBinding; body: string; envelopeDigest: string; signal: AbortSignal }) => Promise<unknown>;
 };
@@ -84,6 +86,15 @@ export async function runOpsNotificationDelivery(input: OpsNotificationInput) {
             occurrenceAtMs: work.incidentFirstSeenAtMs, expiresAtMs: work.expiresAtMs, nowMs: now() }) !== null)
           throw new NotificationError("replay_fence_blocked");
       }
+      if (input.driver.durableReplay && frozen.incidentId !== null) {
+        const work = await observedStore.notificationDelivery(frozen.workId);
+        if (!("createdAtMs" in work) || typeof work.incidentFirstSeenAtMs !== "number" || typeof work.occurrenceIdentity !== "string")
+          throw new NotificationError("replay_fence_blocked");
+        const refused = await openOpsBindings(input.durableRoot).claimNoticeEffect({ workId: frozen.workId, attemptId: frozen.attemptId,
+          retryOf: frozen.retryOf, occurrenceIdentity: work.occurrenceIdentity, createdAtMs: work.createdAtMs,
+          occurrenceAtMs: work.incidentFirstSeenAtMs, expiresAtMs: work.expiresAtMs, nowMs: now() });
+        if (refused) throw new NotificationError("replay_fence_blocked");
+      }
       const deadline = new AbortController(), timer = setTimeout(() => deadline.abort(), NOTIFICATION_DELIVERY_POLICY.deliveryTimeoutMs);
       const signal = input.signal ? AbortSignal.any([input.signal, deadline.signal]) : deadline.signal;
       try {
@@ -95,11 +106,13 @@ export async function runOpsNotificationDelivery(input: OpsNotificationInput) {
     }),
     settle: (frozen, result) => io(async () => {
       const settled = await (await writeStore()).settleNotification({ workId: frozen.workId, attemptId: frozen.attemptId, result, nowMs: now() });
-      if (input.replayFence && result.state === "definitely-not-accepted" && result.reason === "native_rejected") {
+      if (result.state === "definitely-not-accepted" && result.reason === "native_rejected") {
         const work = await observedStore.notificationDelivery(frozen.workId);
-        if ("occurrenceIdentity" in work && typeof work.occurrenceIdentity === "string")
-          input.replayFence.definitelyRejected({ occurrenceIdentity: work.occurrenceIdentity, workId: frozen.workId,
-            attemptId: frozen.attemptId, nowMs: now() });
+        if ("occurrenceIdentity" in work && typeof work.occurrenceIdentity === "string") {
+          const rejection = { occurrenceIdentity: work.occurrenceIdentity, workId: frozen.workId, attemptId: frozen.attemptId, nowMs: now() };
+          input.replayFence?.definitelyRejected(rejection);
+          if (input.driver?.durableReplay) await openOpsBindings(input.durableRoot).rejectNoticeEffect(rejection);
+        }
       }
       return settled;
     }),

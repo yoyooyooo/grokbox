@@ -67,7 +67,10 @@ export async function setupFixture(origin: string) {
   const request:NotificationRequest=(url,options,callback)=>httpRequest({...options,protocol:"http:",hostname:"127.0.0.1",port:receiverAddress.port,path:url.pathname},callback);
   // First-setup tests isolate notification side effects; default protection
   // has its own managed-lifetime suite rather than adding unrelated native reads.
-  const config=defaultConfig();config.runtime={...config.runtime,continuity:{enabled:false}};await publishConfigFile(join(root,"config.json"),config);
+  // This fixture owns evidence intake; the installation observer must not
+  // acquire a competing monitor epoch while the setup journey is running.
+  const config=defaultConfig();config.ops={...config.ops,observation:{enabled:false}};
+  config.runtime={...config.runtime,continuity:{enabled:false}};await publishConfigFile(join(root,"config.json"),config);
   await publishConfigFile(join(root,"state","installation.json"),{schemaVersion:1,installationId:SETUP_INSTALLATION,role:"box",root,daemon:{tokenSha256:digest(SETUP_OWNER)}});
   const observations=openMonitorStore(root);await observations.initialize();
   const native=createManagementGateway({discoveryPath,configurationRoot:root});

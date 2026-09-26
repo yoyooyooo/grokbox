@@ -34,7 +34,7 @@ test("a same-process database rollback cannot repeat an already accepted notific
   } finally { await f.close(); }
 });
 
-test("a new worker after restoring a pre-send backup leaves old work for explicit reconciliation", async () => {
+test("a new worker checks the durable binding fence after restoring a pre-send observation backup", async () => {
   const f = await automaticFixture(); let worker: ReturnType<typeof startOpsNotificationWorker> | undefined;
   try {
     const seed = await f.seed(); await f.activate(seed.workId);
@@ -43,9 +43,9 @@ test("a new worker after restoring a pre-send backup leaves old work for explici
     await writeFile(f.store.path, backup); await tick();
     worker = startOpsNotificationWorker(f.input, { request: f.request, idleMs: 5, blockedMs: 10 });
     await until(async () => worker!.status(), s => s.cycles > 1);
-    expect(await f.store.notificationDelivery(oldWork)).toMatchObject({ attempt: null });
+    expect(await f.store.notificationDelivery(oldWork)).toMatchObject({ state: "unknown", attempt: null });
     expect(f.requests).toHaveLength(2);
-    expect(projectNoticeWorker(worker.status()).replayFence).toMatchObject({ restoresExistingWork: false, scope: "automatic_notifications_only" });
+    expect(projectNoticeWorker(worker.status()).replayFence).toMatchObject({ restoresExistingWork: true, scope: "automatic_notifications_only" });
     await tick(); const freshWork = await f.emit();
     await until(() => f.store.notificationDelivery(freshWork), s => s.state === "completed");
     expect(f.requests).toHaveLength(3);

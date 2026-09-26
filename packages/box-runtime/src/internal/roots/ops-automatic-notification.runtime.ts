@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { effectiveOps } from "@grokbox/runtime-kernel/config";
 import { canonicalJson } from "@grokbox/runtime-kernel/hash";
-import { NOTICE_WORKER_POLICY, OBSERVATION_RETENTION, createNoticeReplayFence, selectNotificationTarget, type NoticeReplayFence, type NoticeAuthorization, type AutomaticNoticeCycle, type AutomaticNoticeWorkerStatus } from "@grokbox/runtime-kernel/observation";
+import { NOTICE_WORKER_POLICY, OBSERVATION_RETENTION, selectNotificationTarget, type NoticeReplayFence, type NoticeAuthorization, type AutomaticNoticeCycle, type AutomaticNoticeWorkerStatus } from "@grokbox/runtime-kernel/observation";
 import { openOpsBindings } from "../io/ops-bindings.node.ts";
 import { openMonitorStore } from "../io/monitor-store.node.ts";
 import { openConfigStore } from "../io/config-store.node.ts";
@@ -12,7 +12,8 @@ import { createPreparedNoticeDriver, type ExplicitReceiverReader } from "./ops-e
 import { runOpsNotificationDelivery } from "./ops-notification.runtime.ts";
 
 export type { AutomaticNoticeCycle, AutomaticNoticeWorkerStatus } from "@grokbox/runtime-kernel/observation";
-type Input = { durableRoot: string; readNative: ExplicitReceiverReader; signal?: AbortSignal; replayFence?: NoticeReplayFence };
+type Input = { durableRoot: string; readNative: ExplicitReceiverReader; signal?: AbortSignal; replayFence?: NoticeReplayFence;
+  observeReplayFence?: (fence: NoticeReplayFence) => void };
 type PurposeInput = Input & { intent?: "diagnose-or-report" };
 type Ports = { request?: NotificationRequest };
 const configuration = (root: string) => openConfigStore(rootConfigLayout(root));
@@ -59,6 +60,9 @@ async function noticePurposeCycle(input: PurposeInput, ports: Ports = {}): Promi
     if (nowMs < auth.activatedAtMs) return { state: "blocked", reason: "clock_reversed" };
     const store = openMonitorStore(input.durableRoot);
     if (canonicalJson(await store.notificationScope()) !== canonicalJson(record.plan.scope)) return { state: "blocked", reason: "installation_scope_changed" };
+    const durableFence = await openOpsBindings(input.durableRoot).noticeReplay(nowMs);
+    input = { ...input, replayFence: input.replayFence ?? durableFence };
+    input.observeReplayFence?.(input.replayFence!);
     const replayFailure = input.replayFence?.check(nowMs);
     if (replayFailure) return { state: "blocked", reason: replayFailure };
     const workId = await store.nextAutomaticNotification(Math.max(auth.activatedAtMs, input.replayFence?.startedAtMs ?? 0,
@@ -108,7 +112,7 @@ export function startOpsNotificationWorker(input: Omit<Input, "signal">, testPor
   const idleMs = testPorts.idleMs ?? NOTICE_WORKER_POLICY.idleMs, blockedMs = testPorts.blockedMs ?? NOTICE_WORKER_POLICY.blockedMs;
   if (![idleMs, blockedMs].every(n => Number.isSafeInteger(n) && n > 0 && n <= NOTICE_WORKER_POLICY.maxBlockedMs)) throw new Error("invalid_notice_worker_interval");
   const controller = new AbortController();
-  const replayFence = createNoticeReplayFence(Date.now());
+  let replayFence: NoticeReplayFence | undefined;
   const state: AutomaticNoticeWorkerStatus = { state: "starting", cycles: 0, lastCycleAtMs: null, lastCycle: null, nextDelayMs: idleMs,
     owner: "management-server", automaticDiagnosis: false, automaticIssue: false, pollingCallsModels: false,
     serviceInstallation: "not_proven", botReport: "not_observed", userRead: "not_observed" };
@@ -118,7 +122,8 @@ export function startOpsNotificationWorker(input: Omit<Input, "signal">, testPor
     yield* Effect.forever(Effect.gen(function* () {
       state.state = "working";
       const result = yield* Effect.uninterruptible(Effect.tryPromise({
-        try: () => testPorts.cycle ? testPorts.cycle(controller.signal) : automaticNoticeCycle({ ...input, signal: controller.signal, replayFence }, testPorts),
+        try: () => testPorts.cycle ? testPorts.cycle(controller.signal) : automaticNoticeCycle({ ...input, signal: controller.signal,
+          observeReplayFence: fence => { replayFence = fence; } }, testPorts),
         catch: () => "cycle_unavailable",
       }).pipe(Effect.catch(() => Effect.succeed({ state: "unavailable", reason: "local_or_native_source_unavailable" } as AutomaticNoticeCycle))));
       state.cycles = Math.min(Number.MAX_SAFE_INTEGER, state.cycles + 1); state.lastCycle = result; state.lastCycleAtMs = Date.now();
@@ -129,5 +134,5 @@ export function startOpsNotificationWorker(input: Omit<Input, "signal">, testPor
     }));
   }));
   const lifetime = Effect.runPromiseExit(program, { signal: controller.signal });
-  return { status: (): AutomaticNoticeWorkerStatus => ({ ...structuredClone(state), replayFence: replayFence.status() }), close: async () => { controller.abort(); await lifetime; } };
+  return { status: (): AutomaticNoticeWorkerStatus => ({ ...structuredClone(state), ...(replayFence ? { replayFence: replayFence.status() } : {}) }), close: async () => { controller.abort(); await lifetime; } };
 }

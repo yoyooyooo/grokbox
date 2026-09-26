@@ -377,7 +377,7 @@ A `7994b92`与B `dc03066`：配置迁移、所选Provider/工具/Memory/effort�
 | --- | --- |
 | LIVE-OPS-RECEIVERS：默认用户出口 | 最小原生只读核实尚未找到已资格化的任意用户告警写入口。须落实一个未配维护 Bot 也实际可达的出口，并分别记录受理与用户展示；本地页面/文件/HTTP200 不代签。结构风险提醒不能仅靠维护任务替代。 |
 | LIVE-OPS-RECEIVERS：维护任务 | 原现场窗口明确接收 Bot、Routine、实际 automation 模型/工具、费用/数据授权以及委派 `notifications.tasks` 凭据。真实 sourceChange→原 fixed evidence→outbox→Webhook→精确认领/分析结果，回执分列 HTTP、receiver-credential、native turn、用户展示；无权执行修复/采用。 |
-| LIVE-OPS-OBSERVER-LIFETIME / LIVE-NOTICE-REQUALIFICATION | 验证已领取任务重启续报与 unknown 原操作对账；未发送旧 backlog / 不明 reservation 的完整自动冷启动接续仍是实现缺口，不把当前保守不发送宣称已完成。绑定/模型/授权改变不扩大权限，待验受控拒绝重试、额度和故障可见性。 |
+| LIVE-OPS-OBSERVER-LIFETIME / LIVE-NOTICE-REQUALIFICATION | 验证已领取任务重启续报与 unknown 原操作对账；源码已补当前授权后仍相关待发工作的冷启动接续，原配对 capsule 持久围栏阻止恢复旧观测库后重投。旧 capsule 无围栏、不明 reservation 和原生 unknown 仍保守保留，不推为成功或重新派工。绑定/模型/授权改变不扩大权限，待验实际 Bot 的受控拒绝重试、额度和故障可见性。 |
 | AH-188 公共观察配置与代码组合 | 已在同一候选验证真实 producer 的 episode/classification→维护消费者、无关更新不发、同形/结构变化分流，以及实际配置开/关/读取失败与取消。Host-health 19、witness 26、notification 48、原 handover 20 项均通过；使用实际 Node/Rust/SQLite/packed 组件和自有来源，不签官方来源或实际 Bot。 |
 | 独立复核与部署 | 分类/任务/授权入口、outbox 恢复及 producer/provenance 必要分段复核与修后复查已取得 Accepted，具体发现及范围见联合报告；早期超时没有计通过。合流不更换 AH-124 固定现场候选，不动现役 Host/modeld/全局 shim；真实通知及模型费用仅在原有效授权窗口执行。 |
 

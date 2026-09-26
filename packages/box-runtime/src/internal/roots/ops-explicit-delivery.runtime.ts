@@ -23,6 +23,7 @@ export function createPreparedNoticeDriver(input: PreparedNoticeDriverInput & { 
   let latest: PairingRecord | null = null;
   let blocker: string | null = null;
   const driver: PairedNotificationDriver = {
+    durableReplay: true,
     inspect: async ({ target, scope, signal }) => {
       latest = null;
       if (input.authorize) {
