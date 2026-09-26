@@ -20,6 +20,8 @@ The controller's source digest and structural checks do not prove implementation
 
 Observe the same nonce, TURN, STEP and operation after an uncertain result. Do not resend or change Provider to turn unknown into pass. Distinguish configured/captured/emitted/reported model settings, queued input, tool execution, committed checkpoint, delivery and App display.
 
+Before every Host POC modification or load, follow [current-source retention and recovery](../../../docs/maintainers/live-end-to-end.md#host-poc-source-recovery): freshly hash the complete current source, identify the exact idle Host generation and original supervisor, reuse or add its full original in the existing retained corpus, and bind original/transformed/helper/patch digests to the target. Historical retained bytes are for research, not rollback over a newer Host. Verify this window's source and running-generation restoration before another patch or a clean-state claim.
+
 Use only the selected scenario's required cases. A pass for one model, effort or generation does not cover another. Do not impose a historical six-model matrix or fixed branch name on unrelated work.
 
 Stop the affected mutation path when target identity, ownership, loaded generation, side effects or cleanup become uncertain. Continue authorized readback and reconciliation. Preserve the first failure and original identities; fixture events cannot replace native observations.

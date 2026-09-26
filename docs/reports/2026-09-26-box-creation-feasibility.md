@@ -1,6 +1,37 @@
 # 2026-09-26 — Box 创建核心前提：原生对照与完整客户端编码链
 
-## 当前结论：已取得真实登记及普通私聊，尚未守住完整体验（08:05 UTC 补查）
+## 当前结论：服务端当前也已是 Temporal，P0 尚缺持有合同（09:14 UTC）
+
+本轮没有重跑创建或首轮私聊。重新核对原始回执后，在本轮实际官方 Host 上加载了两处只记录返回值的身份读取观察器；沿原认证客户端、原启动 reconcile 取得同一普通 Bot 的 `ListGrokBotAgents` 响应。**09:10:50 与 09:10:55 UTC，Server 都返回原 Server ID、原 Bot UUID、`harness=temporal`。** 这排除了“仅本地标签写错、服务端仍是 Box”作为当前解释；此前真实 Box 登记和自定义私聊的正例仍成立。
+
+### 生命周期事实与证据边界
+
+- **实际升级窗口**：原 supervisor 的 `upgrade-93e056e` applied 回执为 07:39:35.625 UTC，日志记录 `292d77e → 93e056e`。目标 profile 的 mtime 是 07:41:34.066 UTC。升级回执不是迁移回执，不能把两分钟的时间关系直接写成因果。
+- **源码支持的正常机制**：Host 读取已应用升级 marker，在本地执行被暂停的窗口调用 `EnsureGrokBotBoxHarnessMigrationPass`；结束或放弃后重新读取服务端身份，原身份 writer 按服务端 harness 更新 profile。历史成功来源 `26415f57` 中也已有这条链，不是本轮根据新版源码推定刚新增的行为。
+- **历史原因仍未观测**：本地保留日志没有该目标的 pass 成功/拒绝/延后回执。普通 Server 列表返回的 `updatedAtMs` 仍等于创建时间，不能用它给迁移定时。`getHarnessMigrationWindow` 当前只给出 `window=none / identityCoverage=complete`，不提供历史 pass 或未来执行许可。
+- **当前权限边界**：包含 rollout、hold、逐 Bot pass 结果的 `GetGrokBotHarnessMigrationStatusInternal` 在当前官方合同中要求内部服务和 acting employee；本环境没有该权限，未调用，不能写成服务端拒绝。`Ensure…Pass` 会启动/查找迁移，不是只读诊断；未调用。内部 clear-hold、策略关闭和逆改 profile 均未执行。
+
+**P0 的当前候选没有持续持有 Box 的证明，完整 POC 未通过；也没有足够证据宣布所有合法 Box 路径均不可能。** 下一项决定性事实是当前账号可依赖的 Box 持有/恢复合同，或官方对这个准确身份的迁移决定及允许范围。若有可验证的正常持有路径，可以直接验证同一身份跨生命周期，不把重建全部历史当新前置；若平台确认必迁且无允许的恢复路径，才证伪此候选。继续新建短暂 Box 或关闭 reconcile 不解决这一缺口。
+
+### 实际窗口与收场
+
+本轮原始源码为 `4eafc5d6`，完整原文已按内容摘要纳入既有 `host-bundles/generations`；没有用历史 `26415f57` 覆盖它。临时观察源码为 `b63b23c7`，只观察原身份列表返回，不新增服务端请求、不修改返回值。加载和恢复各发送一次信号，原 supervisor 未变。两次 45 秒等待均先记为 unknown；后续只读核对原运行代取得加载/恢复结果，未重复发信号，原 unknown 回执保留。
+
+09:14:40 UTC 收场核对：磁盘摘要恢复为本轮 `4eafc5d6`；新原 supervisor 子进程在恢复后启动，命令、启动代、恢复前后源码摘要与 Gateway 空闲读回相符，无观察器引用或新加载标记。名册 ID/harness/类型保持；这不是全部原生数据、App 活动选择或其他 Bot 模型执行的保全验收。目标仍为同一 Temporal 身份，旧自定义 binding 关闭。
+
+私有原始回执留在原 POC 的 `p0-lifecycle-evidence/`：`before.json`、`retention.json`、`load-attempt.json`、`original-client-events.ndjson`、`load-readback.json`、`restore-attempt.json`、`restore-readback.json`、`lifecycle-findings.json`。未把 Host 源码、名册或 transcript 纳入公共仓库。管理 CLI 当时不可达，原生 Gateway 可用；没有为此部署另一套管理服务。
+
+| 类别 | 当前结果 |
+|---|---|
+| 真实执行通过 | 历史 local-first Box 登记与首轮自定义私聊；本轮原 Server 同身份 Temporal 读回、观察器加载和恢复核对 |
+| 源码/隔离支持 | 正常升级后的 migration/reconcile 写入链；ackToken 修复的历史隔离验证，未在线复验 |
+| 当前失败 | 原 Box 身份的持续本地执行前提不成立；旧私聊 ack 接线曾导致 redrive |
+| 因权限未执行 | 官方内部迁移诊断/hold 操作；本轮没有新的工具安全拒绝 |
+| 尚缺 | 合法持续身份、修后私聊 ack、同 Bot 多群/Routine、未修改客户端跨端、实际官方模型对照与额度归因；`billing not observed` |
+
+本轮没有新建 Bot、输入消息或主动发起模型任务；Host 正常启动的内部行为不能据此签零账单。P1–P4 未因短暂历史成功而越过 P0。
+
+## 08:05 UTC 补查：已取得真实登记及普通私聊，尚未守住完整体验
 
 本次发现并对齐了此前中断阶段留存、尚未进入本报告的真实回执。后文“未取得BOX实际请求结果”等描述保留为当时历史，不能再作为当前停点。
 

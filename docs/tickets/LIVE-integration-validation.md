@@ -2,7 +2,15 @@
 
 本页是新版运行核心采用与完整功能候选的 **E2E Checklist 与当前结果唯一入口**。[Agent-first Spec](../roadmap/agent-first-cli/spec.md)决定验收义务，来源票负责实现/离线/独立审查，日期报告保存固定证据，[执行手册](../maintainers/live-end-to-end.md)拥有执行方法。本页不是逐提交发布闸门，也不是要求先把旧版本验完才能重建。
 
-### 当前：普通 Bot 完整 POC 尚未通过（2026-09-26 08:05 UTC 补查）
+### 当前：Server 已独立读回 Temporal，P0 持有合同未闭合（2026-09-26 09:14 UTC）
+
+**原认证客户端实际返回同一 Server ID、同一 Bot UUID 的 Temporal 身份，已排除仅本地标签错误；历史 local-first Box 登记与首轮自定义私聊仍是真实正例。** 本轮在当前 `4eafc5d6` 官方来源上只观察原启动身份列表，09:10 UTC 两次返回一致，详见[原 POC 报告](../reports/2026-09-26-box-creation-feasibility.md)。没有新建 Bot、重放原请求或主动发起模型任务。
+
+07:39:35 UTC 有官方 Host 升级 applied 回执，07:41:34 为目标 profile mtime；当前与历史来源均存在“升级后迁移 pass → 再 reconcile → 原 profile writer”链。**尚无该目标的服务端 pass 回执，时间相关不等于根因已定。** owner 读面没有历史决定；逐 Bot pass/rollout/hold 诊断声明为官方员工内部接口，本环境无相应权限，未调用，也未触发新迁移或关闭同步。当前候选不满足持续身份前提，但不签所有合法 Box 路径均被证伪。
+
+本轮完整原文已纳入既有 retained corpus；临时观察器已撤回。09:14:40 核对磁盘恢复本轮 `4eafc5d6`、原 supervisor 下新 Host 运行代可用且空闲、无观察器引用，名册 ID/harness/类型保持；两次慢启动的原 unknown 回执均保留，以后续原运行代读回收口，未重复信号。目标仍 Temporal，旧 binding 关闭。下一步只需可验证的正常 Box 持有/恢复合同或该身份的官方迁移决定；不以再造短暂 Bot 代替。P1 修后在线 ack、同 Bot 多群/Routine、官方跨端、模型对照及 `billing not observed` 均未通过。
+
+### 2026-09-26 08:05 UTC 补查：普通 Bot 完整 POC 尚未通过
 
 **已从原始回执确认，不再是纯隔离推断：06:06 UTC的fresh创建正确编码BOX仍被Server最初返回Temporal；06:17 UTC原生工厂先生成普通本地Bot，再用原ensureServerBacked登记，Server最初确认Box。06:30 UTC同一普通私聊已经由自定义DeepSeek完成原生Memory写入和乘法工具，回复进入原生历史。** 凭据及原caller/intent未被伪造，两个观察helper与原加载摘要仍匹配；详细证据见[同一POC报告](../reports/2026-09-26-box-creation-feasibility.md)。这些是此前中断阶段实际发生、本次补查恢复的结果，不是本次重新创建。
 
@@ -236,7 +244,7 @@
 | <a id="live-modeld-app"></a>**LIVE-MODELD-APP**<br>G1 | [ ] `partial`；`not-run` | ①未修改原版App发输入并关联同session/run/代；②增量文本/工具/失败/完成显示；③Working、typing、发送队列、父任务和监听子任务区分；④断连重连与迟到事件不复活；⑤标题/历史不丢 | 来源与实施差额：[Working判据](../maintainers/composer-working-status.md) · [T36](T36-composer-working-activity.md) |
 | <a id="live-auth-availability-app"></a>**LIVE-AUTH-AVAILABILITY-APP**<br>G1 | [ ] `partial`；`not-run` | ①权限等待/过期/超时/拒绝和上游503文案有区别；②动作建议不误导重放或抢归属；③控制帧不进模型正文；④App与CLI关联同一次故障 | 来源与实施差额：[结果观察](../maintainers/run-outcome-observation.md) · [AUTH票](AUTH-ownership-evidence-availability.md) |
 | <a id="live-stream-error-recovery"></a>**LIVE-STREAM-ERROR-RECOVERY**<br>G1 | [ ] `partial`；`not-run` | ①正常stream/工具多步/终态无重复；②自然503/限流/认证错误分层；③空流/畸形/中断仅隔离注入，payload校验未释放工具；④原生Working收束；⑤新nonce正常请求可继续，retry off保持 | 来源与实施差额：[Provider手册](../maintainers/chat-provider-compatibility.md) · [working恢复](../maintainers/working-state-recovery.md) |
-| <a id="live-ownership-alignment"></a>**LIVE-OWNERSHIP-ALIGNMENT**<br>G1/G3 | [ ] `partial`；`not-run` | ①新Bot confirmed_box；②普通profile更新不写ownership；③temporal/冲突对象拒受管执行；④历史冲突与保全/校准单独列明，不混成干净Bot失败 | 来源与实施差额：[T37](T37-server-ownership-admission.md) · [T38](T38-identity-write-alignment.md) |
+| <a id="live-ownership-alignment"></a>**LIVE-OWNERSHIP-ALIGNMENT**<br>G1/G3 | [ ] `partial`；`blocked`（P0 AUTH/DEP） | ①新Bot confirmed_box；②普通profile更新不写ownership；③temporal/冲突对象拒受管执行；④历史冲突与保全/校准单独列明，不混成干净Bot失败 | [09:14 P0](../reports/2026-09-26-box-creation-feasibility.md)：历史local-first曾Box；同一身份现已由原Server列表确认Temporal，持有/恢复合同与逐Bot迁移决定未取得。仅此POC范围，未完成整行资格。[T37](T37-server-ownership-admission.md) · [T38](T38-identity-write-alignment.md) |
 
 ## E3 — 原生 Routine、提醒与受托自主
 

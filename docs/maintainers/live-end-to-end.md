@@ -65,6 +65,17 @@ first failure, unresolved effects, safe stop/recovery and retained resources
 
 恢复目标可以是安全停用、修复后重装或产品定义的官方退出，不要求回到旧开发版继续服务。已发生效果不可回滚；重新接入前必须识别未结/unknown 与旧 writer，不能因为旧内部库不承诺导入就忘掉真实外部效果。
 
+<a id="host-poc-source-recovery"></a>
+### Host POC 的来源与恢复
+
+每次准备修改或加载 Host 主文件前，重新读取完整当前文件并计算 SHA-256，核对当前 Host PID/start time、父 supervisor、Gateway 运行代与空闲状态。历史成功来源只用于复盘；它不代表当前现役来源，也不是本轮恢复文件。
+
+1. 修改前先查既有 `host-bundles/generations/<sha>/source`。已有完整且摘要相符的原文就复用，记录 generation/evidence reference；缺失才沿同一 retention 体系保全完整原文，不另建散落 backup。hash/diff 不能代替全文。
+2. 从这个已确认的本轮 original source 生成补丁；不解除旧 SHA 锁后盲套历史 patch。加载前记录 original/transformed source SHA、Host PID/start time、supervisor PID、helper/patch SHA、准确目标和请求范围。
+3. 完成、失败、工具阻断或结果不确定且不再需要补丁时，只恢复本轮修改前保全的原文。若官方已经更新来源，先重新观察，不拿旧原文覆盖新官方来源；不替换或修改 supervisor owner。
+4. 恢复后重新计算磁盘 SHA，与本轮 original 对应；若实际重启过，还需核对恢复后新进程的运行代与加载来源，磁盘恢复不能代签运行中补丁已退出。原 unknown 回执保留，通过准确原请求/运行代读回解决，不重复提交。
+5. 恢复验证未完成，不开始下一次 patch，也不称现场已收干净。源码恢复不等于撤销已发生的消息、模型调用或原生数据写入。
+
 ## 3. E0：首次安装与共同入口
 
 核心J2先执行本段中运行实际需要的安装/配置/原生数据保全/权限/恢复条件，首次采用后的loaded与真实业务结果在J3生成；不能要求首次采用之前已证明现场采用，形成循环。自有Web未启用时其完整功能不作为核心前置，实际启用的服务面仍须验安全及非干扰。完整产品E0仍覆盖以下全部适用范围。
