@@ -42,14 +42,14 @@ export function createLocalFirstBridge(source: LocalFirstReceipt["source"]) {
     const entry: Entry = { declaration, args, receipt: { version: 1, operationId: args.clientNonce, localAgentId: null,
       source: { ...source }, settled: false, stage: "local-factory", outcome: "unknown", request: null, firstResponse: null, binding: null } };
     entries.set(args.clientNonce, entry);
-    entry.promise = context.run(entry, async () => {
+    entry.promise = (async () => {
       let created: { agent: Row; transcript: unknown[] } | undefined;
       try {
         created = await manager.createBackgroundAgent(profile, args.origin ?? "user", options);
         if (!isContinuityUuid(created?.agent?.id) || created.agent.isGroup === true) throw Error("local_first_factory_identity_invalid");
         entry.receipt.localAgentId = created.agent.id;
         entry.receipt.stage = "registration";
-        const binding = await identity.ensureServerBacked(created.agent.id);
+        const binding = await context.run(entry, () => identity.ensureServerBacked(created!.agent.id));
         if (binding?.kind === "server_backed" && text(binding.serverId))
           entry.receipt.binding = { serverId: binding.serverId, harness: harness(binding.harness) };
         const r = entry.receipt.firstResponse, b = entry.receipt.binding;
@@ -68,12 +68,12 @@ export function createLocalFirstBridge(source: LocalFirstReceipt["source"]) {
         if (entry.receipt.localAgentId && created) return { ...created, grokboxCreation: entry.receipt };
         throw error;
       } finally { entry.receipt.settled = true; }
-    });
+    })();
     return entry.promise;
   }
   function mint(request: Row, forward: (request: Row) => Promise<unknown>): Promise<unknown> | undefined {
     const entry = context.getStore();
-    if (!entry) return undefined;
+    if (!entry || entry.receipt.settled) return undefined;
     const receipt = entry.receipt;
     if (request.agentId !== receipt.localAgentId || request.createCaller !== "ensure-server-backed" || request.createIntent !== "register-existing-local"
       || receipt.request !== null) throw Error("local_first_registration_identity_or_replay");

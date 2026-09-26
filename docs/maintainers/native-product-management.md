@@ -33,7 +33,9 @@ profile 接受 name/description/title/avatarShape/avatarColor。Group 创建只�
 
 该接缝属于现有 `native-creation` recipe 能力，沿 `runtime profile analyze` / `runtime profile write --capability native-creation`、原 reviewed profile 与采用机制交付。所需 review IDs 由实际同源分析给出，包含本地工厂接线、单次登记和只读回执入口，不复制临时目录或写现役 Host。历史 remote-first 字段切片仍是历史证据，不是当前可运行的 Box 创建实现。
 
-新回执的 `result.creation` 分别保留原 operationId、本地 ID、首次 Server 身份响应投影、原登记者绑定、失败阶段及实际桥接的 source/profile/candidate/generation。它不包含凭据或全部原始响应正文；不存在该字段的旧回执仍是缺少这项证据。`readBack` 继续表示本地产品资料匹配；独立 Server/local 归属须读 `bot ownership get`，并核对同一 Server ID。`complete` 只表示管理回执已保存，登记 unknown、mismatch 和未观察读回都不构成 Box 执行资格。
+`bot create --preview` 的 `creationSource` 返回实际已加载创建桥的 source/profile/candidate/preload/generation；缺能力时为 null，不推测健康。它参与预览 revision，提交前再次读取；来源变化使旧计划失效，不借旧成功回执授权新代。
+
+新回执的 `result.creation` 分别保留原 operationId、本地 ID、首次 Server 身份响应投影、原登记者绑定、失败阶段及实际桥接的 source/profile/candidate/preload/generation。它不包含凭据或全部原始响应正文；不存在该字段的旧回执仍是缺少这项证据。`readBack` 继续表示本地产品资料匹配；独立 Server/local 归属须读 `bot ownership get`，并核对同一 Server ID。`complete` 只表示管理回执已保存，登记 unknown、mismatch 和未观察读回都不构成 Box 执行资格。
 
 `deferStart=true` 仅用于 Box Bot 创建，表示请求抑制 introduction/kickstart，不是建立输入屏障。未抑制的创建与复制本地启用 Routine 都可能导致后续运行或费用，预览会披露；不能把创建成功推断为零费用或 managed model 已配置。
 

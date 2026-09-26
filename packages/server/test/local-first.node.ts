@@ -38,6 +38,21 @@ for (const mode of ["registered", "temporal", "registration-unknown", "response-
   });
 }
 
+test("creation preview binds the loaded source and refuses a changed capability before admission", async () => {
+  const f = await productFixture();
+  try {
+    const intent = productCommand(), plan = (await f.client().previewProduct(intent)).data;
+    assert.equal(plan.creationSource?.sourceSha256, "a".repeat(64));
+    assert.equal(plan.creationSource?.generationId, "synthetic-product-host");
+    f.state.creationSupported = false;
+    await assert.rejects(f.client().submitProduct({ ...intent, scopeId: plan.scopeId, expectedRevision: plan.revision, confirmed: true, acceptNonAtomic: true }),
+      (error: any) => error.code === "revision_conflict");
+    assert.equal(f.state.writes, 0);
+    const fresh = (await f.client().previewProduct(intent)).data;
+    assert.equal(fresh.creationSource, null); assert.notEqual(fresh.revision, plan.revision);
+  } finally { await f.close(); }
+});
+
 test("missing loaded creation capability refuses before the native write", async () => {
   const f = await productFixture(); f.state.creationSupported = false;
   try {

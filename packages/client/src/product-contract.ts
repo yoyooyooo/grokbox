@@ -1,3 +1,4 @@
+import { isLocalFirstSource } from "@grokbox/runtime-kernel/products";
 import { canonicalJson } from "@grokbox/runtime-kernel/canonical-json";
 import { productIntent, productSubmission, productProfileAfter, productEffects, assertProductReceipt, assertProductResult, NativeProductError,
   type ProductIntent, type ProductSubmission, type ProductPlan, type ProductReceipt, type ProductObject,
@@ -44,10 +45,11 @@ function validObject(value: unknown): value is ProductObject {
   } catch { return false; }
 }
 export function productPlanView(value: unknown, intent: ProductIntent): value is ProductPlan {
-  if (!record(value) || !keys(value, ["intent", "scopeId", "revision", "sourceGeneration", "target", "profileAfter", "memberRevision", "duplicateRevision", "atomicCompareAndSet", "nativeIdempotency", "effects", "nativeEffectsPerformed"])) return false;
+  if (!record(value) || !keys(value, ["intent", "creationSource", "scopeId", "revision", "sourceGeneration", "target", "profileAfter", "memberRevision", "duplicateRevision", "atomicCompareAndSet", "nativeIdempotency", "effects", "nativeEffectsPerformed"])) return false;
   try {
     if (canonicalJson(productIntent(value.intent)) !== canonicalJson(intent)) return false;
   } catch { return false; }
+  if (value.creationSource !== null && (!isLocalFirstSource(value.creationSource) || intent.action !== "create" || intent.kind !== "bot" || intent.harness !== "box")) return false;
   return hash(value.scopeId) && hash(value.revision) && hash(value.sourceGeneration)
     && (intent.targetId === null ? value.target === null : validObject(value.target) && value.target.id === intent.targetId && value.target.kind === intent.kind)
     && (intent.memberIds === null ? value.memberRevision === null : hash(value.memberRevision))

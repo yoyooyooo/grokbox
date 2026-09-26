@@ -49,7 +49,7 @@ nativeTest("Local-first recipe executes original factory/registrar/writer with o
   expect(stamps[0]!.pos).toBeGreaterThan(awaitedMints[0]!.pos);
   const calls: string[] = [], requests: any[] = [], profiles = new Map<string, any>(), locals = new Map<string, any>();
   let fail = false, temporal = false;
-  const bridge = createLocalFirstBridge({ sourceSha256: sha256Text(source), transformedSha256: sha256Text(patched.source), profileSha256: "d".repeat(64), generationId: "isolated-native" });
+  const bridge = createLocalFirstBridge({ sourceSha256: sha256Text(source), transformedSha256: sha256Text(patched.source), profileSha256: "d".repeat(64), preloadSha256: "e".repeat(64), generationId: "isolated-native" });
   const Selected = runInNewContext(`(class {${methods}})`, {
     [Symbol.for(HOST_LOCAL_FIRST_SYMBOL)]: bridge,
     readSandProfileServerId: (id: string) => profiles.get(id)?.serverId ?? null,

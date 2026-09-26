@@ -133,6 +133,10 @@ export function createNativeProductAccess(call: ProductCall, signal: AbortSignal
   };
   const preview = async (raw: ProductIntent): Promise<ProductPlan> => {
     const intent = productIntent(raw), view = await snapshot(intent.requestId, intent.targetId, intent.kind === "bot" && intent.targetId !== null);
+    if (intent.action === "create" && intent.kind === "bot" && intent.harness === "box") {
+      const status = await rpc("getHostStatus", { grokboxCreationRequestId: intent.requestId }, 32768);
+      view.creationSource = record(status) && isLocalFirstSource(status.grokboxCreationSource) ? status.grokboxCreationSource : null;
+    }
     const duplicateRevision = intent.action === "duplicate" ? duplicatePlan(await duplicate.inspectSource(intent.targetId!)).revision : null;
     return productPlan(intent, view, duplicateRevision);
   };
@@ -157,12 +161,8 @@ export function createNativeProductAccess(call: ProductCall, signal: AbortSignal
     try { fresh = await preview(q); }
     catch (error) { throw new ProductDispatchRefused(error instanceof NativeProductError && error.code === "permission_denied" ? "permission_denied" : "source_changed"); }
     if (fresh.revision !== plan.revision || fresh.scopeId !== plan.scopeId || generation !== plan.sourceGeneration) throw new ProductDispatchRefused("source_changed");
-    let creationSource: LocalFirstReceipt["source"] | undefined;
-    if (q.action === "create" && q.kind === "bot" && q.harness === "box") {
-      const status = await rpc("getHostStatus", { grokboxCreationRequestId: operationId }, 32768);
-      if (!record(status) || !isLocalFirstSource(status.grokboxCreationSource)) throw new ProductDispatchRefused("source_unavailable");
-      creationSource = status.grokboxCreationSource;
-    }
+    const creationSource = fresh.creationSource ?? undefined;
+    if (q.action === "create" && q.kind === "bot" && q.harness === "box" && !creationSource) throw new ProductDispatchRefused("source_unavailable");
     const raw = await rpc(method, input);
     let targetId = q.targetId;
     if (q.action === "create") {

@@ -86,9 +86,9 @@ if (!liveBlocked && profilePath && admittedMode && operationId) {
       transformedSha256: profile.transformedSourceSha256,
     },
   }));
-  if (binding && NATIVE_CREATION_SLICE_IDS.every(id => profile.slices.some(slice => slice.id === id))) {
+  if (binding && preloadSha256 && NATIVE_CREATION_SLICE_IDS.every(id => profile.slices.some(slice => slice.id === id))) {
     install(HOST_LOCAL_FIRST_SYMBOL, createLocalFirstBridge({ sourceSha256: profile.sourceSha256,
-      transformedSha256: profile.transformedSourceSha256, profileSha256, generationId: binding.generationId }));
+      transformedSha256: profile.transformedSourceSha256, profileSha256, preloadSha256, generationId: binding.generationId }));
   }
   install(HOST_OWNERSHIP_READ_SYMBOL, Object.assign(bindHostOwnershipRead({
     ...(self ? { loaded: { pid: self.pid, start: self.start, profileSha256,

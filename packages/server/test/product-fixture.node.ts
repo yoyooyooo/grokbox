@@ -44,7 +44,7 @@ export async function productFixture() {
       { principalId: "reader", tokenSha256: hash(P_READER), capabilities: ["products.read", "operations.read", "messages.read", "routines.read"] },
     ] as AccessGrant[],
   };
-  const creation = createLocalFirstBridge({ sourceSha256: "a".repeat(64), transformedSha256: "b".repeat(64), profileSha256: "c".repeat(64), generationId: "synthetic-product-host" });
+  const creation = createLocalFirstBridge({ sourceSha256: "a".repeat(64), transformedSha256: "b".repeat(64), profileSha256: "c".repeat(64), preloadSha256: "d".repeat(64), generationId: "synthetic-product-host" });
   const gateway = createServer(async (request, response) => {
     try {
       if (request.headers.authorization !== `Bearer ${state.token}`) { response.writeHead(401).end("{}"); return; }

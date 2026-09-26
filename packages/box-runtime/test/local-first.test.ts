@@ -7,7 +7,7 @@ import { transformUnchecked } from "../src/internal/host/profile.ts";
 import { isLocalFirstReceipt } from "@grokbox/runtime-kernel/products";
 import { LOCAL_FIRST_SHAPED_HOST } from "./local-first-shaped-host.ts";
 
-export const localFirstSource = { sourceSha256: "a".repeat(64), transformedSha256: "b".repeat(64), profileSha256: "c".repeat(64), generationId: "synthetic-loaded-generation" };
+export const localFirstSource = { sourceSha256: "a".repeat(64), transformedSha256: "b".repeat(64), profileSha256: "c".repeat(64), preloadSha256: "d".repeat(64), generationId: "synthetic-loaded-generation" };
 function fixture() {
   const bridge = createLocalFirstBridge(localFirstSource);
   const patched = transformUnchecked(LOCAL_FIRST_SHAPED_HOST, LOCAL_FIRST_SLICES); if (!patched.ok) throw Error(patched.code);
@@ -15,6 +15,7 @@ function fixture() {
     [Symbol.for(HOST_LOCAL_FIRST_SYMBOL)]: bridge,
   });
   const state = { enabled: true, remote: 0, foreground: 0, factories: 0, writes: 0, retries: 0, registrationError: false,
+    duringFactory: undefined as undefined | (() => Promise<void>),
     readError: false, temporal: false, factoryError: false, requests: [] as any[], rows: new Map<string, any>() };
   const identity = new native.SyntheticCreationIdentity();
   identity.deps = { retry: { runWithRetry: (run: () => unknown) => { state.retries++; return run(); } } };
@@ -32,6 +33,7 @@ function fixture() {
   const manager = {
     createBackgroundAgent: async (p: any, origin: string, options: any) => {
       state.factories++; expect(origin).toBe("user"); expect(options).toEqual({ isIntroductionSuppressed: true, isKickstartRequested: false });
+      await state.duringFactory?.();
       if (state.factoryError) throw Error("factory_response_lost");
       const agent = { ...p, id: randomUUID(), isGroup: false }; state.rows.set(agent.id, agent); return { agent, transcript: [] };
     },
@@ -81,6 +83,13 @@ test("authority refusal precedes creation; lost factory results remain unknown u
   await expect(f.api.createAgent(f.args)).rejects.toThrow("factory_response_lost");
   expect(f.state.factories).toBe(1); expect(f.state.writes).toBe(0);
   expect(f.bridge.read(f.args.clientNonce)).toMatchObject({ localAgentId: null, stage: "local-factory", outcome: "unknown", settled: true });
+});
+
+test("factory-emitted unrelated work is outside the scoped registration adapter", async () => {
+  const f = fixture(), request = { agentId: randomUUID(), createIntent: "fresh", createCaller: "product-create" };
+  f.state.duringFactory = async () => { expect(await f.identity.requestMint(async (q: unknown) => q, request)).toBe(request); };
+  const result = await f.api.createAgent(f.args);
+  expect(result.grokboxCreation.outcome).toBe("registered"); expect(f.state.retries).toBe(1); expect(f.state.writes).toBe(1);
 });
 
 test("concurrent requests keep registration identities separate and same-request callers share one factory", async () => {

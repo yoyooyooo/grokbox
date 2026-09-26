@@ -1,4 +1,4 @@
-import { isLocalFirstReceipt, type LocalFirstReceipt } from "./local-first.ts";
+import { isLocalFirstReceipt, isLocalFirstSource, type LocalFirstReceipt } from "./local-first.ts";
 import { canonicalJson, sha256Text } from "../../portable-hash.ts";
 import { composeAgentTitle, parseAgentTitle } from "../contract/title-marker.ts";
 import { ContinuityFailure, isContinuityHash, isContinuityUuid } from "./primitives.ts";
@@ -24,7 +24,8 @@ export type ProductAuthority = {
   scopeId: string; generation: string; observedAtMs: number; identityRevision: string;
   permission: "native-authenticated-account"; atomicCompareAndSet: false;
 };
-export type ProductSnapshot = { objects: ProductObject[]; authority: ProductAuthority; coverage: "current-native-roster" };
+export type ProductSnapshot = { objects: ProductObject[]; authority: ProductAuthority; coverage: "current-native-roster";
+  creationSource?: LocalFirstReceipt["source"] | null };
 export type ProductOwnership = {
   scopeId: string; sourceGeneration: string; observedAtMs: number;
   agents: Array<{ id: string; state: "confirmed_box" | "confirmed_temporal" | "conflict" | "unconfirmed";
@@ -42,6 +43,7 @@ export type ProductRelations = {
   currentRosterCoverage: "native-snapshot"; externalTasksEnumerated: false;
 };
 export type ProductPlan = {
+  creationSource: LocalFirstReceipt["source"] | null;
   intent: ProductIntent; scopeId: string; revision: string; sourceGeneration: string;
   target: ProductObject | null; profileAfter: Partial<ProductProfile> | null; memberRevision: string | null; duplicateRevision: string | null;
   atomicCompareAndSet: false; nativeIdempotency: "not-guaranteed";
@@ -164,10 +166,12 @@ export function productPlan(intent: ProductIntent, snapshot: ProductSnapshot, du
   if (target === undefined) throw new NativeProductError("not_found");
   if (intent.memberIds?.some(id => !snapshot.objects.some(o => o.id === id && o.kind === "bot"))) throw new NativeProductError("not_found");
   const memberRevision = intent.memberIds ? sha256Text(canonicalJson(snapshot.objects.filter(o => intent.memberIds!.includes(o.id)).map(o => [o.id, o.kind, o.harness]).sort())) : null;
-  const binding = { policy: "native-product-v1", intent, scopeId: snapshot.authority.scopeId, sourceGeneration: snapshot.authority.generation,
+  const creationSource = intent.action === "create" && intent.kind === "bot" && intent.harness === "box" ? snapshot.creationSource ?? null : null;
+  if (creationSource !== null && !isLocalFirstSource(creationSource)) throw new NativeProductError("source_incomplete");
+  const binding = { policy: "native-product-v1", intent, creationSource, scopeId: snapshot.authority.scopeId, sourceGeneration: snapshot.authority.generation,
     targetRevision: target?.revision ?? null, identityRevision: snapshot.authority.identityRevision, memberRevision, duplicateRevision,
     profileAfter: productProfileAfter(intent, target ?? null), effects: productEffects(intent) };
-  return { intent, scopeId: binding.scopeId, revision: sha256Text(canonicalJson(binding)), sourceGeneration: binding.sourceGeneration,
+  return { intent, creationSource, scopeId: binding.scopeId, revision: sha256Text(canonicalJson(binding)), sourceGeneration: binding.sourceGeneration,
     target: target ?? null, profileAfter: binding.profileAfter, memberRevision, duplicateRevision,
     atomicCompareAndSet: false, nativeIdempotency: "not-guaranteed", effects: binding.effects, nativeEffectsPerformed: false };
 }

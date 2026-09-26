@@ -6,7 +6,7 @@ export type LocalFirstReceipt = {
   version: 1; operationId: string; localAgentId: string | null; settled: boolean;
   stage: "local-factory" | "registration" | "server-result" | "readback";
   outcome: "registered" | "mismatch" | "unknown";
-  source: { sourceSha256: string; transformedSha256: string; profileSha256: string; generationId: string };
+  source: { sourceSha256: string; transformedSha256: string; profileSha256: string; preloadSha256: string; generationId: string };
   request: { agentId: string; harness: "box"; createCaller: "ensure-server-backed"; createIntent: "register-existing-local";
     introductionSuppressed: boolean; kickstartRequested: boolean } | null;
   firstResponse: { outcome: string; agentId: string | null; serverId: string | null; harness: "box" | "temporal" | null } | null;
@@ -17,8 +17,8 @@ const keys = (v: Record<string, unknown>, names: string) => Object.keys(v).sort(
 const bounded = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= 128 && !/[\x00-\x1f]/.test(v);
 const harness = (v: unknown) => v === null || v === "box" || v === "temporal";
 export function isLocalFirstSource(v: unknown): v is LocalFirstReceipt["source"] {
-  return record(v) && keys(v, "generationId,profileSha256,sourceSha256,transformedSha256")
-    && [v.sourceSha256, v.transformedSha256, v.profileSha256].every(isContinuityHash) && bounded(v.generationId);
+  return record(v) && keys(v, "generationId,preloadSha256,profileSha256,sourceSha256,transformedSha256")
+    && [v.sourceSha256, v.transformedSha256, v.profileSha256, v.preloadSha256].every(isContinuityHash) && bounded(v.generationId);
 }
 export function isLocalFirstReceipt(v: unknown): v is LocalFirstReceipt {
   if (!record(v) || !keys(v, "binding,firstResponse,localAgentId,operationId,outcome,request,settled,source,stage,version")
