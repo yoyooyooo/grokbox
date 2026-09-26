@@ -2,7 +2,9 @@ import { constants, closeSync, fstatSync, lstatSync, openSync, readSync } from "
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { canonicalJson, sha256Bytes, sha256Text } from "@grokbox/runtime-kernel/hash";
+import { stableIdentitiesMatch } from "./process-port.ts";
 
+export const RESTORATION_ARTIFACT_MAX_BYTES = 4 * 1024 * 1024;
 export type Lifetime = { pid: number; start: number };
 export type OriginalEvidence = { operations: string; journal: string; marker: string; attestation: string | null;
   ownerClaim: string | null; archivedJournal: string | null; archivedMarker: string | null };
@@ -28,7 +30,7 @@ export function restorationSnapshot(path: string, optional = false) {
   }
   try {
     const before = fstatSync(fd);
-    if (!before.isFile() || before.uid !== process.getuid?.() || before.size > 4 * 1024 * 1024) throw Error();
+    if (!before.isFile() || before.uid !== process.getuid?.() || before.size > RESTORATION_ARTIFACT_MAX_BYTES) throw Error();
     const bytes = Buffer.alloc(before.size + 1), length = readSync(fd, bytes, 0, bytes.length, 0);
     const identity = (info: typeof before) => [info.dev, info.ino, info.size, info.mtimeMs, info.ctimeMs, info.mode];
     const named = lstatSync(path);
@@ -99,4 +101,73 @@ export function validateCompletedRestoration(completed: any, id: string): Restor
     || chain.supervisor!.ppid !== chain.wrapper!.pid) throw Error("restoration-receipt-invalid");
   return { version: 3, operationId: id, physicallyRestored: true, adopted: false, replayAuthorized: false,
     priorPreparationSha256: row.priorPreparationSha256, evidence: e, proof, chain, gatewayPid: row.gatewayPid };
+}
+
+export const OFFICIAL_EXIT_ROLES = ["operations", "owner", "journal", "archivedJournal", "attestation"] as const;
+export type OfficialExitRole = typeof OFFICIAL_EXIT_ROLES[number];
+export type OfficialExitPreserved = Record<OfficialExitRole, string | null>;
+export type OfficialExitReceipt = {
+  version: 1; operationId: string; kind: "interrupted-official-exit";
+  physicallyRestored: true; adopted: false; replayAuthorized: false; observedAt: string;
+  oldHost: Lifetime; chain: RestorationReceipt["chain"]; gatewayPid: number;
+  evidence: Record<OfficialExitRole, string | null>;
+};
+export const officialExitCompletionPath = (root: string, id: string) =>
+  join(root, "state/adoptions", restorationOperationId(id), "official-exit.complete.json");
+export function officialExitEvidencePaths(root: string, id: string) {
+  restorationOperationId(id);
+  return { owner: join(root, "state/adoption-owner.json"), journal: join(root, "state/adopt-op.json"),
+    archivedJournal: join(root, "state/adoptions", id, "journal.json"), attestation: join(root, "attestation.json") };
+}
+
+/** Exact completed-exit proof. Its embedded old bytes survive later adoption;
+ * the historical unknown and deactivation journal are never rewritten. */
+export function validateOfficialExit(value: any, id: string): { receipt: OfficialExitReceipt; preserved: OfficialExitPreserved } {
+  const r = value?.receipt, p = value?.preserved;
+  const keys = (v: unknown, expected: readonly string[]) => !!v && typeof v === "object" && !Array.isArray(v)
+    && Object.keys(v).sort().join(",") === [...expected].sort().join(",");
+  const invalid = (): never => { throw Error("restoration-exit-receipt-invalid"); };
+  if (!keys(value, ["version", "receipt", "preserved", "checksum"])
+    || !keys(r, ["version", "operationId", "kind", "physicallyRestored", "adopted", "replayAuthorized", "observedAt", "oldHost", "chain", "gatewayPid", "evidence"])
+    || !keys(p, OFFICIAL_EXIT_ROLES) || !keys(r.evidence, OFFICIAL_EXIT_ROLES)
+    || value.version !== 1 || r.version !== 1 || r.operationId !== id || r.kind !== "interrupted-official-exit"
+    || r.physicallyRestored !== true || r.adopted !== false || r.replayAuthorized !== false
+    || typeof r.observedAt !== "string" || r.observedAt.length > 32 || !Number.isFinite(Date.parse(r.observedAt))
+    || !keys(r.oldHost, ["pid", "start"]) || !isLifetime(r.oldHost) || !keys(r.chain, ["host", "supervisor", "wrapper"])
+    || value.checksum !== sha256Text(canonicalJson({ receipt: r, preserved: p }))) invalid();
+  for (const role of OFFICIAL_EXIT_ROLES) {
+    if (role === "attestation" && p[role] === null && r.evidence[role] === null) continue;
+    if (typeof p[role] !== "string" || !isDigest(r.evidence[role]) || sha256Text(p[role]) !== r.evidence[role]) invalid();
+  }
+  const owner = JSON.parse(p.owner), journal = JSON.parse(p.journal), archived = JSON.parse(p.archivedJournal);
+  if (!keys(owner, ["version", "operationId", "state", "journalSha256"]) || owner.version !== 1 || owner.state !== "complete"
+    || owner.operationId !== id || owner.journalSha256 !== r.evidence.archivedJournal
+    || journal.phase !== "deactivate-term" || journal.launchMode !== "transient-adopt" || journal.tempSupervisor !== null
+    || archived.operationId !== id || archived.phase !== "attested" || archived.tempSupervisor !== null
+    || !isDeepStrictEqual(journal.host, archived.host) || !isDeepStrictEqual(journal.adoptingSupervisor, archived.adoptingSupervisor)
+    || !isLifetime(journal.host) || !sameLifetime(r.oldHost, journal.host)
+    || JSON.parse(p.operations)?.[id]?.state !== "unknown") invalid();
+  const attestation = p.attestation === null ? null : JSON.parse(p.attestation);
+  if (p.attestation !== null && (!attestation || attestation.operationId !== id || !stableIdentitiesMatch(journal.host, attestation.identity))) invalid();
+  for (const role of ["host", "supervisor", "wrapper"]) {
+    const v = r.chain[role] as Lifetime & { uid: number; ppid: number };
+    if (!keys(v, ["pid", "start", "uid", "ppid"]) || !isLifetime(v) || !Number.isSafeInteger(v.uid) || v.uid < 0
+      || !Number.isSafeInteger(v.ppid) || v.ppid < 0) invalid();
+  }
+  if (r.gatewayPid !== r.chain.host.pid || r.chain.host.ppid !== r.chain.supervisor.pid || r.chain.supervisor.ppid !== r.chain.wrapper.pid
+    || sameLifetime(r.oldHost, r.chain.host) || !sameLifetime(r.chain.supervisor, journal.adoptingSupervisor)) invalid();
+  return { receipt: r, preserved: p };
+}
+
+export function readOfficialExit(root: string, id: string, currentEvidence = false): OfficialExitReceipt | null {
+  const file = restorationSnapshot(officialExitCompletionPath(root, id), true);
+  if (!file.bytes) return null;
+  const { receipt } = validateOfficialExit(JSON.parse(file.bytes.toString()), id);
+  if (currentEvidence) for (const [role, path] of Object.entries(officialExitEvidencePaths(root, id))) {
+    // The controller legitimately reserves a new row before inspecting this
+    // physical boundary. Its whole ledger is audit input, not a global fence.
+    if (restorationSnapshot(path, role === "attestation").sha256 !== receipt.evidence[role as OfficialExitRole])
+      throw Error("restoration-exit-evidence-changed");
+  }
+  return receipt;
 }

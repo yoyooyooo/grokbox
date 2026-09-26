@@ -35,6 +35,12 @@
 
 配对的 Host/worker 字节均为上文所列来源，窗口结束仍 unchanged。各原生验证器继续返回 `qualified:false` / `passed-in-selected-scope`；没有执行完整 Host 或调用真实 Provider，不证明安装、加载、App 或费用。首轮缺失绑定、旧 helper 摘要和夹具依赖错误均保留。公共组合中的两个 lifecycle 夹具还暴露了未关闭安装级观察的问题；在其自有配置中显式关闭与用例无关的观察后，完整 source/owner 32 项通过，业务断言和 freshness 门未放宽。
 
+## 中断退出的恢复差额
+
+既有 `--restore-operation` 只接受未完成采用的原记录，无法处理“原采用已完成、退出 journal 停在 deactivate-term”的组合。新增窄分支仍由原 controller/identity 双门及原命令拥有：绑定 complete owner、attested archive 和 pending exit 的同一 Host/监督者；核对原 Host 生命周期结束、原监督者下唯一无 preload 官方链及 Gateway；保存有校验和的单一完成回执。旧 journal、attestation、controller unknown 和其他原证据均不改写。新采用只在这些原证据仍匹配时消费物理退出证明，不取得重放旧业务或执行许可。
+
+首次独立只读审查提出两项 P1：最终观察未覆盖 wrapper/完整父子关系，以及内嵌证据可能超过读取上限而占用不可读的完成文件。两项均以隔离反例复现后修复：最终链逐个按完整身份复查；序列化字节在独占 link 之前受共同读取上限约束。修后新退出与原失败采用回归 69 pass / 0 fail，类型检查通过；待同一审查者复看，现场恢复尚未执行。
+
 ## 尚未形成的现场结论
 
 尚未安装或加载本阶段候选，真实静默哨兵未运行。盘点发现旧 adoption owner 虽为 complete，原资源 journal 仍为 `deactivate-term`；其 Host/监督者与原 attested archive 相符。旧 controller 的八条 unknown 保留，当前恢复入口只读检查未完成物理退出结算，不能手改 journal 或据此重放操作。

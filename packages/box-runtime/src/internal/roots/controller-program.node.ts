@@ -1,4 +1,6 @@
 import { prepareInterruptedObservedCommit } from "../process/interrupted-adopt.node.ts";
+import { prepareOfficialExit } from "../process/interrupted-exit.node.ts";
+import { readOfficialExit, type OfficialExitReceipt } from "../process/restoration-proof.ts";
 import { acquireCurrentRestorationPorts } from "../process/current-restoration-ports.node.ts";
 import { unresolvedAdoption, writeAdoptionOwner } from "../process/adopt-evidence.ts";
 import { randomUUID } from "node:crypto";
@@ -783,6 +785,7 @@ export async function startControlOperation(request: ControllerRequest, signal?:
 export type OperationRecoveryReport = {
   process: "operation-recovery";
   restoration?: ReturnType<typeof prepareOriginalRestoration>["receipt"];
+  officialExit?: OfficialExitReceipt;
   restorationHistorical?: true;
   loadedCompletion?: { operationId: string; state: "eligible" | "committed" | "not-proven"; originalOutcome: "unknown"; preloadSha256: string; hostPid: number };
   outcome: "clear" | "ready" | "blocked" | "recovered" | "restored" | "recorded" | "completed-loaded";
@@ -891,11 +894,19 @@ export async function recoverControllerOperationState(input: { boxRoot: string; 
     if (input.confirm !== true) {
       const facts = yield* Effect.tryPromise(() => operationRecoveryFacts(input.boxRoot, runRoot));
       if (!input.restoreOperation) return facts.report;
-      const observed = yield* Effect.result(Effect.try(() => readOriginalRestoration(runRoot, input.restoreOperation!)));
+      const observed = yield* Effect.result(Effect.try(() => {
+        const restoration = readOriginalRestoration(runRoot, input.restoreOperation!);
+        const officialExit = readOfficialExit(runRoot, input.restoreOperation!);
+        if (restoration && officialExit) throw Error("restoration-receipt-conflict");
+        return { restoration, officialExit };
+      }));
       if (observed._tag === "Failure") return { ...facts.report, outcome: "blocked" as const, reason: "restoration-receipt-unavailable" };
-      if (!observed.success) return { ...facts.report, outcome: "blocked" as const, reason: "restoration-confirm-required" };
+      if (!observed.success.restoration && !observed.success.officialExit)
+        return { ...facts.report, outcome: "blocked" as const, reason: "restoration-confirm-required" };
       return { ...facts.report, outcome: facts.report.reason ? "blocked" as const : "recorded" as const,
-        restoration: observed.success, restorationHistorical: true as const, next: "grokbox runtime status --json" };
+        ...(observed.success.restoration ? { restoration: observed.success.restoration } : {}),
+        ...(observed.success.officialExit ? { officialExit: observed.success.officialExit } : {}),
+        restorationHistorical: true as const, next: "grokbox runtime status --json" };
     }
     const paths = [lockPath(input.boxRoot), operationLockPath(runRoot)];
     const gate = yield* Effect.acquireRelease(
@@ -910,6 +921,25 @@ export async function recoverControllerOperationState(input: { boxRoot: string; 
       if (!row || row.state !== "unknown" || !row.leaseOwner
         || (yield* Effect.tryPromise(() => operationOwnerState(row.leaseOwner!))) !== "stale") {
         return { ...facts.report, outcome: "blocked" as const, reason: "restoration-original-owner-unproven" };
+      }
+      const exit = yield* Effect.result(Effect.try(() => prepareOfficialExit({
+        operationId: input.restoreOperation!, runRoot, storePath: storePath(input.boxRoot), expectedOperation: row,
+        ports: restorationPorts ?? { processes: strictLinuxObservationPort(), classify: roleOf,
+          gatewayPid: () => readGatewayPid(), hasRelevantPreload: hasRelevantPreloadStrict },
+      })));
+      if (exit._tag === "Failure") return { ...facts.report, outcome: "blocked" as const, reason: "restoration-exit-evidence-unproven" };
+      if (exit.success) {
+        if (input.restorationQualification) return { ...facts.report, outcome: "blocked" as const, reason: "restoration-exit-qualification-not-applicable" };
+        const preparedExit = exit.success;
+        return yield* Effect.callback<OperationRecoveryReport, unknown>((resume, signal) => {
+          const work = (async (): Promise<OperationRecoveryReport> => {
+            for (const snapshot of facts.snapshots) await recheckOperationLease(snapshot);
+            const officialExit = preparedExit.publish(signal);
+            return { ...facts.report, outcome: "restored", officialExit, next: "grokbox runtime status --json" };
+          })();
+          void work.then(value => resume(Effect.succeed(value)), error => resume(Effect.fail(error)));
+          return Effect.promise(async () => { await work.catch(() => undefined); });
+        });
       }
       const prepared = yield* Effect.result(Effect.try(() => prepareOriginalRestoration({
         operationId: input.restoreOperation!, runRoot, storePath: storePath(input.boxRoot), expectedOperation: row, qualificationPath: input.restorationQualification,

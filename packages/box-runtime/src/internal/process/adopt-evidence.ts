@@ -3,7 +3,7 @@ import { join, dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { sha256Bytes } from "@grokbox/runtime-kernel/hash";
 import { writeRuntimeArtifact } from "../io/artifacts.node.ts";
-import { readCompletedRestoration } from "./restoration-proof.ts";
+import { readCompletedRestoration, readOfficialExit } from "./restoration-proof.ts";
 
 function readEvidence(path: string, optional = false): Buffer | null {
   let fd: number;
@@ -77,6 +77,7 @@ export function unresolvedAdoption(root: string): string | null {
       if (journal.operationId === owner.operationId && journal.phase === "attested" && !journal.tempSupervisor
         && owner.journalSha256 === sha256Bytes(journalBytes)
         && readEvidence(adoptionEvidencePath(root, owner.operationId, "journal"))!.equals(journalBytes)) return null;
+      if (readOfficialExit(root, owner.operationId, true)) return null;
       return owner.operationId;
     }
     const journalBytes = readEvidence(journalPath, true);
