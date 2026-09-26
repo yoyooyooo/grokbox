@@ -170,3 +170,4 @@
 - [Host 更新事件与维护任务联合集成（2026-09-25）](2026-09-25-host-notification-integration.md)
 - [2026-09-26 — Box 创建核心前提：原生对照与完整客户端编码链](2026-09-26-box-creation-feasibility.md)
 - [2026-09-26：历史证据统一与独立 POC 提炼](2026-09-26-evidence-unification.md)
+- [2026-09-26：统一集成接收与正式候选准备](2026-09-26-live-unified-integration.md)
