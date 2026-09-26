@@ -1,6 +1,8 @@
 # 2026-09-26 — Box 创建核心前提：原生对照与完整客户端编码链
 
-## 当前结论：受控业务纵切已连通，真实官方升级未保住 Box（10:57 UTC）
+本报告保存固定实验窗口和当时结论，不再拥有后续施工排程。2026-09-26 用户已选择恢复 Local-first/v2 产品集成，将身份变化与更新连续性作为并行维护；当前实施次序见[增量计划](../roadmap/agent-first-cli/local-first-reintegration.md)，历史精华见[主题档案](../archive/box-local-first-poc-2026-09.md)，现场状态仍归 [LIVE](../tickets/LIVE-integration-validation.md)。下文的阶段停点不因保留而重新成为全局开发前置，历史失败也未被撤销。
+
+## 固定窗口结论：受控业务纵切已连通，真实官方升级未保住 Box（10:57 UTC）
 
 **一个新普通 Bot 在暂停 Host 自动更新的窗口中，实际完成了自定义私聊、正确 ack、两个正常群的成员回合、自己的手动及定时 Routine，以及用户确认的 Mac→手机历史与续聊。显式 identity reconcile 和普通进程重启后，原 Server 仍返回同一 Box 身份。随后一次正常 `394046b → 8ae66c3` 升级完成，同一 Server ID/UUID 被原 Server 两次确认已为 Temporal。** 完整目标仍未通过：本次普通官方升级的执行归属连续性判据失败，官方额度归因也未取得。不能将它扩大为所有可能构造均不可能。
 

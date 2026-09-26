@@ -2,6 +2,12 @@
 
 状态：端到端目标、架构骨架、核心能力及一次性采用边界已接受；实施已开始，首个模型域切片进展见 [CLI-05](../../tickets/CLI-05-implementation-follow-through.md)，精确公共合同和完整交付仍待推进。完整候选在[合同](command-contract.md)和[目录](command-catalog.md)，[决策清单](decisions.md)区分已确认目标与未决细节；当前实现仍需按源码与[产品合同](../../product-contract.md)核对。
 
+## 当前实施次序：Local-first 回归主线
+
+2026-09-26 用户接受：以已经取得的普通 Box Bot Local-first 登记和受控业务正例恢复 v2/Agent First CLI 产品集成，先接正式创建及早期端到端哨兵；身份变化原因、预防/恢复与版本维护为并行核心支线，不以永久不迁移或全部未来升级通过作为研发开工前置。具体阶段归 [Local-first 回归主线](local-first-reintegration.md)，精华证据归[固定 POC 档案](../../archive/box-local-first-poc-2026-09.md)。
+
+这是实施顺序调整，不是降低普通私聊、多群、Bot Routine、统一长期 Memory、逐 Bot 模型和未修改官方 App 的目标；创建正例不代签正式 v2 接通、当前身份许可、完整生命周期或零官方额度。所选主会话不能以官方模型工具委托冒充自定义执行。优先复用现有运行核心与原生 writer；必要的独占执行适配可以替换原路径，不长期并行两个主循环。静态补丁健康与真实创建合同分别守护源头，失败只阻断相应的执行/验收，不冻结无关架构施工。
+
 ## 问题
 
 grokbox 的命令按既有实现逐步累积。调用者需要识别 daemon、modeld、monitor、runtime 等内部边界，多个状态入口的观察范围不同，部分流程还把阶段推进交给调用方。直接把这些入口包成 HTTP，会把实现分裂带到 Web UI。

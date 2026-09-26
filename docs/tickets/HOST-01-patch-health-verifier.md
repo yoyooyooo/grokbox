@@ -24,6 +24,12 @@
 
 实时健康只接受host-health-v2和witness v2，持久analysis同时核对现行完整id/revision集合。旧合同或不匹配记录保留原字节但拒绝充当新证据；不会减少必需项或自动迁移成成功。旧Host元组和按SHA挑选历史配方的分支已退出，未知Host不回退。正式非受管Bot的原生passthrough是现行产品行为，不是旧grokbox兼容路径。
 
+## 创建源头与身份变化的独立健康事实
+
+2026-09-26 新增责任沿[Local-first 回归主线](../roadmap/agent-first-cli/local-first-reintegration.md)落地：AH-186 的正式创建切口进入唯一 recipe 和适用 AST/字段链检查；AH-192 另以真实 CLI→Server 登记/独立读回/清理守护创建源头。形状一致、parse 通过或实际已编译，都不能代签服务端仍接受 Box；未运行/过期必须可见。当前此 canary 尚未实现，不修改上表现有资格为通过。
+
+AH-193 复用 T44/OBS 关联来源、实际加载、官方身份与本地投影，补充新运行代最初阶段的观察和缺口。失败和同形待分析进入原通知/维护链；不新增 parser、采集库或 writer，也不因长期迁移根因未知阻止无关产品开发。具体触发、授权、清理、去重及影响范围由增量计划和 AH-192/193 拥有；实时身份安全检查仍照常执行。
+
 ## 核心接缝交付合同
 
 本节是A1交付R/D/E/F等消费者的核心调用合同，不增加第二套类型、writer或运行路径。维护模块在`packages/box-runtime/src/internal/host/`；以同一构建、精确Host/worker/candidate及完整有序recipe作为来源身份。下表Symbol均带`grokbox.box-runtime.`前缀，`v1`指现有Symbol/RPC协议版本，不能单凭版本号跨来源接纳；固定摘要与可执行观察见[核心ABI窗口](../reports/2026-09-22-current-host-core-abi.md)。

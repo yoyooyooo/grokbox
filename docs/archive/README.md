@@ -8,6 +8,7 @@ This area preserves useful explanations and audit history removed from current i
 | [Managed compact evolution](managed-compact-evolution.md) | Why late registration, pending summaries and timer-only fixes were insufficient; which old choices were superseded |
 | [Milestone review residue](milestone-review-residue.md) | Fixed finding identities, later scoped closures and evidence ceilings; no permanent model-specific dispatch loop |
 | [External session research](external-session-research.md) | Historical reference scope and recovery of the full source-pinned study without making it a current architecture authority |
+| [Ordinary Box Bot and Local-first POCs](box-local-first-poc-2026-09.md) | Source-pinned creation contrasts, native private/group/Routine execution, acknowledgement lessons and the observed upgrade failure; not current runtime qualification |
 | [Fixed verification reports](../reports/README.md) | Existing receipt store, retained at its stable paths because LIVE and receipt validators consume it |
 
 Reports and archive have distinct roles. `docs/reports/` owns immutable verification windows, including a report that still supports a current LIVE result; this archive owns retired research/design/review narratives. A report is not copied into both directories. New current contracts and instructions do not belong here.

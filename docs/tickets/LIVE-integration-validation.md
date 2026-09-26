@@ -2,73 +2,21 @@
 
 本页是新版运行核心采用与完整功能候选的 **E2E Checklist 与当前结果唯一入口**。[Agent-first Spec](../roadmap/agent-first-cli/spec.md)决定验收义务，来源票负责实现/离线/独立审查，日期报告保存固定证据，[执行手册](../maintainers/live-end-to-end.md)拥有执行方法。本页不是逐提交发布闸门，也不是要求先把旧版本验完才能重建。
 
-### 当前：受控业务纵切已连通，正常版本升级丢失 Box（2026-09-26 10:57 UTC）
+### 当前排程：恢复 Local-first/v2 主线，身份演进并行（2026-09-26）
 
-**一个新普通 Bot 在暂停 Host 自动更新的窗口里，实际完成自定义私聊/原生 ack、两个正常群的同身份成员回合、原生长期 Memory 共享、自身 Routine 的 manual 与真实 schedule，以及用户确认的 Mac→手机历史和续聊。** 官方对照 Bot 仍经原路回复。显式 reconcile 和普通重启后原 Server 都确认 Box；随后一次原生 `394046b → 8ae66c3` 更新完成，同一身份由原 Server 两次确认已为 Temporal。完整目标仍未通过，详见[同一 POC 报告](../reports/2026-09-26-box-creation-feasibility.md)。
+用户已接受[Local-first 回归主线](../roadmap/agent-first-cli/local-first-reintegration.md)：AH-186 把真实成功机制纳入正式 CLI/API/原生 adapter/配方/采用，AH-192 与创建切片协同形成早期创建 canary，再接原 DM/工具/compact 与 Agent First CLI 后续。AH-193 的身份变化只读观察及 AH-190 的正常维护策略并行，不再以永久不迁移或缺少内部诊断全局阻挡研发。**这是排程/合同校准；正式 Local-first 集成、自动哨兵和新增身份观察尚未实施。**
 
-本轮只有一个新 Bot、两个各含自定义/官方成员的群、一条已停用 Routine；未重放旧请求或将内部诊断权限当业务前置。复用原 Loop，直接修正 Routine 子任务结果经原 settlement/父任务唤醒回写的接线。12 次自定义调用、21 次 Provider HTTP 200 均有账本；三次普通私聊 native ack 正确结清、零 ack-redrive。停用 Routine 另引发一次 native event 回合，单列为额外调用。未取得官方精确模型/账单与不可见辅助推理的完整归因，`billing not observed`；网页及群界面的跨端点击未单独验。
+**可复用历史证据**：Local-first 曾由原 Server 接受为 Box；受控窗口连通普通私聊、两个正常群、原生共享 Memory、自身手动/定时 Routine、原生 ack 与用户 Mac→手机续聊；官方对照保留原路。**仍保留的失败/缺口**：一次正常升级后同一身份变 Temporal；费用归因 `billing not observed`，网页及群界面跨端等未单独验。旧实验目标/binding不因此恢复许可，当前现场执行仍逐对象核验。
 
-当前失败是**本次正常升级后的本地执行归属连续性**，不是“所有重启/同步都必迁”或“所有可想象构造不可能”。新 Bot 与两群现为 Temporal，binding 关闭、Routine disabled；升级后的私聊/群历史可读。10:55 UTC 已恢复新官方 `31d937e0` 原文并核对新运行代，原 supervisor 未换，旧 `4eafc5d6` 未覆盖新来源；原有名册身份保持，测试数据保留。下一步所缺是可维护的版本更新/执行归属边界及官方模型/额度证据；不再用新短命 Bot 替连续性，也不把本次原生 POC 代签正式 v2 adoption 或全场景资格。
+主题精华已归[普通 Box Bot POC 档案](../archive/box-local-first-poc-2026-09.md)；[固定日期报告](../reports/2026-09-26-box-creation-feasibility.md)保存原始窗口叙述，不作为当前开工锁。AH-194 按引用/保留集合/活动资源退役临时代码，本轮不删除仍被集成引用的 POC 或原请求证据。源码整合、实际加载、真实创建、业务验收与最终用户接受分别记录。
 
-### 2026-09-26 09:14 UTC：Server 已独立读回 Temporal，P0 持有合同未闭合
+**源头早测的位置**：最小正式创建切片可用即在明确授权的候选窗口运行一次静默创建→原登记→独立 Server/local 读回→准确清理，先于昂贵业务旅程；AST健康、已加载和Server合同各自有结果。相关变化使旧结论过期；低频周期复验须明确授权，不在普通健康查询中暗建Bot。失败只阻断相关创建/发布，不停止独立架构施工。当前 canary 为未实施/未运行，不显示健康。
 
-**原认证客户端实际返回同一 Server ID、同一 Bot UUID 的 Temporal 身份，已排除仅本地标签错误；历史 local-first Box 登记与首轮自定义私聊仍是真实正例。** 本轮在当前 `4eafc5d6` 官方来源上只观察原启动身份列表，09:10 UTC 两次返回一致，详见[原 POC 报告](../reports/2026-09-26-box-creation-feasibility.md)。没有新建 Bot、重放原请求或主动发起模型任务。
+### 固定 POC 历史入口
 
-07:39:35 UTC 有官方 Host 升级 applied 回执，07:41:34 为目标 profile mtime；当前与历史来源均存在“升级后迁移 pass → 再 reconcile → 原 profile writer”链。**尚无该目标的服务端 pass 回执，时间相关不等于根因已定。** owner 读面没有历史决定；逐 Bot pass/rollout/hold 诊断声明为官方员工内部接口，本环境无相应权限，未调用，也未触发新迁移或关闭同步。当前候选不满足持续身份前提，但不签所有合法 Box 路径均被证伪。
+早期未补丁创建、字段修复、房间替代、普通本地对象、Local-first 实际登记、ack 缺口与受控完整业务的逐阶段事实，统一进入[2026-09-26 固定报告](../reports/2026-09-26-box-creation-feasibility.md)和[主题档案](../archive/box-local-first-poc-2026-09.md)。不在本索引重复过时的“当前停点”；历史成功、失败和原 unknown 均未改写。
 
-本轮完整原文已纳入既有 retained corpus；临时观察器已撤回。09:14:40 核对磁盘恢复本轮 `4eafc5d6`、原 supervisor 下新 Host 运行代可用且空闲、无观察器引用，名册 ID/harness/类型保持；两次慢启动的原 unknown 回执均保留，以后续原运行代读回收口，未重复信号。目标仍 Temporal，旧 binding 关闭。下一步只需可验证的正常 Box 持有/恢复合同或该身份的官方迁移决定；不以再造短暂 Bot 代替。P1 修后在线 ack、同 Bot 多群/Routine、官方跨端、模型对照及 `billing not observed` 均未通过。
-
-### 2026-09-26 08:05 UTC 补查：普通 Bot 完整 POC 尚未通过
-
-**已从原始回执确认，不再是纯隔离推断：06:06 UTC的fresh创建正确编码BOX仍被Server最初返回Temporal；06:17 UTC原生工厂先生成普通本地Bot，再用原ensureServerBacked登记，Server最初确认Box。06:30 UTC同一普通私聊已经由自定义DeepSeek完成原生Memory写入和乘法工具，回复进入原生历史。** 凭据及原caller/intent未被伪造，两个观察helper与原加载摘要仍匹配；详细证据见[同一POC报告](../reports/2026-09-26-box-creation-feasibility.md)。这些是此前中断阶段实际发生、本次补查恢复的结果，不是本次重新创建。
-
-**完整体验仍不成立：** 私有runner适配遗漏原`ackToken`，可见回复未结清原生义务，触发三次ack-redrive；本次已修透传并通过原生ack函数的定向回归，但尚未在线重验。该真实Server绑定身份目前profile已为Temporal，当前Host为`f945b1a2`且没有POC hook；变化的准确触发方/服务端时刻未确定，不擅自归因，也不把旧Box结果当当前许可。旧私有binding已停用，历史/Memory及原请求均保留。
-
-下一步只完成同一身份可持续承接与修复后的私聊→群成员→Bot自身Routine→原版客户端历史闭环；前提不成立时不以单人群、自有页面、官方模型委托降级。群/Routine真实执行、跨端UI恢复、未切换Bot对照及官方额度仍未验收。新完整窗口plan写入被工具层拦截，未创建；本次未新增Bot、消息、模型调用、现役源码或服务变更。**不得再把“正确BOX请求的最初Server结果仍未取得”当当前停点；fresh与真实local-first结果现已分开取得。**
-
-以下保留的是各阶段历史回执；与本节不同之处以本节和其固定原始证据为准。
-
-### 2026-09-26 04:17 UTC：房间模型前接入待真实加载
-
-专用本地房间路径已有具体Host-only实现：在原消息持久化/权限检查后、原成员调度前，按准确roomId把整段执行交给自有loop，原生writer提交房间自己的回复；其他目标保持原路。原函数四类检查通过，但使用自有模型/数据库/队列端口，不签在线接管。
-
-本轮对准确原生源临时写入两处接入并通过语法检查后，重启准备调用被工具拒绝，未运行。源码已恢复原`1ee741f9`，实际Gateway未换代、没有加载标记、没有发消息或模型调用。实验空房间已清理，原51 Bot/4群保留，私有binding已禁用。完整事实见[同一POC报告](../reports/2026-09-26-box-creation-feasibility.md)。当前唯一差额仍是获准的实际加载与真实输入/回复，不重建引擎、不改客户端、不把房间形态代签普通Bot主私聊或全端零额度。
-
-### 2026-09-26 05:01 UTC：转回普通 Bot 候选，不以群代替主线
-
-用户不接受把单人群当优先长期模式。本轮原函数隔离POC确认：普通本地Bot工厂、原生名册纳入及0.58私聊/历史/Routine分流仍存在，不是群专属；5个现存未绑定普通profile未出现在Gateway名册中，未复活/改名/唤醒。原登记生命周期与dev-origin对照也已执行，详见[同一POC报告](../reports/2026-09-26-box-creation-feasibility.md)。这些是原函数和有限元数据证据，未完成实际普通本地创建/Server登记/执行；不得把合成Server对照写成允许Box。
-
-下一前提优先“真实普通本地生成→原登记→原版客户端”，其次才是明确未登记的普通本地模式；两者都必须核对实际Routine和跨端/同步，不能以文件存在、假标签或群替身代签。群方案降为备选，不重开AH-124、不新增生产补丁或证明平台。
-
-### 2026-09-26 03:49 UTC：本地群作为备选输入容器，仅入口已实证
-
-原生 `createGroup(creationRoute=box)` 实际成功创建一个空闲、空历史的专用本地群，随后准确删除；原51 Bot/4群ID、harness和类型保持。没有发消息或调用模型，没有改官方App/Host，也没有复制群、把群改成普通Bot。原生已有4群中另观察到1个省略harness；0.58原函数可将这种新群输入送往Gateway，但默认Temporal成员仍走Server，后续temporal声明和legacy server历史会改变发送/显示。详见[同一POC报告](../reports/2026-09-26-box-creation-feasibility.md)。
-
-该新分支不是普通Bot主私聊已接管：只表明官方本地聊天容器仍有可用创建入口。真正的Host-only自定义loop输入、原生回复、客户端切换、跨端及零额度尚未证明；不能用本地群入口偷偷降低用户要求。保留为需明确范围的备选，不重排原票，不重开AH-124，不再扩建模型引擎或外围资格。
-
-### 2026-09-26 当前根目标：逐 Bot 自定义模型，不消耗官方推理额度
-
-03:15 UTC 读回：当前Gateway 51个Bot均为Temporal，原模型配置12个逐Bot选择中没有当前可见Box；这不是Server原始确权，不将保存的选择显示为已接管。官方App保持原样，用户自行检查UI。原生Server/Host的身份、传输、存储及无模型工具代码可以复用，但官方模型仍参与委托和提交的模式不满足目标。
-
-[同一POC报告的额度补充](../reports/2026-09-26-box-creation-feasibility.md)记录：既有按Bot隔离及坏配置不转官方的27项定向检查通过；无Bot身份的专用摘要仍走官方，所以主模型通过不签整轮零消耗。0.58原mapper将BOX/TEMPORAL/重复三种投递都压成accepted=true；该回执不能判定实际执行方或额度。当前quota源未配置且未取到账单，费用结论为not-observed。
-
-当前只推进合法的模型前本地执行入口（或正确BOX=1创建的真实服务端回应），再以一个自定义Bot和一个未切换对照取得主会话/相关辅助模型用途及回复的真实证据；最后单独核对官方用量。不开新Agent引擎、计费平台或全仓验证前置，不重开AH-124。本轮零模型请求、零Bot/消息/部署/客户端修改。
-
-### 2026-09-26 Box 创建核心前提 POC
-
-**续查至 01:02 UTC：前提仍未通过，不能签“所有Box路径已关闭”。** 官方已有跨发送/runner的BOX回合退役开关；本账号两次新鲜认证bootstrap缓存均为false，shared identity为true（模板旧local-only分支不据此放行）。这些缓存不代签当前服务端创建许可或运行中override。实际BOX=1请求的最初服务端回应仍缺；已暴露正常客户端无后端认证引用，相关调试/受控加载调用受工具拒绝，本轮没有新建对象或修改官方策略。停止无助于下一步的反复源码扫描，下一步仅补合法认证客户端的创建/登记/最小承接事实，详见下方同一报告续查节。
-
-**尚未取得 Box；不能按“原生创建可用”继续下游验收。** 已在未打补丁的官方 Host 上，通过原生 Gateway 单次创建明确 Box、禁止启动的自有对象，实际返回 Temporal，两次读回一致。随后原生删除，名册恢复原 51 个 Bot，原 ID/harness 保持。本次绕开的是我们管理/恢复实现的耦合以做原生对照，不绕过官方认证、权限或工具限制；没有新部署、模型消息或原 A/B/C 重放。
-
-[完整结果与边界](../reports/2026-09-26-box-creation-feasibility.md)：复用当前 `75aa6d77` 来源证据，把原 identity→最终 client adapter→protobuf 编码/解码串起来，确认原生 Box 输入编码为 UNSPECIFIED=0，现有参数修复后正确为 BOX=1；这不是实际服务端请求捕获。当前仍缺“获准的真实 BOX=1 请求的最初服务端结果”，故不宣告所有 Box 入口已关闭，也不再重复构建外围资格系统。模板 local-only 等有条件分支未实测，不冒称可用后路。AH-186/AH-187 保持该前提待解，AH-124 不重开。
-
-### 2026-09-24 受控迁移与双 Bot 窗口
-
-[历史窗口](../reports/2026-09-24-controlled-dual-bot.md)的 AH-124 原恢复不重开。当前事实见[实施与现场回执](../reports/2026-09-25-host-intake-recovery.md#13740-实际加载c-结果与收场)：本地窗口将 `d47f879b` 固定安装并对齐 Server/Web/modeld，13740/0378 来源的完整 62 切片已实际加载。re-adopt 调用遭本地工具超时中断后，固定 `f1803f06` CLI 经原 observed-adopt publisher 对同一已加载 child 补交当前采用事实，没有再次重启 Host，原操作仍为 unknown。
-
-**AH-186 未通过。** A 原创建仍 effect_unknown/result null；B 的已知 Temporal/mismatch 保留；C 经原请求 not_found 后首次 Box/deferStart 提交，仍 complete/Temporal/mismatch，独立登记为 confirmed_temporal，未重放。最后完整名册 51 个 Bot 全部报告 Temporal，原 50 个 ID/harness 与模型字节保持，七条旧 controller unknown 未改；本次新增的一条 unknown 也保留。C 仍静默，D/E 未创建，没有两只 Box 工作者，模型/DM/工具/compact/follow-up 均未执行。没有本次实际出站网络请求证据，不将原因直接签为服务端限制。
-
-收场的正式 host stop 返回 replacement-gateway-unproven，随后独立读回确认未补丁官方 Host；desired disabled，modeld 已按准确 epoch 正常停止。退出 journal 仍在 deactivate-term，B/C 空闲对象尚未删除，不能签完整收场。Server/Web 仍为 d47 固定包的正式前台入口；f180 固定 CLI 已安装，全局旧 shim 未改。未派发子 Agent、未声称独立审查或 J3/J4。现有 Linear CLI 不可用，票状态未回填。
+原 AH-124 采用/恢复与 A/B/C 原请求的固定事实仍见[2026-09-24 窗口](../reports/2026-09-24-controlled-dual-bot.md)及[2026-09-25 收场](../reports/2026-09-25-host-intake-recovery.md#13740-实际加载c-结果与收场)。它们不因新架构施工被重放，也不因历史摘要退回报告而清空 unknown 或原资源责任。
 
 ### 安装级观察恢复（2026-09-25）
 
@@ -209,7 +157,7 @@
 
 | 稳定场景 / Gate | 本候选结果与证据范围 | 待完成动作与通过判据 | 阻断、下一步、来源 |
 |---|---|---|---|
-| <a id="live-agent-lifecycle"></a>**LIVE-AGENT-LIFECYCLE**<br>G1 | [ ] `partial`；`not-run` | ①create含明确Box请求/defer-start/nonce；②原生Server确认及list/show同ID；③更新name/description/title/notify/hidden不改ownership；④歧义/重复nonce不误创建；⑤清理阶段删除精确测试Bot并读回 | 来源与实施差额：[Agent合同](../product-contract.md#71-agents) · [T38](T38-identity-write-alignment.md) |
+| <a id="live-agent-lifecycle"></a>**LIVE-AGENT-LIFECYCLE**<br>G1 | [ ] `partial`；`not-run`（正式 Local-first 候选） | ①create含明确Box请求/defer-start/nonce；②原生Server确认及list/show同ID；③更新name/description/title/notify/hidden不改ownership；④歧义/重复nonce不误创建；⑤清理阶段删除精确测试Bot并读回 | AH-186 正式入口与 AH-192 [源头早测](../roadmap/agent-first-cli/local-first-reintegration.md#creation-canary)先于昂贵业务验收；私人POC不代签本行。[Agent合同](../product-contract.md#71-agents) · [T38](T38-identity-write-alignment.md) |
 | <a id="live-agent-isolation"></a>**LIVE-AGENT-ISOLATION**<br>G1 | [ ] `partial`；`not-run` | ①原生、跟随默认、显式指定的 Bot 对照；②默认变更仅影响跟随者，显式指定即使值相同也不转跟随；③单 Bot 变更不改其他选择/资料；④并发 Bot 请求不混身份、上下文或计费 | 来源与实施差额：[T24](T24-runtime-route-binding.md) · [模型Skill](../../skills/grokbox/models.md) |
 | <a id="live-send-outcome"></a>**LIVE-SEND-OUTCOME**<br>G1 | [ ] `partial`；`not-run` | ①send新nonce→排队→原生run/TURN/STEP→终态→投递→历史/App；②同nonce/断连unknown不自动重发；③正文含Unicode/换行/JSON数据但不伪造控制帧；④CLI超时与任务失败分开 | 来源与实施差额：[结果手册](../maintainers/run-outcome-observation.md) · [Send合同](../product-contract.md#73-send) |
 | <a id="live-model-selection"></a>**LIVE-MODEL-SELECTION**<br>G1 | [ ] `partial`；`not-run` | ①三种选择关系与无默认拒绝；②模型配置更新仅供后续 TURN，在途保留实际捕获版本；③在用模型拒删、仍有跟随者时默认拒清空，并验并发换绑；④effort/default 清覆盖与回原生不混淆；⑤probe 费用显式、unsupported 不静默降档 | 来源与实施差额：[reasoning票](FEAT-model-reasoning-policy.md) · [模型Skill](../../skills/grokbox/models.md) |

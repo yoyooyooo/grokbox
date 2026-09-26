@@ -2,6 +2,12 @@
 
 状态：W3实施收束中，尚未进入W4完整候选验收，也未取得新版核心日用资格。共享管理、模型、观察/通知、材料、保护/生命周期、current-state/Compact/handover、Job和named-root文件已进入现行链；桌面尚有未提交收尾。2026-09-22按[并行交付拓扑](../roadmap/agent-first-cli/parallel-delivery.md)组织v2与多worktree：优先汇聚运行核心，J2才可受控切Host/modeld取证，J3工程验收、J4用户确认后先日用；完整原生材料/连续性、剩余命令和自有Web并行完成。前置合同仍由CLI-01～04提供；以下日期窗口是历史，不作当前全量通过声明。
 
+## 当前增量：恢复 Local-first 产品集成
+
+2026-09-26 按[Local-first 回归主线](../roadmap/agent-first-cli/local-first-reintegration.md)继续 W3：AH-186 吸收已取得真实证据的本地先创建/原生登记机制，AH-192 与创建切片协同固化正式入口的早期 canary，之后接原 DM/compact/核心候选旅程。当前仅有私人 POC 正例，正式产品接通和哨兵实现仍待交付，不签本票完成。
+
+AH-193 身份变化观察与既有维护票并行，长期升级原因未完全确定不再冻结独立架构施工；真实失权仅阻断相应对象/动作。管理/材料/连续性/Web 等原路线继续，已完成窗口不重开。历史精华在[POC 档案](../archive/box-local-first-poc-2026-09.md)，临时资产按 AH-194 去依赖后退役，不能复制一套 POC writer/Loop 长期并存。
+
 ## 用户结果
 
 最终交付完整新版：Agent-first CLI、统一后台、独立modeld、必要原生能力与Web UI。运行核心先通过[Spec范围采用门](../roadmap/agent-first-cli/spec.md#core-runtime-adoption)，用户可以在全产品完成前逐Bot切模型日用；自有Web可后置，原版App与核心数据/执行安全不可后置。最终仍只有一套正式命令和领域规则；施工不建双轨/临时兼容，已经采用的核心固定制品与继续开发隔离。
