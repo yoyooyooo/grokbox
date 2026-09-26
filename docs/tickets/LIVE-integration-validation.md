@@ -2,6 +2,12 @@
 
 本页是新版运行核心采用与完整功能候选的 **E2E Checklist 与当前结果唯一入口**。[Agent-first Spec](../roadmap/agent-first-cli/spec.md)决定验收义务，来源票负责实现/离线/独立审查，日期报告保存固定证据，[执行手册](../maintainers/live-end-to-end.md)拥有执行方法。本页不是逐提交发布闸门，也不是要求先把旧版本验完才能重建。
 
+### 2026-09-26 Box 创建核心前提 POC
+
+**尚未取得 Box；不能按“原生创建可用”继续下游验收。** 已在未打补丁的官方 Host 上，通过原生 Gateway 单次创建明确 Box、禁止启动的自有对象，实际返回 Temporal，两次读回一致。随后原生删除，名册恢复原 51 个 Bot，原 ID/harness 保持。本次绕开的是我们管理/恢复实现的耦合以做原生对照，不绕过官方认证、权限或工具限制；没有新部署、模型消息或原 A/B/C 重放。
+
+[完整结果与边界](../reports/2026-09-26-box-creation-feasibility.md)：复用当前 `75aa6d77` 来源证据，把原 identity→最终 client adapter→protobuf 编码/解码串起来，确认原生 Box 输入编码为 UNSPECIFIED=0，现有参数修复后正确为 BOX=1；这不是实际服务端请求捕获。当前仍缺“获准的真实 BOX=1 请求的最初服务端结果”，故不宣告所有 Box 入口已关闭，也不再重复构建外围资格系统。模板 local-only 等有条件分支未实测，不冒称可用后路。AH-186/AH-187 保持该前提待解，AH-124 不重开。
+
 ### 2026-09-24 受控迁移与双 Bot 窗口
 
 [历史窗口](../reports/2026-09-24-controlled-dual-bot.md)的 AH-124 原恢复不重开。当前事实见[实施与现场回执](../reports/2026-09-25-host-intake-recovery.md#13740-实际加载c-结果与收场)：本地窗口将 `d47f879b` 固定安装并对齐 Server/Web/modeld，13740/0378 来源的完整 62 切片已实际加载。re-adopt 调用遭本地工具超时中断后，固定 `f1803f06` CLI 经原 observed-adopt publisher 对同一已加载 child 补交当前采用事实，没有再次重启 Host，原操作仍为 unknown。
