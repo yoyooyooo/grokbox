@@ -2,7 +2,7 @@
 
 状态：2026-09-26 用户接受的实施次序调整；正式创建与一次静默哨兵已进入源码和隔离验证，尚非新现场验收。Local-first 已有[固定历史正例](../../evidence/topics/box-local-first-poc-2026-09.md)，因此恢复 Agent First CLI/v2 产品施工，不再等待“永久不迁移”或全部升级路径证明。普通官方升级导致失权的反例及额度未知继续保留，不能因此宣布日用或全产品已通过。
 
-本页只拥有本次增量的阶段与责任；[Spec](spec.md)拥有完整产品目标，[并行交付](parallel-delivery.md)拥有原 A/R/F/E/D/B/C/W/Q 路线，[CLI-05](../../tickets/CLI-05-implementation-follow-through.md)拥有整体收束，[LIVE](../../tickets/LIVE-integration-validation.md)仍是唯一现场状态入口，Linear 负责排程。
+本页只拥有本次增量的阶段与责任；最终体验与硬边界统一见[产品合同·核心期望](../../product-contract.md#core-expectations)，[Spec](spec.md)细化完整架构与交付，[并行交付](parallel-delivery.md)拥有原 A/R/F/E/D/B/C/W/Q 路线，[CLI-05](../../tickets/CLI-05-implementation-follow-through.md)拥有整体收束，[LIVE](../../tickets/LIVE-integration-validation.md)仍是唯一现场状态入口，Linear 负责排程。
 
 ## 1. 两条工作线，不降低最终目标
 

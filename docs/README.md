@@ -6,6 +6,7 @@ Enter from the question you are answering. These routes are not a mandatory read
 
 | Question | Owning home |
 | --- | --- |
+| Which core expectations must every implementation preserve? | [Accepted core expectations](product-contract.md#core-expectations): official clients, Bot identity/Memory, models/usage, source health and maintenance |
 | What does grokbox promise, and what is outside its scope? | [Product contract](product-contract.md) |
 | Which component owns a fact, effect, resource or interface? | [Architecture](architecture.md) |
 | How does Box-local model execution work? | [Runtime overview](box-runtime.md), [execution](runtime/execution.md) |

@@ -2,6 +2,31 @@
 
 本页拥有用户可观察的语义、权限和非目标。当前命令及参数以 [registry](../packages/cli/src/registry.ts)、help 和可执行测试为准；精确配置以 [schema](../packages/runtime-kernel/src/internal/config/schema.ts) 为准。正文不维护第二份命令树、实现进度或现场结果。尚未交付的接受目标在对应专题中明确区分，不能当作现有命令。
 
+<a id="core-expectations"></a>
+## 已确认的核心期望
+
+本节集中保存最终要守住的产品体验与边界，作为方案、实现和验收的共同依据；不是现有功能清单或通过声明。由 2026-09-26 已确认目标收口，后续改变核心体验应直接修订本节，不让临时 POC、历史报告或 Issue 的局部成功重新定义目标。
+
+| 维度 | 必须守住的结果与细节 |
+| --- | --- |
+| 官方客户端与普通聊天 | 始终使用未修改的官方 Grok Bot App；普通 Bot 私聊、同一 Bot 参加多个正常群聊。切换 Bot、关闭重开及跨端读取/续聊要对应同一真实历史。不能用单人群、自有聊天页面、改客户端或清缓存替代；桌面、手机和网页覆盖分别取得证据。自有管理 Web 不充当聊天替代品。 |
+| 同一 Bot 的身份与状态 | 身份同步优先复用官方 Server，Gateway 只有在真实客户端可达和一致性成立时才作为替代接入。长期角色与 Memory 归同一 Bot；私聊、不同群和每次任务保留各自即时上下文。不复制多份互不相识的人格，不把本地旧文件推定为服务端当前权威。不以不断创建新替身冒充同一身份的连续性；显式保护/交接仍按连续性合同处理。 |
+| 按 Bot 选择模型 | 自定义/原生选择绑定 Bot，不要求每建一个群重复配置；私聊、群成员回合和 Bot 自身 Routine 遵循同一模型策略。未选择的 Bot 保留官方路径。默认跟随、显式指定及在途捕获沿本页与模型域合同；自定义失败不能静默回退官方或改用其他 provider。 |
+| 整个主要执行回合 | 所选 Bot 的主推理、工具决策及结果生成由自定义模型链完成；允许接管 Agent Loop，也允许复用原生 Loop 的非模型编排。不能依赖官方模型先决定调用自定义模型，或由官方模型最后整理/提交回复。非模型的原生工具和回复 writer 可以复用；只有某次工具或最后一句正文经过自定义模型不算接管。 |
+| Bot 自身 Routine | 必须覆盖 Bot 自己的任务，不拿群的 Routine 代替。调度、子任务、结果结算、父 Bot 继续执行和最终官方视图都保持正确身份、长期 Memory 及模型策略；关停后的在途任务与新触发分别判断。 |
+| 官方模型额度 | 根本经济目标是自定义 Bot 的相关执行不消耗官方 Grok Bot 模型额度；复用 Server 身份、传输、存储和非模型能力不等于使用官方模型。主推理、工具决策、Routine 子父回合和实际经过的摘要/压缩等辅助推理按用途核对。自定义请求成功不能证明官方零扣费；缺乏归因保留 billing not observed，不把目标降成只替换正文。 |
+| 原生数据与长期使用 | 尽量复用原生 tools、Memory、Transcript、回复与状态 writer；回复确认、任务结算、checkpoint、重启续接和本地阈值 compact/overflow 恢复必须保持一致。请求/会话有明确归属，unknown 不重放；可见回复不等于已结清原生义务，摘要文本不等于状态已持久化。 |
+| 创建源头与补丁健康 | Local-first 是当前有证据的实现方式，不是永远有效的前提。AST/形状与有限语义、实际加载/调用、真实 Server 创建登记与独立读回分层验证；最小创建哨兵早于昂贵业务验收，并在明确授权的周期/来源变化窗口更新。失败、不确定、未运行和过期可见，不能靠旧成功继续向后推进。 |
+| 演进、提醒与维护 | 观察官方 Host 变化及 Bot 身份转变：无关变更保留记录，相关同形变化需要分析，结构破坏与已证实的源头/身份失败需要告警。普通用户未配置维护 Bot 仍需可达的感知出口；维护者可配置指定 Bot 接收分析/修复任务。观察、提醒、分析、变更/采用权限分开；在明确授权内由 Agent 修复和验证，不能只把问题反复退给用户。未知因果如实保留，尽力而为不等于静默失联。 |
+
+### 实现自由度与完成边界
+
+先满足体验和真实执行权，再选接入方式。Box/Local-first 是当前路线；允许必要而精确的 Host 侧补丁，优先复用原生能力和社区运行内核，但不为了少几行补丁牺牲目标。允许替换所选回合的执行适配，不允许并存两个竞争的主循环、状态 writer 或正式语义；服务端真实拒绝权和身份检查仍保留。
+
+受控更新、延迟切换与升级窗口是候选维护方式，不是永久冻结或身份永不变化的保证；保留新版发现和兼容风险感知。创建正例已足以恢复产品研发，长期身份因果/更新调查并行，不成为无关架构施工的无限前置；真实失权对象的执行仍受限制。完整结果缺关键项不能签通过，也不要求先证明所有未来版本才开始实现。
+
+同一意图只在此处定产品边界：架构与完整交付安排见 [Agent-first Spec](roadmap/agent-first-cli/spec.md)，当前主线与低耦合并行见 [Local-first 实施次序](roadmap/agent-first-cli/local-first-reintegration.md)，已验/未验见 [LIVE](tickets/LIVE-integration-validation.md)，历史原因与固定正反例见 [Evidence](evidence/README.md)。这些入口不能把目标存在、代码合入、实际加载、业务通过和用户接受混成一个结论。
+
 ## 1. 产品定位
 
 `grokbox` 是 Grok Bot 云电脑的非官方 CLI 与控制面，`gbox` 是完全等价的 binary alias。主要工作面是单 Box 内的 CLI/runtime；已有外部连接和生命周期能力保留其实际支持范围，不承诺所有命令在云电脑内外等价可用。网络安装、连通性和访问策略由用户管理，不把网络产品变成模型运行时的一部分。
@@ -145,7 +170,7 @@ daemon owns尚未迁入统一管理Server的listeners、RPC authorization、Gate
 
 选择是下一 TURN 的意图，在途 TURN/STEP 保留捕获的 model/binding/effort/credential 身份。main/default 不自动 opt-in 其他 Bot；targeted reset 是单 Bot 安全回官方，不要求重新获得 managed 准入，不全局停用。普通回官方与完全卸载补丁是两个不同证明面。
 
-Host 拥有原生 Agent loop、tools、root、checkpoint、Memory、Transcript 和 SendToUser；kernel/modeld 拥有一条受控模型执行程序。provider 不执行第二 Agent loop，不复制会话 store。输入内容和工具顺序不可暗裁剪/重排；不支持图像或协议时在副作用前可见拒绝。完整 validated-batch 才向 Host 放行工具，多个调用本身不是错误；放行不意味着副作用事务或已执行。
+既有分层由 Host 持有原生 tools、root、checkpoint、Memory、Transcript 与回复 writer，kernel/modeld 持有受控模型执行程序。优先复用原生 Loop 的非模型编排；按[核心期望](#core-expectations)，必要时允许替换所选回合的执行适配，不能把“复用 Loop”解释为仍须调用官方模型。每回合只保留一个执行 owner，provider 不另启业务循环，不复制竞争的会话 store。输入内容和工具顺序不可暗裁剪/重排；不支持图像或协议时在副作用前可见拒绝。完整 validated-batch 才向 Host 放行工具，多个调用本身不是错误；放行不意味着副作用事务或已执行。
 
 每个 STEP 还冻结自己的 `toolChoice` 与最终请求工具表：`auto` 保持模型选择，`none` 拒绝调用和合成投递，`required` 或指定名称必须在成功终态前出现真实完整调用，指定名称拒绝其他名称。最终 wire 的名称、inputSchema 和 choice 分别对账；漂移在 dispatch 前失败，不靠别名、重试或伪造 tool result 补足。`toolValidationScope=structure_only` 只证明结构、JSON 完整和分片关联；原生 schema 语义、权限、审批、执行、结果接受和送达仍由 Host 分层负责。诊断保留独立 backend/wire/host 证据，不能跨 attempt 或代际拼接。
 
@@ -155,9 +180,9 @@ status 分开 desired、loaded、ready、captured、执行、交付与 evidence 
 
 ### 12.1 原生提醒与自主运维
 
-接受的默认用户体验是发现异常→固定必要现场→通知配置目标 Bot→只提醒并结束。通知不能自动诊断、建单询问、公开或执行维护；用户后续委托允许在其范围内自主操作与验证。此限制不是把所有 Bot 永久变为只读。
+接受的目标按[核心期望](#core-expectations)区分普通用户提醒与维护者任务：未配置维护 Bot 的用户仍需实际可达的感知出口；维护者可配置指定 Bot，在明确的分析、修复、验证和采用授权内推进闭环。没有行动授权时只提醒/保留任务，不因收到通知自动取得修改、公开或部署权限；也不再把“只提醒并结束”作为所有配置下的固定上限。
 
-现有实现分段提供证据/存储、Routine、配对、预检、显式发送、通知授权和 daemon sender；完整 collector 常驻装配、跨 owner 容量与安全退役的差额必须继续保留，不能统称只剩 live。默认目标、字段、状态及剩余实现归 [operations](runtime/operations.md) 和 [OBS/ops 来源票](tickets/README.md#incident-evidence)。
+复用原证据、OBS/incident/outbox、Routine 与接收者机制，不因新增源头/身份事件另造通知系统。实际装配、默认出口、字段及剩余范围归 [operations](runtime/operations.md)、[OBS/ops 来源票](tickets/README.md#incident-evidence)和当前 LIVE；这里不把目标或分段实现宣称为完整投递已交付。
 
 通知授权、接收者模型/数据/费用、配对、任务启用和实际投递分别检查；HTTP accepted 不是用户收到。unknown 不广播、不重建接收者、不重放执行。关闭通知不关闭必要存储维护。高级路由、自动维护、公开 issue 和整盒外部失联观测不是默认提醒的隐含功能。
 
