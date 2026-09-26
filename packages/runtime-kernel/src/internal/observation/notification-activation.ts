@@ -89,12 +89,13 @@ export function projectNoticeWorker(value: unknown): AutomaticNoticeWorkerStatus
   let replayFence: AutomaticNoticeWorkerStatus["replayFence"];
   if (rawFence !== undefined) {
     const started = own(rawFence, "startedAtMs"), high = own(rawFence, "highWaterMs"), guarded = own(rawFence, "guardedWork"), max = own(rawFence, "maxEntries");
+    const durable = own(rawFence, "policy") === "binding-durable-attempts-v1";
     if (!positive(started) || !positive(high) || high < started || !positive(max) || max > NOTIFICATION_DELIVERY_POLICY.maxAttempts
       || typeof guarded !== "number" || !Number.isSafeInteger(guarded) || guarded < 0 || guarded > max
-      || own(rawFence, "policy") !== "worker-start-and-live-attempts-v1" || own(rawFence, "restoresExistingWork") !== false
+      || !durable && own(rawFence, "policy") !== "worker-start-and-live-attempts-v1" || own(rawFence, "restoresExistingWork") !== durable
       || own(rawFence, "scope") !== "automatic_notifications_only") return bad();
-    replayFence = { policy: "worker-start-and-live-attempts-v1", startedAtMs: started, highWaterMs: high, guardedWork: guarded,
-      maxEntries: max, restoresExistingWork: false, scope: "automatic_notifications_only" };
+    replayFence = { policy: durable ? "binding-durable-attempts-v1" : "worker-start-and-live-attempts-v1", startedAtMs: started, highWaterMs: high, guardedWork: guarded,
+      maxEntries: max, restoresExistingWork: durable, scope: "automatic_notifications_only" };
   }
   return { ...(replayFence ? { replayFence } : {}), state: state as AutomaticNoticeWorkerStatus["state"], cycles, lastCycleAtMs: at as number | null, lastCycle, nextDelayMs: delay,
     owner: "management-server", automaticDiagnosis: false, automaticIssue: false, pollingCallsModels: false, serviceInstallation: "not_proven", botReport: "not_observed", userRead: "not_observed" };
