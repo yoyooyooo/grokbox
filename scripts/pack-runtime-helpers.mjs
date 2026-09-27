@@ -12,7 +12,7 @@ const dist = join(root, "dist");
 const identity = buildProvenance(root);
 
 mkdirSync(dist, { recursive: true });
-for (const name of ["guardian-child.cjs", "injector-hold.cjs", "grokbox-temp-supervisor.cjs", "retirement-observer.py"]) {
+for (const name of ["guardian-child.cjs", "injector-hold.cjs", "grokbox-temp-supervisor.cjs", "retirement-observer.py", "owned-host-retirement.py"]) {
   cpSync(join(helpers, name), join(dist, name));
 }
 

@@ -6,6 +6,7 @@ export const RUNTIME_HELPER_PRELOAD = "preload.cjs";
 export const RUNTIME_HELPER_GUARDIAN_CHILD = "guardian-child.cjs";
 export const RUNTIME_HELPER_INJECTOR_HOLD = "injector-hold.cjs";
 export const RUNTIME_HELPER_RETIREMENT_OBSERVER = "retirement-observer.py";
+export const RUNTIME_HELPER_OWNED_HOST_RETIREMENT = "owned-host-retirement.py";
 export const RUNTIME_HELPER_TEMP_SUPERVISOR = "grokbox-temp-supervisor.cjs";
 
 export const RUNTIME_HELPER_FILES = [
@@ -14,6 +15,7 @@ export const RUNTIME_HELPER_FILES = [
   RUNTIME_HELPER_INJECTOR_HOLD,
   RUNTIME_HELPER_TEMP_SUPERVISOR,
   RUNTIME_HELPER_RETIREMENT_OBSERVER,
+  RUNTIME_HELPER_OWNED_HOST_RETIREMENT,
 ] as const;
 
 /** Resolve a sibling of the published bundle (`dist/index.js`) or this source module. */
@@ -39,6 +41,7 @@ export function resolveRuntimeHelpers(base = import.meta.url): {
   injectorHold: string;
   tempSupervisor: string;
   retirementObserver: string;
+  ownedHostRetirement: string;
 } {
   return {
     preload: resolveNodeRequireablePreload(base),
@@ -46,5 +49,6 @@ export function resolveRuntimeHelpers(base = import.meta.url): {
     injectorHold: resolveRuntimeHelper(RUNTIME_HELPER_INJECTOR_HOLD, base),
     tempSupervisor: resolveRuntimeHelper(RUNTIME_HELPER_TEMP_SUPERVISOR, base),
     retirementObserver: resolveRuntimeHelper(RUNTIME_HELPER_RETIREMENT_OBSERVER, base),
+    ownedHostRetirement: resolveRuntimeHelper(RUNTIME_HELPER_OWNED_HOST_RETIREMENT, base),
   };
 }

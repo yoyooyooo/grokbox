@@ -51,6 +51,21 @@ function data(stdout: string): Record<string, unknown> {
   return (parseJson(stdout) as { data: Record<string, unknown> }).data;
 }
 
+test("owned Host retirement requires explicit confirmation and cannot combine recovery intents", async () => {
+  const boxRuntimeRoot = await withRoot(), runRoot = join(boxRuntimeRoot, "run");
+  const deps = { discoveryPath: "/dev/null", boxRuntimeRoot, env: { GROKBOX_RUN_ROOT: runRoot } };
+  const before = await snapshotTree(boxRuntimeRoot);
+  const preview = await captureCli(["runtime", "operation-recovery", "--retire-owned-host", "original"], deps);
+  expect(preview.code).toBe(0);
+  expect(data(preview.stdout)).toMatchObject({ outcome: "blocked", reason: "retirement-confirm-required", signaled: false, adopted: false, replayAuthorized: false });
+  expect(await snapshotTree(boxRuntimeRoot)).toEqual(before);
+  for (const flag of ["--restore-operation", "--complete-loaded"]) {
+    const refused = await captureCli(["runtime", "operation-recovery", "--retire-owned-host", "original", flag, "other", "--confirm"], deps);
+    expect(refused.code).not.toBe(0);
+    expect(await snapshotTree(boxRuntimeRoot)).toEqual(before);
+  }
+});
+
 function emptyProcessTree() {
   return { inspect: () => null, list: () => [], signal: () => ({ ok: false as const, reason: "not-found" as const }) };
 }

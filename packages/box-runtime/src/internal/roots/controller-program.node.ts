@@ -1,5 +1,9 @@
 import { prepareInterruptedObservedCommit } from "../process/interrupted-adopt.node.ts";
 import { prepareOfficialExit } from "../process/interrupted-exit.node.ts";
+import { retireFailedAdoptionHost, type HostRetirementReceipt, type HostRetirementPorts } from "../process/owned-host-retirement.node.ts";
+import { acquireAdvisoryGate } from "../io/advisory-gate.node.ts";
+import { readNativeHostIdle } from "../io/management-gateway.node.ts";
+import { modeldSocketPath } from "../wire/modeld-probe.node.ts";
 import { readOfficialExit, type OfficialExitReceipt } from "../process/restoration-proof.ts";
 import { acquireCurrentRestorationPorts } from "../process/current-restoration-ports.node.ts";
 import { unresolvedAdoption, writeAdoptionOwner } from "../process/adopt-evidence.ts";
@@ -789,13 +793,14 @@ export type OperationRecoveryReport = {
   officialExit?: OfficialExitReceipt;
   restorationHistorical?: true;
   loadedCompletion?: { operationId: string; state: "eligible" | "committed" | "not-proven"; originalOutcome: "unknown"; preloadSha256: string; hostPid: number };
-  outcome: "clear" | "ready" | "blocked" | "recovered" | "restored" | "recorded" | "completed-loaded";
+  hostRetirement?: HostRetirementReceipt;
+  outcome: "clear" | "ready" | "blocked" | "recovered" | "restored" | "recorded" | "completed-loaded" | "retired";
   reason: string | null;
   locks: Array<OperationLeaseObservation & { name: "controller" | "identity" }>;
   operations: { running: number; unknown: number; terminal: number };
   clearedLocks: number;
   markedUnknown: number;
-  signaled: false;
+  signaled: boolean | "unknown";
   adopted: false;
   replayAuthorized: false;
   next: string;
@@ -870,11 +875,15 @@ async function completeInterruptedLoadedAdoption(input: { boxRoot: string; runRo
   } finally { await locked.lock.release(); }
 }
 
-/** Metadata recovery and explicit completion of one already loaded child share
- * the original leases and publishers. Neither path signals or replays work. */
-export async function recoverControllerOperationState(input: { boxRoot: string; ephemeralRoot?: string; confirm?: boolean; signal?: AbortSignal; restoreOperation?: string; restorationQualification?: string; completeLoaded?: string }, restorationPorts?: RestorationPorts): Promise<OperationRecoveryReport> {
+/** Metadata recovery and loaded completion do not signal or replay. Explicit
+ * owned-Host retirement shares both gates, adds the modeld service gate, and
+ * records a single signal intent without changing the original unknown. */
+export async function recoverControllerOperationState(input: { boxRoot: string; ephemeralRoot?: string; confirm?: boolean; signal?: AbortSignal; restoreOperation?: string; restorationQualification?: string; completeLoaded?: string; retireOwnedHost?: string }, restorationPorts?: RestorationPorts, retirementPorts?: HostRetirementPorts): Promise<OperationRecoveryReport> {
   const runRoot = input.ephemeralRoot ?? ephemeralRuntimeRoot();
   if (!isAbsolute(input.boxRoot) || !isAbsolute(runRoot)) throw new BoxRuntimeError("invalid_usage", "Operation recovery requires absolute local roots.");
+  if (input.retireOwnedHost && (input.restoreOperation || input.restorationQualification || input.completeLoaded
+    || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(input.retireOwnedHost)))
+    throw new BoxRuntimeError("invalid_usage", "Owned Host retirement requires one original operation, separately from proof publication or loaded completion.");
   if (input.completeLoaded && (input.restoreOperation || input.restorationQualification || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(input.completeLoaded)))
     throw new BoxRuntimeError("invalid_usage", "Loaded completion requires one original operation, separately from restoration.");
   if (input.restorationQualification && (!input.restoreOperation || !isAbsolute(input.restorationQualification))) throw new BoxRuntimeError("invalid_usage", "A current qualification requires an original operation and an absolute protected file path.");
@@ -894,6 +903,7 @@ export async function recoverControllerOperationState(input: { boxRoot: string; 
     }
     if (input.confirm !== true) {
       const facts = yield* Effect.tryPromise(() => operationRecoveryFacts(input.boxRoot, runRoot));
+      if (input.retireOwnedHost) return { ...facts.report, outcome: "blocked" as const, reason: "retirement-confirm-required" };
       if (!input.restoreOperation) return facts.report;
       const observed = yield* Effect.result(Effect.try(() => {
         const restoration = readOriginalRestoration(runRoot, input.restoreOperation!);
@@ -916,6 +926,45 @@ export async function recoverControllerOperationState(input: { boxRoot: string; 
     );
     const facts = yield* Effect.tryPromise(() => operationRecoveryFacts(input.boxRoot, runRoot));
     if (!gate) return { ...facts.report, outcome: "blocked" as const, reason: "operation_busy", next: "grokbox runtime status --json" };
+    if (input.retireOwnedHost) {
+      if (facts.report.reason || !facts.loaded.ok) return facts.report;
+      const row = facts.loaded.store[input.retireOwnedHost];
+      if (!row || row.state !== "unknown" || !row.leaseOwner
+        || (yield* Effect.tryPromise(() => operationOwnerState(row.leaseOwner!))) !== "stale")
+        return { ...facts.report, outcome: "blocked" as const, reason: "retirement-original-owner-unproven" };
+      const socket = modeldSocketPath(runRoot);
+      const modeldGate = yield* Effect.acquireRelease(Effect.tryPromise(() => acquireAdvisoryGate(`${socket}.gate`)),
+        held => held ? Effect.promise(held.release) : Effect.void);
+      if (!modeldGate) return { ...facts.report, outcome: "blocked" as const, reason: "retirement-modeld-busy" };
+      const assertModeldAbsent = () => {
+        try { lstatSync(socket); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return; throw error; }
+        throw Error("retirement-modeld-present");
+      };
+      return yield* Effect.callback<OperationRecoveryReport, unknown>((resume, signal) => {
+        const work = (async (): Promise<OperationRecoveryReport> => {
+          try {
+            for (const snapshot of facts.snapshots) await recheckOperationLease(snapshot);
+            const hostRetirement = await retireFailedAdoptionHost({ operationId: input.retireOwnedHost!, runRoot,
+              boxRoot: input.boxRoot, storePath: storePath(input.boxRoot), expectedOperation: row, signal,
+              ports: restorationPorts ?? { processes: strictLinuxObservationPort(), classify: roleOf,
+                gatewayPid: () => readGatewayPid(), hasRelevantPreload: hasRelevantPreloadStrict },
+              retirement: retirementPorts ?? { bootId: () => readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim(), assertModeldAbsent,
+                recheckOwnership: async () => { for (const snapshot of facts.snapshots) await recheckOperationLease(snapshot); },
+                observeIdle: (pid, scope) => readNativeHostIdle("/home/box/sand-data/gateway.json", pid, scope) },
+            });
+            return { ...facts.report, hostRetirement, signaled: hostRetirement.signaled,
+              outcome: hostRetirement.state === "exit-observed" ? "retired" : "blocked",
+              reason: hostRetirement.state === "exit-observed" ? null : "retirement-exit-unproven",
+              next: `grokbox runtime operation-recovery --restore-operation ${input.retireOwnedHost} --confirm` };
+          } catch (error) {
+            const code = error instanceof Error && /^(?:restoration|retirement)-[a-z-]{1,90}$/.test(error.message) ? error.message : "retirement-evidence-unproven";
+            return { ...facts.report, outcome: "blocked", reason: code };
+          }
+        })();
+        void work.then(value => resume(Effect.succeed(value)), error => resume(Effect.fail(error)));
+        return Effect.promise(async () => { await work.catch(() => undefined); });
+      });
+    }
     if (input.restoreOperation) {
       if (facts.report.reason || !facts.loaded.ok) return facts.report;
       const row = facts.loaded.store[input.restoreOperation];

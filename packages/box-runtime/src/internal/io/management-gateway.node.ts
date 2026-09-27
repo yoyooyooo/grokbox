@@ -89,6 +89,23 @@ async function body(response: Response, signal: AbortSignal, maxBytes = RESPONSE
   try { return JSON.parse(text) as unknown; } catch { throw invalid(); }
 }
 
+/** A bounded read of native work, bound to the same local discovery credential.
+ * This grants no lifecycle authority and never exposes the credential. */
+export async function readNativeHostIdle(discoveryPath: string, expectedPid: number, parent: AbortSignal) {
+  const signal = AbortSignal.any([parent, AbortSignal.timeout(3000)]);
+  const before = await discovery(discoveryPath);
+  if (before.pid !== expectedPid) throw invalid();
+  const response = await fetch(`${before.baseUrl}/api/getHostStatus`, {
+    method: "POST", headers: { authorization: `Bearer ${before.token}`, "content-type": "application/json" },
+    body: "{}", redirect: "error", signal,
+  });
+  if (!response.ok) { await response.body?.cancel(); throw unavailable(); }
+  const value = await body(response, signal, 64 * 1024);
+  const after = await discovery(discoveryPath);
+  if (before.credentialGeneration !== after.credentialGeneration || !record(value) || value.isBusy !== false) throw invalid();
+  return { pid: before.pid, startedAt: before.startedAt, generation: before.generation };
+}
+
 function summary(raw: Record<string, unknown>): NativeBotSummary {
   if (typeof raw.id !== "string" || !UUID.test(raw.id) || typeof raw.name !== "string") throw invalid();
   const text = (value: unknown, limit: number): string | null => typeof value === "string" ? Array.from(value).slice(0, limit).join("") : null;

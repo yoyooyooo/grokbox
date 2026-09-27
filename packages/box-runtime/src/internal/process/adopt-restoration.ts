@@ -25,11 +25,13 @@ export type RestorationPorts = {
   hasRelevantPreload: (pid: number) => boolean;
 };
 
-/** Called only by the recovery owner while BOTH physical gates are held. This
- * publishes observation of restoration, never edits the failed operation. */
-export function prepareOriginalRestoration(input: {
+export type RestorationInput = {
   operationId: string; runRoot: string; storePath: string; expectedOperation: unknown; ports: RestorationPorts; qualificationPath?: string;
-}) {
+};
+
+/** Shared validation of original failed-adoption evidence. Never signals,
+ * publishes a completion or interprets an unknown operation as success. */
+export function prepareFailedAdoptionEvidence(input: RestorationInput) {
   if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(input.operationId)) throw new Error("restoration-operation-invalid");
   const { ports } = input;
   const sources = [restorationSnapshot(input.storePath), restorationSnapshot(adoptOpStatePath(input.runRoot)),
@@ -124,6 +126,13 @@ export function prepareOriginalRestoration(input: {
     : [journal.tempSupervisor, ...hosts].filter(identity);
   if (!creation && (!marker.compile || typeof marker.compile.profileId !== "string"
     || ![marker.compile.profileSha256, marker.compile.sourceSha256, marker.compile.transformedSha256, marker.preloadSha256].every(hash))) throw Error("restoration-compilation-provenance-conflict");
+  return { ports, sources, evidence, qualification, qualificationSha256, creation, marker, original, journal, hosts, owned };
+}
+
+/** Called only by the recovery owner while BOTH physical gates are held. This
+ * publishes observation of restoration, never edits the failed operation. */
+export function prepareOriginalRestoration(input: RestorationInput) {
+  const { ports, sources, evidence, qualification, qualificationSha256, creation, marker, journal, hosts, owned } = prepareFailedAdoptionEvidence(input);
   const observe = () => {
     const rows = ports.processes.list();
     for (const row of rows) {

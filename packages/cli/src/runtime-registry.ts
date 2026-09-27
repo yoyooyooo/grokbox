@@ -412,13 +412,14 @@ export const RUNTIME_COMMANDS: readonly LeafCommand[] = [
   },
   {
     path: ["runtime", "operation-recovery"],
-    usage: "grokbox runtime operation-recovery [--confirm] [--complete-loaded <id> | --restore-operation <id>] [--restoration-qualification <path>]",
-    summary: "Inspect controller/identity leases; explicitly recover proven stale metadata without Host signals or replay.",
+    usage: "grokbox runtime operation-recovery [--confirm] [--complete-loaded <id> | --restore-operation <id> | --retire-owned-host <id>] [--restoration-qualification <path>]",
+    summary: "Inspect controller/identity leases; explicitly recover stale metadata or retire one proven failed-adoption Host without replay.",
     arguments: [],
     options: options([
       { flags: "--complete-loaded <id>", description: "Preview or confirm the exact interrupted child already loaded; commit current adoption without restart, upgrade, or resolving the original unknown" },
-      { flags: "--confirm", description: "Confirm the selected metadata, current loaded completion, or physical restoration; no Host signals or replay" },
+      { flags: "--confirm", description: "Confirm the selected recovery action; only --retire-owned-host can signal a Host, and no action replays unknown work" },
       { flags: "--restoration-qualification <path>", description: "Protected current maintainer qualification of historical scope and required resource inventory; modeld must already be stopped, with fresh observation and --confirm" },
+      { flags: "--retire-owned-host <id>", description: "With --confirm, pin one proven failed-adoption Host and request SIGTERM once; requires disabled routing, stopped modeld and native idle. No escalation, replay or restoration claim" },
       { flags: "--restore-operation <id>", description: "Inspect the historical restoration receipt for this exact failed operation; --confirm publishes it under recovery guards without resolving unknowns" },
     ]),
     stdin: "none", table: false, timeout: false, destructive: false, gateway: false,
