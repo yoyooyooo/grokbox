@@ -62,7 +62,7 @@ async function desiredMode(root: string): Promise<string> {
   return JSON.parse(await readFile(join(root, "config.json"), "utf8")).runtime.desiredMode as string;
 }
 
-async function writeDesired(root: string, mode: "disabled" | "route" | "identity"): Promise<void> {
+async function writeDesired(root: string, mode: "disabled" | "observe" | "route" | "identity"): Promise<void> {
   await mkdir(join(root, "state"), { recursive: true, mode: 0o700 });
   await writeFile(join(root, "config.json"), `${JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: mode } })}\n`, { mode: 0o600 });
 }
@@ -872,6 +872,36 @@ test("same artifacts can start again after stop without replaying the previous o
   expect(applies).toBe(2);
   expect(operations.size).toBe(2);
   expect(await desiredMode(boxRuntimeRoot)).toBe("route");
+});
+
+test("changing desired mode creates a distinct apply declaration while the original unknown remains unchanged", async () => {
+  const state = stubHost("official");
+  const boxRuntimeRoot = await mkdtemp(join(tmpdir(), "grokbox-mode-intent-"));
+  const operations = new Map<string, "unknown" | "applied">();
+  const requested: string[] = [];
+  hostControlPorts.apply = async (request) => {
+    const id = request.operationId as string;
+    requested.push(id);
+    const previous = operations.get(id);
+    if (previous === "unknown") return { outcome: "unknown", reason: "operation-uncertain", signaled: false, spawned: false, guardian: false, operationId: id };
+    if (await desiredMode(boxRuntimeRoot) === "observe") {
+      operations.set(id, "unknown");
+      return { outcome: "recovery-required", reason: "launch-strategy-unavailable", signaled: false, spawned: false, guardian: false, operationId: id };
+    }
+    operations.set(id, "applied");
+    state.host.value = "custom";
+    return { outcome: "signaled", reason: null, signaled: true, spawned: true, guardian: true, operationId: id };
+  };
+  for (const mode of ["observe", "observe", "route"] as const) {
+    await writeDesired(boxRuntimeRoot, mode);
+    const { result, gateway } = await run(["host", "start"], { boxRuntimeRoot });
+    try { expect(result.code).toBe(mode === "route" ? 0 : 72); }
+    finally { gateway.stop(); }
+  }
+  expect(requested[1]).toBe(requested[0]);
+  expect(requested[2]).not.toBe(requested[0]);
+  expect(operations.get(requested[0]!)).toBe("unknown");
+  expect(operations.get(requested[2]!)).toBe("applied");
 });
 
 for (const command of ["start", "restart"]) {

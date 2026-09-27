@@ -75,7 +75,7 @@ export function reviewedProfileSha256(boxRoot: string): string | null {
 export function controllerOperationId(
   intent: "apply" | "reconcile",
   boxRoot: string,
-  generation?: { preloadSha256?: string; profileSha256?: string; hostGeneration?: string },
+  generation?: { preloadSha256?: string; profileSha256?: string; hostGeneration?: string; desiredMode?: ReturnType<typeof runtimeDesiredFromConfig>["mode"] },
 ): string {
   return sha256Text(canonicalJson({
     intent,
@@ -83,6 +83,7 @@ export function controllerOperationId(
     ...(generation?.preloadSha256 ? { preloadSha256: generation.preloadSha256 } : {}),
     ...(generation?.profileSha256 ? { profileSha256: generation.profileSha256 } : {}),
     ...(generation?.hostGeneration ? { hostGeneration: generation.hostGeneration } : {}),
+    ...(generation?.desiredMode ? { desiredMode: generation.desiredMode } : {}),
   }));
 }
 

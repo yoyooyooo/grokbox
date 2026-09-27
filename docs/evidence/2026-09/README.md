@@ -172,3 +172,4 @@
 - [2026-09-26：历史证据统一与独立 POC 提炼](2026-09-26-evidence-unification.md)
 - [2026-09-26：统一集成接收与正式候选准备](2026-09-26-live-unified-integration.md)
 - [2026-09-27：正式退出恢复、固定安装与 a22d48c 重新配对](2026-09-27-official-exit-and-source-rebind.md)
+- [2026-09-27：正式采用的模式声明与前置拒绝](2026-09-27-adoption-mode-identity.md)

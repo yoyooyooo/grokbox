@@ -223,14 +223,14 @@ export async function applyHostEnable(deps: CliDeps): Promise<unknown> {
       next: "grokbox doctor", hostReason: "host_generation_unproven",
     });
   }
-  await ensureHostStartDesired(deps);
+  const desiredMode = await ensureHostStartDesired(deps);
   const preloadSha256 = diskPreloadSha256();
   const profileSha256 = reviewedProfileSha256(runtime.root);
   return await hostControlPorts.apply({
     intent: "apply",
     confirmed: true,
     operationId: controllerOperationId("apply", runtime.root, {
-      hostGeneration,
+      hostGeneration, desiredMode,
       ...(preloadSha256 ? { preloadSha256 } : {}),
       ...(profileSha256 ? { profileSha256 } : {}),
     }),
