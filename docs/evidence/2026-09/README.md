@@ -174,3 +174,4 @@
 - [2026-09-27：正式退出恢复、固定安装与 a22d48c 重新配对](2026-09-27-official-exit-and-source-rebind.md)
 - [2026-09-27：正式采用的模式声明与前置拒绝](2026-09-27-adoption-mode-identity.md)
 - [2026-09-27：Host 工作范围与正式空闲门](2026-09-27-host-work-gate.md)
+- [2026-09-27：84c3000e 正式采用失败与未完成的物理恢复](2026-09-27-formal-adoption-unresolved.md)
