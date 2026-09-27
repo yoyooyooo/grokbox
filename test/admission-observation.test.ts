@@ -45,8 +45,9 @@ for (const shape of ["unsupported-model", "retired-document"] as const) {
       const requestIds: string[] = [];
       let rejection: unknown;
       try {
-        hook({ agentId, originalSession: { getExecutor() { officialCalls++; throw Error("native-fallback-forbidden"); } },
+        const selected = hook({ agentId,
           onRequestId: id => { requestIds.push(id); }, sessionOptions: { invocationId: turnId, clientNonce: nonce } });
+        if (selected === undefined) { officialCalls++; throw Error("native-fallback-forbidden"); }
       } catch (error) { rejection = error; }
       expect(isHostManagedFailure(rejection)).toBe(true);
       if (shape === "unsupported-model") expect(rejection).toMatchObject({ failureCode: "route_model_not_admitted", message: ROUTE_MODEL_NOT_ADMITTED_MESSAGE });

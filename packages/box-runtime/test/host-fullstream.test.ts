@@ -298,14 +298,11 @@ describe("host fullStream unix", () => {
         mode: "route", durableRoot: durable, runRoot, binding: TEST_BINDING, compile: TEST_COMPILE,
       });
       const official = { kind: "official" };
-      expect(hook({ originalSession: official, agentId: "other" })).toBe(official);
+      expect(hook({ agentId: "other" })).toBeUndefined();
       let notified = 0;
-      const managed = hook({
-        originalSession: official,
-        agentId: "agent-tom",
-        onRequestId: () => { notified += 1; },
-        sessionOptions: { invocationId: "HOST_TURN_HOOK" },
-      });
+      const managed = hook({ agentId: "agent-tom",
+      onRequestId: () => { notified += 1; },
+      sessionOptions: { invocationId: "HOST_TURN_HOOK" }, });
       expect(isHostPromptSession(managed)).toBe(true);
       if (!isHostPromptSession(managed)) throw new Error("session");
       expect(managed.getModelId()).toBe(STUB_ECHO_MODEL_ID);
@@ -322,7 +319,7 @@ describe("host fullStream unix", () => {
       expect(journal).not.toContain("host-step");
       expect(journal).not.toContain("turn_seam_terminal");
 
-      const missingTurn = hook({ originalSession: official, agentId: "agent-tom" });
+      const missingTurn = hook({ agentId: "agent-tom" });
       if (!isHostPromptSession(missingTurn)) throw new Error("session");
       const refused = missingTurn.getExecutor([{ role: "user", content: "no-turn" }]).stream({}, "step-x");
       await expect(refused.response).rejects.toMatchObject({ name: "RetriableError", code: "invalid_envelope" });
@@ -397,11 +394,8 @@ describe("host fullStream unix", () => {
       const hook = bindHostSessionHook({
         mode: "route", durableRoot: durable, runRoot, binding: PRODUCTION_BINDING, compile: PRODUCTION_COMPILE,
       });
-      const managed = hook({
-        originalSession: { kind: "official" },
-        agentId: "agent-tom",
-        sessionOptions: { invocationId: "HOST_TURN_PROD" },
-      });
+      const managed = hook({ agentId: "agent-tom",
+      sessionOptions: { invocationId: "HOST_TURN_PROD" }, });
       if (!isHostPromptSession(managed)) throw new Error("session");
       const missing = managed.getExecutor([
         { role: "system", content: "state-root-once" },

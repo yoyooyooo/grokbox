@@ -1,7 +1,9 @@
 import { projectHostCompileReceipt, type HostCompileReceipt } from "./host-compilation.ts";
 
 /** Registration/observed boundaries are evidence, never an execution grant.
- * A successful callback does not prove its caller used the result correctly. */
+ * A successful callback does not prove its caller used the result correctly.
+ * native-selected/returned records the hook declining managed selection;
+ * the caller's later native factory may still throw. */
 export const HOST_WITNESS_CAPABILITIES = ["session", "retry", "context", "ownership", "run-observer", "alert-observer", "server-activity", "receiver-model", "continuity"] as const;
 export type HostWitnessCapability = typeof HOST_WITNESS_CAPABILITIES[number];
 export const HOST_WITNESS_REQUIRED: Record<"identity" | "route", readonly HostWitnessCapability[]> = {

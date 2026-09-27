@@ -6,7 +6,7 @@ import { STUB_ECHO_MODEL_ID, computeSelectionRevision, modelForAgent } from "@gr
 import { bindHostSessionHook } from "../src/internal/host/session-hook.ts";
 import { captureHostManagedSelection, captureHostSelection, loadModelsFileSync } from "../src/internal/host/selection.node.ts";
 import { isHostPromptSession } from "../src/internal/host/session.ts";
-import { hostEventsPath } from "../src/internal/host/terminal-journal.node.ts";
+import { hostEventsPath, settleJournalWrites } from "../src/internal/host/terminal-journal.node.ts";
 import type { HostBinding } from "../src/internal/host/host-binding.ts";
 
 const official = { kind: "official" };
@@ -15,7 +15,7 @@ describe("Host session hook", () => {
   test("only a verified unassigned agent passes through; missing route config is unavailable", async () => {
     const missing = await mkdtemp(join(tmpdir(), "grokbox-hook-missing-"));
     const hook = bindHostSessionHook({ mode: "route", durableRoot: missing, runRoot: missing });
-    expect(() => hook({ originalSession: official, agentId: "agent-1" })).toThrow("Model selection is unavailable");
+    expect(() => hook({ agentId: "agent-1" })).toThrow("Model selection is unavailable");
 
     const empty = await mkdtemp(join(tmpdir(), "grokbox-hook-empty-"));
     await writeFile(join(empty, "models.json"), `${JSON.stringify({
@@ -24,7 +24,7 @@ describe("Host session hook", () => {
       assignments: { main: { modelId: STUB_ECHO_MODEL_ID }, agents: {} },
     })}\n`);
     const emptyHook = bindHostSessionHook({ mode: "route", durableRoot: empty, runRoot: empty });
-    expect(emptyHook({ originalSession: official, agentId: "agent-1" })).toBe(official);
+    expect(emptyHook({ agentId: "agent-1" })).toBeUndefined();
     expect(captureHostSelection(empty, "agent-1")).toEqual({ kind: "official" });
   });
 
@@ -36,16 +36,13 @@ describe("Host session hook", () => {
       assignments: { main: null, agents: { "agent-tom": { modelId: STUB_ECHO_MODEL_ID } } },
     })}\n`);
     const hook = bindHostSessionHook({ mode: "route", durableRoot: root, runRoot: root });
-    const missingTurn = hook({ originalSession: official, agentId: "agent-tom" });
+    const missingTurn = hook({ agentId: "agent-tom" });
     expect(isHostPromptSession(missingTurn)).toBe(true);
     if (!isHostPromptSession(missingTurn)) throw new Error("managed rejection missing");
     await expect(missingTurn.getExecutor([{ role: "user", content: "no turn" }]).stream({}, "step-missing-turn").response)
       .rejects.toMatchObject({ code: "invalid_envelope" });
-    const managed = hook({
-      originalSession: official,
-      agentId: "agent-tom",
-      sessionOptions: { invocationId: "turn-1", agentId: "agent-tom" },
-    });
+    const managed = hook({ agentId: "agent-tom",
+    sessionOptions: { invocationId: "turn-1", agentId: "agent-tom" }, });
     expect(isHostPromptSession(managed)).toBe(true);
     if (isHostPromptSession(managed)) expect(managed.getModelId()).toBe(STUB_ECHO_MODEL_ID);
     expect(captureHostSelection(root, "agent-tom")).toMatchObject({
@@ -63,7 +60,7 @@ describe("Host session hook", () => {
       assignments: { main: null, agents: { "agent-tom": { modelId: STUB_ECHO_MODEL_ID } } },
     })}\n`);
     const hook = bindHostSessionHook({ mode: "route", durableRoot: root, runRoot: root });
-    expect(hook({ originalSession: official })).toBe(official);
+    expect(hook({})).toBeUndefined();
     const started = Date.now();
     let rows: Array<Record<string, unknown>> = [];
     while (Date.now() - started < 2000) {
@@ -126,11 +123,8 @@ describe("Host session hook", () => {
       binding,
       compile,
     });
-    const managed = hook({
-      originalSession: original,
-      agentId: "agent-tom",
-      sessionOptions: { invocationId: "turn-1", agentId: "agent-tom" },
-    });
+    const managed = hook({ agentId: "agent-tom",
+    sessionOptions: { invocationId: "turn-1", agentId: "agent-tom" }, });
     expect(isHostPromptSession(managed)).toBe(true);
     if (!isHostPromptSession(managed)) return;
     await expect(managed.getExecutor([]).stream({}, undefined).response).rejects.toMatchObject({ code: "invalid_envelope" });
@@ -182,15 +176,13 @@ describe("Host session hook", () => {
       binding,
       compile,
     });
-    const withTurn = hook({
-      originalSession: official,
-      agentId: "agent-tom",
-      sessionOptions: { invocationId: "turn-1", agentId: "agent-tom" },
-    });
+    const withTurn = hook({ agentId: "agent-tom",
+    sessionOptions: { invocationId: "turn-1", agentId: "agent-tom" }, });
     expect(isHostPromptSession(withTurn)).toBe(true);
     if (isHostPromptSession(withTurn)) {
       withTurn.getExecutor({ not: "messages" }).stream({}, "step-1", 1);
     }
+    await settleJournalWrites(root);
     const started = Date.now();
     let rows: Array<Record<string, unknown>> = [];
     while (Date.now() - started < 2000) {

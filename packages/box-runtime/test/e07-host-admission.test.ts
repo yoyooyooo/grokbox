@@ -14,22 +14,22 @@ const PARENT = {
   modelId: "openai/gpt-4o-mini", selectionRevision: "rev-1",
 };
 const PURPOSE_SLICES = LIVE_SLICE_PATCHES.filter((slice) => slice.id.endsWith("-purpose"));
-const OLD_SLICES = LIVE_SLICE_PATCHES.filter((slice) => !slice.id.endsWith("-purpose"));
+const WITHOUT_PURPOSE = LIVE_SLICE_PATCHES.filter((slice) => !slice.id.endsWith("-purpose"));
 
 describe("E07 Host admission D2", () => {
-  test("optional purpose slices replay with all strict profile gates; older profiles remain valid", () => {
+  test("optional purpose capability subsets use the current session entry and strict profile gates", () => {
     expect(LIVE_SLICE_PATCHES.map((slice) => slice.id)).toEqual([
-      "create-session", "agent-id", "compact-register", "compact-background-start", "compact-background-response", "managed-retry-gate", "managed-turn-retry-gate", "managed-step-error-scope", "managed-output-retry-gate", "managed-summary-retry-gate", "activity-bridge", "memory-purpose", "episode-purpose", "harness-blank", "profile-title-marker", "harness-summary", "run-queue-observation", "group-member-observation", "group-buffer-observation", "tool-execution-observation", "tool-execution-failure-observation", "alert-manager-observation", "alert-main-decision", "alert-input-cleanup", "alert-automation-decision", "alert-automation-throttle", "server-activity-live-observation", "server-activity-expiry-observation", "ownership-read-schema", "ownership-read-api", "ownership-resume-gate", "receiver-native-model-preview",
+      "create-session", "agent-id", "compact-register", "compact-background-start", "compact-background-response", "managed-retry-gate", "managed-turn-retry-gate", "managed-step-error-scope", "managed-output-retry-gate", "managed-summary-retry-gate", "activity-bridge", "memory-purpose", "episode-purpose", "native-create-local-first", "native-create-box-harness", "harness-blank", "profile-title-marker", "harness-summary", "run-queue-observation", "group-member-observation", "group-buffer-observation", "tool-execution-observation", "tool-execution-failure-observation", "alert-manager-observation", "alert-main-decision", "alert-input-cleanup", "alert-automation-decision", "alert-automation-throttle", "server-activity-live-observation", "server-activity-expiry-observation", "ownership-read-schema", "ownership-read-api", "ownership-resume-gate", "receiver-native-model-preview",
       "context-manual-shell-owner", "context-manual-trusted-options", "context-manual-native-action", "context-manual-no-business-settlement", "context-manual-summary-owner", "context-control-rpc-schema", "context-control-rpc-api",
     ]);
-    for (const slices of [OLD_SLICES.slice(0, 2), OLD_SLICES, [...OLD_SLICES, PURPOSE_SLICES[0]!], LIVE_SLICE_PATCHES]) {
+    for (const slices of [WITHOUT_PURPOSE.slice(0, 2), WITHOUT_PURPOSE, [...WITHOUT_PURPOSE, PURPOSE_SLICES[0]!], LIVE_SLICE_PATCHES]) {
       const profile = profileFromSource(LIVE_SHAPED_HOST, slices, "e07-admission");
       expect(approvedSliceSet(slices)).toBe(true);
       expect(parseReviewedProfile(profile)).toEqual(profile);
       expect(validateReviewedProfile(profile, LIVE_SHAPED_HOST).ok).toBe(true);
       expect(applyPatchProfile(LIVE_SHAPED_HOST, profile).ok).toBe(true);
     }
-    for (const slices of [PURPOSE_SLICES, [...LIVE_SLICE_PATCHES, LIVE_SLICE_PATCHES[0]!], [...OLD_SLICES, { id: "guessed-purpose" }]]) {
+    for (const slices of [PURPOSE_SLICES, [...LIVE_SLICE_PATCHES, LIVE_SLICE_PATCHES[0]!], [...WITHOUT_PURPOSE, { id: "guessed-purpose" }]]) {
       expect(approvedSliceSet(slices)).toBe(false);
     }
   });
@@ -48,8 +48,8 @@ describe("E07 Host admission D2", () => {
   });
 
   test("E07 unpatched sites and absent hook remain official, never infer purpose from text", async () => {
-    for (const config of [{ slices: OLD_SLICES }, { auxHook: null }]) {
-      const host = loadE07Host({ hook: (args) => args.originalSession, ...config });
+    for (const config of [{ slices: WITHOUT_PURPOSE }, { auxHook: null }]) {
+      const host = loadE07Host({ hook: () => undefined, ...config });
       const ctx = host.fixtureContext();
       await host.runTurnMemory({ addMemory() {} }, ["one", "two"], await host.fixtureSession(), ctx, 1, { user: "purpose: memory-extraction", agent: "purpose: episode" });
       expect(host.fixtureOfficial).toHaveLength(2);

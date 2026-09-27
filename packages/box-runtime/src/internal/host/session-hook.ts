@@ -103,10 +103,9 @@ function attachManagedAuxStreams(
 }
 
 /**
- * Select a managed session or return the supplied official session.
- * The current patch constructs originalSession before entering this hook.
- * Managed execution does not consume that session; native precondition
- * independence remains unverified. Compile identity qualifies the root contract.
+ * Select a managed session before native model/session construction.
+ * Undefined declines into the caller's unchanged native body. Selection failures
+ * remain Host-visible and cannot trigger an official inference fallback.
  */
 export function bindHostSessionHook(input: {
   mode: SeamMode;
@@ -116,7 +115,6 @@ export function bindHostSessionHook(input: {
   compile?: CompileReceipt;
   witness?: (note: HostWitnessNote) => void;
 }): (args: {
-  originalSession?: unknown;
   sessionOptions?: unknown;
   agentId?: string;
   onRequestId?: (id: string) => void;
@@ -124,8 +122,9 @@ export function bindHostSessionHook(input: {
   const witness = (note: HostWitnessNote) => { try { input.witness?.(note); } catch { /* Non-authoritative metadata. */ } };
   if (input.mode !== "route") return (args) => {
     witness({ capability: "session", stage: "session-enter", outcome: "observed" });
+    // This is the hook's native-selection return, not native factory completion.
     witness({ capability: "session", stage: "native-selected", outcome: "returned" });
-    return args.originalSession;
+    return undefined;
   };
   const appendHostJournal = (root: string, event: unknown) => appendJournal(root, event, { configurationRoot: input.durableRoot });
   const appendHostStreamRejected = (root: string, event: unknown) => appendRejection(root, event, { configurationRoot: input.durableRoot });
@@ -183,7 +182,7 @@ export function bindHostSessionHook(input: {
     }
     if (captured.kind === "official") {
       witness({ capability: "session", stage: "native-selected", outcome: "returned", agentId, turnId });
-      return args.originalSession;
+      return undefined;
     }
     witness({ capability: "session", stage: "managed-selected", outcome: "observed", agentId, turnId });
     const modelId = captured.modelId;

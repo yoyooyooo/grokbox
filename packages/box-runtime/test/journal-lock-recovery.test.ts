@@ -182,7 +182,7 @@ linuxTest("the actual packed Node Host hook recovers the dead lock and records i
     await writeFile(join(durable, "models.json"), '{"version":3,"models":{},"assignments":{"main":null,"agents":{}}}', { mode: 0o600 });
     const script = `const [root,run,symbol]=process.argv.slice(1),fs=require('node:fs/promises');
 const hook=globalThis[Symbol.for(symbol)].bindHostSessionHook({mode:'route',durableRoot:root,runRoot:run});
-hook({agentId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',sessionOptions:{invocationId:'post-crash-new-turn'},originalSession:{}});
+hook({agentId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',sessionOptions:{invocationId:'post-crash-new-turn'}});
 (async()=>{for(let i=0;i<100;i++){let body='';try{body=await fs.readFile(run+'/log/events.ndjson','utf8')}catch{}
 if(body.includes('post-crash-new-turn')){console.log('recovered');return;}await new Promise(r=>setTimeout(r,10));}process.exitCode=2;})();`;
     const cli = ensurePackedCli();

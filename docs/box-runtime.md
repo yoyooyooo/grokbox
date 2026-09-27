@@ -12,7 +12,7 @@ Server registration owns execution ownership; native Host/worker owns root, tool
 
 The reviewed Host profile applies exact source/ordered literal/transformed-hash checks. Host/preload is a pure/bounded bridge, with no Effect, SDK, SQLite, parser or provider credential loading. Modeld exposes a finite versioned local protocol; the actual [wire constant](../packages/runtime-kernel/src/internal/contract/wire.ts), schemas and package metadata are the implementation owners.
 
-Native synchronous API shape, identity, mixed-content order and validated tool material need qualification. The intended createSession-before-provider boundary conflicts with the current late hook; official-provider precondition independence is unverified (see [upstream integration](upstream-integration.md#host-session-boundary)). A private upstream corpus may explain interoperability but cannot become a public build dependency, runtime fallback or executable restoration source.
+Native synchronous API shape, identity, mixed-content order and validated tool material need qualification. The current createSession seam selects managed execution before official model/session construction; isolated current-native function tests cover unavailable official preconditions, while loaded and business behavior remain separate evidence (see [upstream integration](upstream-integration.md#host-session-boundary)). A private upstream corpus may explain interoperability but cannot become a public build dependency, runtime fallback or executable restoration source.
 
 ## 3. Read by concern
 

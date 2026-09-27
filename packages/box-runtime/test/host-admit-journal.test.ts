@@ -106,12 +106,9 @@ describe("AH-92 admit journal catch-all", () => {
     const requestIds: string[] = [];
     let caught: unknown;
     try {
-      hook({
-        originalSession: official,
-        agentId: "agent-tom",
-        onRequestId: (id) => requestIds.push(id),
-        sessionOptions: { invocationId: "turn-owned", agentId: "agent-tom", clientNonce: NONCE },
-      });
+      hook({ agentId: "agent-tom",
+      onRequestId: (id) => requestIds.push(id),
+      sessionOptions: { invocationId: "turn-owned", agentId: "agent-tom", clientNonce: NONCE }, });
     } catch (error) {
       caught = error;
     }
@@ -151,11 +148,8 @@ describe("AH-92 admit journal catch-all", () => {
     const hook = bindHostSessionHook({ mode: "route", durableRoot: root, runRoot: root });
     let caught: unknown;
     try {
-      hook({
-        originalSession: official,
-        agentId: "agent-tom",
-        sessionOptions: { invocationId: "turn-owned", clientNonce: NONCE },
-      });
+      hook({ agentId: "agent-tom",
+      sessionOptions: { invocationId: "turn-owned", clientNonce: NONCE }, });
     } catch (error) {
       caught = error;
     }

@@ -29,7 +29,7 @@ function transformedTwoSlice() {
 
 function runPatched(input: {
   source: string;
-  hook?: (args: { originalSession?: unknown; agentId?: string; sessionOptions?: { invocationId?: string; agentId?: string } }) => unknown;
+  hook?: (args: { agentId?: string; sessionOptions?: { invocationId?: string; agentId?: string } }) => unknown;
   throwFactory?: boolean;
 }) {
   const official = { getModelId: () => "official" };
@@ -56,6 +56,20 @@ function runPatched(input: {
 }
 
 describe("HSO-4 synthetic two-slice Host behavior", () => {
+  test("emission preserves method directive semantics before selecting a session", async () => {
+    const source = LIVE_SHAPED_HOST.replace('"use strict";', "")
+      .replace("createSession(onRequestId, sessionOptions) {", 'createSession(onRequestId, sessionOptions) {\n      "use strict";')
+      .replace("const inferenceOptions = { sessionOptions, onRequestId };",
+        "const inferenceOptions = { strict: (function () { return this === undefined; })() };");
+    const emitted = emitLiteralSlicePair({ source, create: unique(source, "create-session"),
+      agent: unique(source, "agent-id"), turnName: "inferenceRequestId" });
+    if (emitted.status !== "ok") throw Error(emitted.status);
+    const context = { module: { exports: {} as { api: unknown; runTurn: (host: unknown) => Promise<boolean> } },
+      createCursorInferencePromptSession: (options: { strict: boolean }) => options.strict };
+    runInNewContext(emitted.replay.source, context);
+    expect(await context.module.exports.runTurn({ getConversationId: () => "official", subagentModelId: "official",
+      inference: context.module.exports.api })).toBe(true);
+  });
   test("decline keeps the official session; Agent/TURN reach the hook; no extra loops", async () => {
     const source = transformedTwoSlice();
     const entries: unknown[] = [];
@@ -69,7 +83,6 @@ describe("HSO-4 synthetic two-slice Host behavior", () => {
     expect(await declined.run("canary")).toBe(declined.official);
     expect(declined.counts).toEqual({ factory: 1, extraTools: 0, extraAgents: 0 });
     expect(entries).toMatchObject([{
-      originalSession: declined.official,
       agentId: "canary",
       sessionOptions: { invocationId: "inv-live-shaped", agentId: "canary" },
     }]);
@@ -84,11 +97,11 @@ describe("HSO-4 synthetic two-slice Host behavior", () => {
       },
     });
     expect(await overlay.run("canary")).toBe(managed);
-    expect(overlay.counts.factory).toBe(1);
+    expect(overlay.counts.factory).toBe(0);
     expect(taken).toMatchObject([{ agentId: "canary", sessionOptions: { invocationId: "inv-live-shaped" } }]);
   });
 
-  test("after-factory wrap: official factory throw blocks managed overlay (honest of current emit)", async () => {
+  test("managed selection precedes an unavailable official factory; decline still observes its failure", async () => {
     const source = transformedTwoSlice();
     let hooked = 0;
     const f = runPatched({
@@ -99,8 +112,14 @@ describe("HSO-4 synthetic two-slice Host behavior", () => {
         return { getModelId: () => "managed" };
       },
     });
-    await expect(f.run("canary")).rejects.toThrow("official factory unavailable");
-    expect(hooked).toBe(0);
-    expect(f.counts.factory).toBe(1);
+    expect(await f.run("canary")).toMatchObject({ getModelId: expect.any(Function) });
+    expect(hooked).toBe(1);
+    expect(f.counts.factory).toBe(0);
+    const declined = runPatched({ source, throwFactory: true, hook: () => undefined });
+    await expect(declined.run("official")).rejects.toThrow("official factory unavailable");
+    expect(declined.counts.factory).toBe(1);
+    const rejected = runPatched({ source, hook: () => { throw Error("managed selection unavailable"); } });
+    await expect(rejected.run("canary")).rejects.toThrow("managed selection unavailable");
+    expect(rejected.counts.factory).toBe(0);
   });
 });

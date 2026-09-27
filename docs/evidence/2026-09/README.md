@@ -178,3 +178,4 @@
 - [2026-09-27：已知失败 Host 的单次受控退场](2026-09-27-owned-host-retirement.md)
 - [2026-09-27：原失败采用的官方回程与退场审查修复](2026-09-27-original-adoption-restored.md)
 - [2026-09-27：当前来源、入口识别与首次失败证据](2026-09-27-current-source-and-entrypoint.md)
+- [2026-09-27：在官方前置条件之前选择 managed session](2026-09-27-early-session-entry.md)

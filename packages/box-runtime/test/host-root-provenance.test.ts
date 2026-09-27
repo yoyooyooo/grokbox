@@ -66,14 +66,11 @@ describe("profile-bound Host root provenance", () => {
           binding: TEST_BINDING,
           compile: compileOf(profileId),
         });
-        const managed = hook({
-          originalSession: { kind: "official" },
-          agentId: "agent-tom",
-          sessionOptions: {
-            invocationId: `TURN_${step}`,
-            ...(independentRoot ? { independentRoot } : {}),
-          },
-        });
+        const managed = hook({ agentId: "agent-tom",
+        sessionOptions: {
+          invocationId: `TURN_${step}`,
+          ...(independentRoot ? { independentRoot } : {}),
+        }, });
         expect(isHostPromptSession(managed)).toBe(true);
         if (!isHostPromptSession(managed)) throw new Error("session");
         const handle = managed.getExecutor(messages).stream({}, `STEP_${step}`);

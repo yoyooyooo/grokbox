@@ -72,7 +72,7 @@ export async function compactionFixture(origin: string, options: { small?: boole
   const run = async (prompt: string, args?: Record<string, unknown>) => {
     const operation = control.manualOptions(host, args);
     if (!operation) { state.userInputs++; return; }
-    const session = bindHostSessionHook(input)({ agentId: C_BOT, sessionOptions: { agentId: C_BOT, invocationId: operation.operationId }, originalSession: { getExecutor() { throw Error("unexpected-native-fallback"); } } });
+    const session = bindHostSessionHook(input)({ agentId: C_BOT, sessionOptions: { agentId: C_BOT, invocationId: operation.operationId } });
     if (!isHostPromptSession(session)) throw Error("fixture-managed-session");
     const executor = session.getExecutor(current);
     try {

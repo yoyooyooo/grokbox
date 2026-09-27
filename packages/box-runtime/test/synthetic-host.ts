@@ -1,4 +1,5 @@
 import type { SlicePatch } from "../src/internal/host/profile.ts";
+import { sessionEntryReplacement } from "../src/internal/host/live-slices.ts";
 
 export const SYNTHETIC_HOST = `"use strict";
 function createSession(sessionOptions) {
@@ -21,9 +22,8 @@ export const SYNTHETIC_SLICES: readonly SlicePatch[] = [
     id: "create-session",
     startAnchor: "function createSession(sessionOptions) {",
     endAnchor: "function runTurn(host) {",
-    find: "  return session;\n",
-    replacement:
-      "  const __grokbox_hook = globalThis[Symbol.for(\"grokbox.box-runtime.route-session.v1\")];\n  return typeof __grokbox_hook === \"function\" ? __grokbox_hook({ originalSession: session, sessionOptions, agentId: sessionOptions.agentId }) : session;\n",
+    find: "function createSession(sessionOptions) {",
+    replacement: sessionEntryReplacement("function createSession(sessionOptions) {", "undefined"),
   },
   {
     id: "agent-id",

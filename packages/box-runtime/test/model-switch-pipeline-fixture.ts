@@ -90,7 +90,7 @@ export async function exerciseModelSwitchPipeline(persistence?: PipelineCheckpoi
     return { getState: () => structuredClone(state) };
   } };
   const hook = bindHostSessionHook({ mode: "route", durableRoot, runRoot, binding, compile });
-  const open = (turnId: string) => hook({ agentId: AGENT, sessionOptions: { invocationId: turnId }, originalSession });
+  const open = (turnId: string) => hook({ agentId: AGENT, sessionOptions: { invocationId: turnId } }) ?? originalSession;
   try {
     expect(open("official-first")).toBe(originalSession);
     expect(requests).toHaveLength(0);

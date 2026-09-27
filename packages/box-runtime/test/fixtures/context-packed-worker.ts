@@ -68,7 +68,7 @@ try {
     const pending: { role: string; content: string; providerOptions: unknown } = { role: "user", content: `NEXT_INPUT_${mode}_${cycle}`, providerOptions: { owned: { nonce: `${mode}-${cycle}` } } };
     messages.push(pending);
     const session: any = factory.bindHostSessionHook({ mode: "route", durableRoot, runRoot, binding, compile })({ agentId: A,
-      sessionOptions: { agentId: A, invocationId: turnId }, originalSession: { getExecutor() { throw Error("official fallback forbidden"); } } });
+      sessionOptions: { agentId: A, invocationId: turnId } });
     assert(session && typeof session.getExecutor === "function");
     const executor = session.getExecutor(messages);
     const root = { getMessages: () => executor.getMessages(), getState: () => executor.getState(), clearMessages: () => executor.clearMessages(), appendMessages: (rows: unknown[]) => executor.appendMessages(rows) };

@@ -33,7 +33,7 @@ describe("HSO-4 literal SlicePatch emit", () => {
     const replay = applyPatchProfile(LIVE_SHAPED_HOST, emitted.profile);
     expect(replay.ok).toBe(true);
     if (!replay.ok) return;
-    expect(replay.source).toContain("__grokbox_original");
+    expect(replay.source).toContain("const __grokbox_hook");
     expect(replay.source).toContain("agentId: host.getConversationId()");
     expect(replay.source).toContain("invocationId: inferenceRequestId");
     expect(replay.source).toContain("clientNonce: options2.clientNonce");

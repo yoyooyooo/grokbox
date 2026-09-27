@@ -28,7 +28,7 @@ for (const shape of ["missing", "malformed", "invalid-schema", "oversized", "dir
       const official = { getExecutor() { officialCalls++; throw new Error("official_inference_forbidden"); } };
       const hook = bindHostSessionHook({ mode: "route", durableRoot: root, runRoot: join(root, "run") });
       let caught: unknown;
-      try { hook({ agentId: "owned-agent", sessionOptions: { invocationId: "owned-turn" }, originalSession: official }); }
+      try { hook({ agentId: "owned-agent", sessionOptions: { invocationId: "owned-turn" } }); }
       catch (error) { caught = error; }
       expect(caught).toMatchObject({ code: "runtime_config_invalid" });
       expect(isHostManagedFailure(caught)).toBe(true);
@@ -38,10 +38,10 @@ for (const shape of ["missing", "malformed", "invalid-schema", "oversized", "dir
       expect(() => captureHostSelection(root, "owned-agent")).toThrow();
       // Known native auxiliary sessions have no managed Agent identity. They
       // must not acquire a dependency on the main-model config file.
-      expect(hook({ originalSession: official })).toBe(official);
+      expect(hook({})).toBeUndefined();
       expect(captureHostManagedSelection(root, undefined)).toEqual({ kind: "official" });
       for (const mode of ["observe", "identity"] as const) {
-        expect(bindHostSessionHook({ mode, durableRoot: root, runRoot: root })({ agentId: "owned-agent", originalSession: official })).toBe(official);
+        expect(bindHostSessionHook({ mode, durableRoot: root, runRoot: root })({ agentId: "owned-agent" })).toBeUndefined();
       }
       if (before !== null) expect(await readFile(path, "utf8")).toBe(before);
     } finally { await rm(root, { recursive: true, force: true }); }
@@ -54,14 +54,14 @@ test("invalid future selection never reclassifies an already captured managed se
     await writeFile(join(root, "models.json"), JSON.stringify(file));
     const original = { kind: "owned-official" };
     const hook = bindHostSessionHook({ mode: "route", durableRoot: root, runRoot: root });
-    const managed = hook({ agentId: "owned-agent", sessionOptions: { invocationId: "turn-before" }, originalSession: original });
+    const managed = hook({ agentId: "owned-agent", sessionOptions: { invocationId: "turn-before" } });
     if (!isHostPromptSession(managed)) throw new Error("expected_managed_capture");
     expect(managed.getModelId()).toBe(STUB_ECHO_MODEL_ID);
     await writeFile(join(root, "models.json"), "{");
-    expect(() => hook({ agentId: "owned-agent", sessionOptions: { invocationId: "turn-after" }, originalSession: original })).toThrow();
+    expect(() => hook({ agentId: "owned-agent", sessionOptions: { invocationId: "turn-after" } })).toThrow();
     expect(managed.getModelId()).toBe(STUB_ECHO_MODEL_ID);
     await writeFile(join(root, "models.json"), JSON.stringify({ ...file, assignments: { main: null, agents: {} } }));
-    expect(hook({ agentId: "owned-agent", sessionOptions: { invocationId: "turn-reset" }, originalSession: original })).toBe(original);
+    expect(hook({ agentId: "owned-agent", sessionOptions: { invocationId: "turn-reset" } })).toBeUndefined();
     expect(managed.getModelId()).toBe(STUB_ECHO_MODEL_ID);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

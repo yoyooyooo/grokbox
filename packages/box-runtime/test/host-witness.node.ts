@@ -163,7 +163,7 @@ test("execution withdrawal keeps observation; explicit observation withdrawal ca
 
 test("diagnostic callback failures preserve native selection, compact preflight result and idempotent disposal", async () => {
   const native = { preserved: true }, bad = () => { throw Error("synthetic observer failure"); };
-  assert.equal(bindHostSessionHook({ mode: "identity", durableRoot: "/unused", runRoot: "/unused", witness: bad })({ originalSession: native }), native);
+  assert.equal(bindHostSessionHook({ mode: "identity", durableRoot: "/unused", runRoot: "/unused", witness: bad })({}), undefined);
   const notes: HostWitnessNote[] = [], result = { unchanged: true }, root = {};
   const capture = { orchestrator: { handleSummarization: async () => {} }, ctx: {}, stateHandler: {}, rootPromptExecutor: root,
     invocationId: randomUUID(), turnId: randomUUID(), agentId: randomUUID(), stepClosed: () => false };

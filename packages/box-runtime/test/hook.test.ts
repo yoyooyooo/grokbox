@@ -22,7 +22,7 @@ describe("compile hook", () => {
     expect(hit.transformed).toBe(true);
     expect(hit.content).toContain("agentId: host.getConversationId()");
     expect(hit.content).toContain("invocationId: inferenceRequestId");
-    expect(hit.content).toContain("originalSession: session");
+    expect(hit.content).toContain("const __grokbox_hook");
 
     const other = transformCompileInput({
       content: SYNTHETIC_HOST,

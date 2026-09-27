@@ -79,8 +79,8 @@ describe("offline reviewed profile authoring", () => {
     expect(applied.source).toContain("agentId: host.getConversationId()");
     expect(applied.source).toContain("invocationId: inferenceRequestId");
     expect(applied.source).toContain("if (__grokbox_session !== undefined) return __grokbox_session;");
-    expect(applied.source).toContain("const __grokbox_original = createCursorInferencePromptSession(inferenceOptions);");
-    expect(applied.source.indexOf("const inferenceOptions")).toBeLessThan(applied.source.indexOf("const __grokbox_original"));
+    expect(applied.source).toContain("return createCursorInferencePromptSession(inferenceOptions);");
+    expect(applied.source.indexOf("const __grokbox_hook")).toBeLessThan(applied.source.indexOf("const inferenceOptions"));
     expect(written.sourceSha256).toBe(hash(LIVE_SHAPED_HOST));
     expect(written.transformedSourceSha256).toBe(hash(applied.source));
     expect(await fs.readdir(f.destDir)).toEqual(["reviewed.json"]);
@@ -114,7 +114,7 @@ describe("offline reviewed profile authoring", () => {
   test.each([
     ["missing anchor", SYNTHETIC_HOST.replace("function createSession(sessionOptions)", "function other()")],
     ["duplicate anchors", SYNTHETIC_HOST + SYNTHETIC_HOST],
-    ["duplicate find", SYNTHETIC_HOST.replace("  return session;\n", "  return session;\n  return session;\n")],
+    ["duplicate find", SYNTHETIC_HOST.replace('    modelId: "official-main",\n', '    modelId: "official-main",\n    modelId: "official-main",\n')],
     ["invalid UTF-8", Buffer.concat([Buffer.from(SYNTHETIC_HOST), Buffer.from([0xff])])],
   ])("refuses %s source without publishing", async (_name, source) => {
     const f = await seeded();

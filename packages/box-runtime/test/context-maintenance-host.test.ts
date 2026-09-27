@@ -64,7 +64,7 @@ for (const scenario of ["success", "credential-rotation", "summary-503", "main-5
     const compile = { profileId: "t21-state-root", profileSha256: h("e"), sourceSha256: h("b"), transformedSha256: h("d") };
     const turnId = "ordinary-next-turn", stepId = "ordinary-next-step";
     const session = bindHostSessionHook({ mode: "route", durableRoot, runRoot, binding, compile, witness })({ agentId: A,
-      sessionOptions: { agentId: A, invocationId: turnId }, originalSession: { getExecutor() { throw new Error("official_fallback_forbidden"); } } });
+      sessionOptions: { agentId: A, invocationId: turnId } });
     if (!isHostPromptSession(session)) throw new Error("managed session missing");
     const oldMessages: any[] = [{ role: "system", content: "Keep facts and answer the newest request." },
       ...Array.from({ length: 48 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", content: `FACT_${i}=value${i}; ${"ordinary long history ".repeat(650)}`,

@@ -21,18 +21,21 @@ function auxExecutor(purpose: "memory-extraction" | "episode", indent: string): 
   return `${indent}executor: ((__grokbox_executor) => {\n${indent}  const __grokbox_aux = globalThis[Symbol.for("${HOST_AUX_SYMBOL}")];\n${indent}  return typeof __grokbox_aux === "function"\n${indent}    ? __grokbox_aux({ executor: __grokbox_executor, purpose: "${purpose}", turnId: ctx.get(requestIdKey), ctx }) ?? __grokbox_executor\n${indent}    : __grokbox_executor;\n${indent}})(session.getExecutor()),\n`;
 }
 
+/** Shared current seam: selection runs before any native model/session precondition. */
+export function sessionEntryReplacement(head: string, onRequestId = "onRequestId", sessionOptions = "sessionOptions", nl = "\n"): string {
+  return `${head}${nl}      const __grokbox_hook = globalThis[Symbol.for("${ROUTE_SESSION_SYMBOL}")];${nl}      if (typeof __grokbox_hook === "function") {${nl}        const __grokbox_session = __grokbox_hook({ sessionOptions: ${sessionOptions}, agentId: ${sessionOptions}?.agentId, onRequestId: ${onRequestId} });${nl}        if (__grokbox_session !== undefined) return __grokbox_session;${nl}      }`;
+}
+
 /** Unique anchors observed on current Grok Box Host bundles. SHA is computed at runtime. */
 export const LIVE_SLICE_PATCHES: readonly SlicePatch[] = [
   {
     id: "create-session",
     startAnchor: "createSession(onRequestId, sessionOptions) {",
     endAnchor: "    },\n    recordPostTurnLabeling(args) {",
-    // Construct the native session first for exact official passthrough when
-    // unassigned. Managed aux calls require the separately qualified purpose.
-    // Undefined still declines to the official session. STEP streams stay managed.
-    find: "      return createCursorInferencePromptSession(inferenceOptions);\n",
-    replacement:
-      `      const __grokbox_original = createCursorInferencePromptSession(inferenceOptions);\n      const __grokbox_hook = globalThis[Symbol.for("${ROUTE_SESSION_SYMBOL}")];\n      if (typeof __grokbox_hook === "function") {\n        const __grokbox_session = __grokbox_hook({ originalSession: __grokbox_original, sessionOptions, agentId: sessionOptions?.agentId, onRequestId });\n        if (__grokbox_session !== undefined) return __grokbox_session;\n      }\n      return __grokbox_original;\n`,
+    // An unassigned selection declines into the untouched native body.
+    // Assigned selection returns before native model resolution or construction.
+    find: "createSession(onRequestId, sessionOptions) {",
+    replacement: sessionEntryReplacement("createSession(onRequestId, sessionOptions) {"),
   },
   {
     id: "agent-id",

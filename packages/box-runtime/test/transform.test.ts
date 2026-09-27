@@ -40,24 +40,24 @@ async function liveSnapshot(): Promise<{ digest: string | null; pids: string[] }
 }
 
 describe("offline Host transform", () => {
-  test("two unique slices transform a copy and the hook returns the original session", () => {
+  test("two unique slices select before construction and native decline retains the session", () => {
     const profile = profileFromSource(SYNTHETIC_HOST, SYNTHETIC_SLICES);
     const result = applyPatchProfile(SYNTHETIC_HOST, profile);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.source).toContain("agentId: host.getConversationId()");
     expect(result.source).toContain("invocationId: inferenceRequestId");
-    expect(result.source).toContain("originalSession: session");
+    expect(result.source).toContain("const __grokbox_hook");
 
     const module = { exports: {} as { runTurn: (host: { getConversationId: () => string }) => { kind: string; sessionOptions: { agentId: string; invocationId: string } } } };
-    const calls: Array<{ originalSession: object; agentId?: string; sessionOptions?: { invocationId?: string } }> = [];
+    const calls: Array<{ agentId?: string; sessionOptions?: { invocationId?: string } }> = [];
     const sandbox = createContext({
       module,
       exports: module.exports,
       Symbol,
-      hook(args: { originalSession: object; agentId?: string }) {
+      hook(args: { agentId?: string }) {
         calls.push(args);
-        return args.originalSession;
+        return undefined;
       },
     });
     runInContext(
@@ -69,7 +69,7 @@ describe("offline Host transform", () => {
     expect(session.sessionOptions.agentId).toBe("agent-tom");
     expect(session.sessionOptions.invocationId).toBe("inv-synth");
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.originalSession).toBe(session);
+    expect(calls[0]).not.toHaveProperty("originalSession");
     expect(calls[0]?.agentId).toBe("agent-tom");
     expect(calls[0]?.sessionOptions?.invocationId).toBe("inv-synth");
   });

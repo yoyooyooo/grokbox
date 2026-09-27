@@ -83,7 +83,7 @@ for (const failureAt of ["summary", "main"] as const) test(`HTTP 503 at ${failur
     const beginTurn = (turnId: string, stepId: string) => {
       scope?.[Symbol.dispose]();
       const session = bindHostSessionHook({ mode: "route", durableRoot, runRoot, binding, compile })({ agentId: AGENT,
-        sessionOptions: { agentId: AGENT, invocationId: turnId }, originalSession: { getExecutor() { throw Error("official-fallback-forbidden"); } } });
+        sessionOptions: { agentId: AGENT, invocationId: turnId } });
       if (!isHostPromptSession(session)) throw Error("managed session missing");
       const executor = session.getExecutor(current);
       const root = { getMessages: () => executor.getMessages(), getState: () => executor.getState(), clearMessages: () => executor.clearMessages(),

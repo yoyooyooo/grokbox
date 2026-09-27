@@ -39,9 +39,9 @@ The [2026-09-18 report](evidence/2026-09/2026-09-18-continuity-native-checkpoint
 
 ## Host session boundary
 
-**Unresolved implementation conflict:** the intended managed interception precedes official-provider initialization, but the current literal patch and structural emitter construct the official session before calling the hook. `host-entry.test.ts` checks the latter with fixtures; it does not prove managed execution is independent of failing official-provider preconditions.
+The managed seam selects at entry to the synchronous factory method, before official model resolution or session construction. The literal recipe and structural emitter share that template; the emitter preserves a method's directive prologue. An unassigned Bot (or non-route mode) returns `undefined` from the hook and proceeds through the untouched native body. A selected managed session returns immediately, and selection failures stay failures without an official fallback.
 
-The managed hook does not use that official session. Restoring early selection requires qualifying both emitters, passthrough and current native profiles; accepting the dependency instead is a product decision. Do not treat current code or its positive test as resolving this conflict.
+`host-entry.test.ts` and the two-slice tests cover unavailable official factories, passthrough, thrown selection and directive behavior. The source-pinned `native-receiver-model.test.ts` executes the current native functions with the real managed hook and unavailable official model/session preconditions; it also retains original native model-preview checks. That is isolated function evidence, not a loaded Host or business-window result. Requalify the final profile on each native source change.
 
 The local session exposes synchronous stream handles, async `fullStream` and executor/state access. `host-fullstream.test.ts` and `host-executor-state.test.ts` exercise those fixture contracts, including isolated executors. See [runtime](box-runtime.md) and [Host research limits](maintainers/host-inbound-agent-loop.md) before inferring native compatibility.
 

@@ -26,8 +26,8 @@ for (const version of [1, 2]) test(`model document v${version} is preserved but 
     expect(() => captureHostManagedSelection(root, A)).toThrow();
     const native = { getExecutor() { throw Error("native-fallback-forbidden"); } };
     const hook = bindHostSessionHook({ mode: "route", durableRoot: root, runRoot: root });
-    expect(() => hook({ agentId: A, sessionOptions: { invocationId: "blocked-turn" }, originalSession: native })).toThrow();
-    expect(hook({ originalSession: native })).toBe(native);
+    expect(() => hook({ agentId: A, sessionOptions: { invocationId: "blocked-turn" } })).toThrow();
+    expect(hook({})).toBeUndefined();
     const r = await captureCli(["models", "check"], { boxRuntimeRoot: root, configDir: root, env: {}, runCommand: async () => { throw Error("no-process-work"); } });
     expect(r.code).not.toBe(0); expect(await readFile(join(root, "models.json"), "utf8")).toBe(bytes);
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -71,12 +71,12 @@ test("an old future document cannot revoke a captured TURN or reinterpret retain
   try {
     await store.saveModels(parseModelsFile(current));
     const original = { native: true }, hook = bindHostSessionHook({ mode: "route", durableRoot: root, runRoot: root });
-    const captured = hook({ agentId: A, sessionOptions: { invocationId: "captured-current" }, originalSession: original });
+    const captured = hook({ agentId: A, sessionOptions: { invocationId: "captured-current" } });
     if (!isHostPromptSession(captured)) throw Error("current-capture-missing");
     const requestId = randomUUID(), receipt = await submitModelChange({ store, requestId, change: { kind: "bot-selection", agentId: A, selection: { kind: "native" } } });
     const old = JSON.stringify({ ...current, version: 2 }); await writeFile(join(root, "models.json"), old, { mode: 0o600 });
     expect(captured.getModelId()).toBe("stub/echo");
-    expect(() => hook({ agentId: A, sessionOptions: { invocationId: "new-after-old-file" }, originalSession: original })).toThrow();
+    expect(() => hook({ agentId: A, sessionOptions: { invocationId: "new-after-old-file" } })).toThrow();
     expect(await Effect.runPromise(readModelOperation(MODEL_CALLER, requestId).pipe(Effect.provide(modelConfigurationLayer(store))))).toEqual(receipt);
     await expect(submitModelChange({ store, change: { kind: "bot-selection", agentId: A, selection: { kind: "native" } } })).rejects.toBeDefined();
     expect(await readFile(join(root, "models.json"), "utf8")).toBe(old);

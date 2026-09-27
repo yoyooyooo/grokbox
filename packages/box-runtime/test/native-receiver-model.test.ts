@@ -1,19 +1,28 @@
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
 import { NATIVE_HOST_BUNDLE as LIVE_HOST_BUNDLE } from "./native-host-source.ts";
 import { HOST_RECEIVER_MODEL_SYMBOL } from "../src/internal/host/receiver-model.node.ts";
-import { profileFromSource, applyPatchProfile } from "../src/internal/host/profile.ts";
+import { profileFromSource, applyPatchProfile, ROUTE_SESSION_SYMBOL } from "../src/internal/host/profile.ts";
 import { nativeReceiverModelRevision } from "@grokbox/runtime-kernel/observation";
+import { bindHostSessionHook } from "../src/internal/host/session-hook.ts";
+import { isHostPromptSession } from "../src/internal/host/session.ts";
+import { settleJournalWrites } from "../src/internal/host/terminal-journal.node.ts";
 
 // A separate explicit qualification pin; do not silently renew unrelated native
 // probes or make this private bundle a public build/test dependency.
 const SOURCE_SHA = "7acd9a7e9272833758f2f7aad72a4a9146da7f6098a692fb4f60e16390978797";
 const nativeTest = test.skipIf(process.env.GROKBOX_TEST_NATIVE_HOST !== "1");
-nativeTest("source-pinned automation preview follows original native model selection without starting a session or marking experiment application", () => {
+nativeTest("source-pinned native preview is preserved and managed entry precedes unavailable official model/session preconditions", async () => {
+  const root = mkdtempSync(join(tmpdir(), "grokbox-native-session-entry-"));
+  writeFileSync(join(root, "models.json"), JSON.stringify({ version: 3, models: {}, assignments: { main: null,
+    agents: { "managed-canary": { modelId: "stub/echo" } } } }), { mode: 0o600 });
+  const managedHook = bindHostSessionHook({ mode: "route", durableRoot: root, runRoot: root });
   const source = readFileSync(LIVE_HOST_BUNDLE, "utf8");
   expect(createHash("sha256").update(source).digest("hex")).toBe(SOURCE_SHA);
   const profile = profileFromSource(source, LIVE_SLICE_PATCHES, "receiver-native-preview");
@@ -45,26 +54,39 @@ nativeTest("source-pinned automation preview follows original native model selec
   for (const state of [undefined, { active: true, arm: "control" }, { active: true, arm: "treatment" }]) {
     for (const envOverride of [undefined, "env-override"]) {
       let getter: (() => { mockConfigured: boolean; requestedModel?: unknown }) | undefined;
-      let sessions = 0, applied = 0, authCalls = 0;
+      let sessions = 0, applied = 0, authCalls = 0, nativeModelReads = 0, unavailable = false;
+      const nativeModel = <T>(value: T): T => { nativeModelReads++; if (unavailable) throw Error("official-precondition-unavailable"); return value; };
       const capture = { capture: (read: typeof getter) => { getter = read; } };
       const scope: Record<string | symbol, unknown> = { RequestedModel, RequestedModel_ModelParameterValue: Parameter,
         SAND_DEFAULT_MODEL_ID: "fallback", SAND_DEFAULT_MODEL_SELECTION: selection("fallback"),
         SAND_MODEL_EXPERIMENT_OPUS_MEDIUM_SELECTION: selection("control"), SAND_AUTOMATION_REQUEST_SOURCE: "automation",
         sandComputerUseModelSchema: { safeParse: () => ({ success: false }) }, sandBrowserUseModelSchema: { safeParse: () => ({ success: false }) },
         createSandAttachedMediaUrlProvider: () => ({}), resolveComputerUseModelSelection: (input: { storedModel: unknown }) => input.storedModel,
-        createCursorInferencePromptSession: (input: { requestedModel: unknown }) => { sessions++; return { model: input.requestedModel }; },
+        createCursorInferencePromptSession: (input: { requestedModel: unknown }) => { if (unavailable) throw Error("official-precondition-unavailable"); sessions++; return { model: input.requestedModel }; },
+      };
+      scope[Symbol.for(ROUTE_SESSION_SYMBOL)] = (args: Parameters<typeof managedHook>[0]) => {
+        if (args.agentId === "rejected-canary") throw Error("managed-selection-unavailable");
+        return managedHook(args);
       };
       scope[Symbol.for(HOST_RECEIVER_MODEL_SYMBOL)] = capture;
       const build = runInNewContext(`${[...functions.values()].join("\n")}\ncreateHostInference`, scope,
         { timeout: 2000, contextCodeGeneration: { strings: false, wasm: false } });
       const inference = build({ environment: { backend: {}, agentModelOverride: envOverride },
-        settings: { getAgentDefaultModel: () => selection("stored"), getComputerUseModel: () => undefined },
-        experiments: { getSandModelExperimentState: () => state, getConfiguredDefaultModel: () => selection("chat-treatment"),
-          getConfiguredAutomationsModel: () => selection("automation-treatment"), hasHydratedStatsigUserId: () => true,
+        settings: { getAgentDefaultModel: () => nativeModel(selection("stored")), getComputerUseModel: () => undefined },
+        experiments: { getSandModelExperimentState: () => nativeModel(state), getConfiguredDefaultModel: () => nativeModel(selection("chat-treatment")),
+          getConfiguredAutomationsModel: () => nativeModel(selection("automation-treatment")), hasHydratedStatsigUserId: () => true,
           getComputerUseModelOverride: () => undefined, getBrowserUseModelOverride: () => undefined, checkFeatureGate: () => false },
         auth: { getAccessToken: () => { authCalls++; throw Error("no-auth"); } }, onModelExperimentApplied: () => { applied++; } });
       expect(typeof getter).toBe("function"); const preview = getter!();
       expect(preview.mockConfigured).toBe(false); expect(sessions).toBe(0); expect(applied).toBe(0); expect(authCalls).toBe(0);
+      const beforeManaged = nativeModelReads;
+      unavailable = true;
+      const managed = inference.createSession(undefined, { agentId: "managed-canary", invocationId: "isolated-native-turn", requestSource: "automation" });
+      expect(isHostPromptSession(managed)).toBe(true); expect(managed.getModelId()).toBe("stub/echo");
+      expect(() => inference.createSession(undefined, { agentId: "rejected-canary" })).toThrow("managed-selection-unavailable");
+      expect(nativeModelReads).toBe(beforeManaged); expect(sessions).toBe(0); expect(applied).toBe(0); expect(authCalls).toBe(0);
+      expect(() => inference.createSession(undefined, { agentId: "official-canary" })).toThrow("official-precondition-unavailable");
+      unavailable = false; applied = 0;
       const actual = inference.createSession(undefined, { requestSource: "automation" });
       expect(nativeReceiverModelRevision(preview.requestedModel)).not.toBeNull();
       expect(nativeReceiverModelRevision(actual.model)).toBe(nativeReceiverModelRevision(preview.requestedModel));
@@ -75,4 +97,5 @@ nativeTest("source-pinned automation preview follows original native model selec
       }
     }
   }
+  await settleJournalWrites(root);
 }, 30000);

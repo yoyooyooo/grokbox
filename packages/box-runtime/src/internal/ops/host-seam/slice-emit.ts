@@ -1,5 +1,6 @@
 import { countOccurrences, sha256Text } from "@grokbox/runtime-kernel/hash";
-import { LIVE_SLICE_PATCHES } from "../../host/live-slices.ts";
+import * as acorn from "acorn";
+import { LIVE_SLICE_PATCHES, sessionEntryReplacement } from "../../host/live-slices.ts";
 import {
   applyPatchProfile,
   profileFromSource,
@@ -10,7 +11,7 @@ import {
 } from "../../host/profile.ts";
 import type { ShapeCandidate } from "./shape-worker.ts";
 
-export const SLICE_EMIT_REVISION = "hso-4.slice-emit.v1";
+export const SLICE_EMIT_REVISION = "hso-4.slice-emit.v2";
 
 export type SliceEmitOk = {
   status: "ok";
@@ -82,17 +83,23 @@ export function refuseConflictingVariants(patches: readonly SlicePatch[]): Slice
   return [...byKey.values()];
 }
 
-function wrapFactoryReturn(find: string, p0: string, p1: string): string | undefined {
-  const match = find.match(/^(\s*)return (createCursorInferencePromptSession\([^;]+?\));\r?\n$/);
-  if (!match) return undefined;
-  const indent = match[1]!;
-  const call = match[2]!;
-  const live = LIVE_SLICE_PATCHES.find((slice) => slice.id === "create-session");
-  if (live && p0 === "onRequestId" && p1 === "sessionOptions" && find === live.find) {
-    return live.replacement;
-  }
-  const nl = find.endsWith("\r\n") ? "\r\n" : "\n";
-  return `${indent}const __grokbox_original = ${call};${nl}${indent}const __grokbox_hook = globalThis[Symbol.for("${ROUTE_SESSION_SYMBOL}")];${nl}${indent}if (typeof __grokbox_hook === "function") {${nl}${indent}  const __grokbox_session = __grokbox_hook({ originalSession: __grokbox_original, sessionOptions: ${p1}, agentId: ${p1}?.agentId, onRequestId: ${p0} });${nl}${indent}  if (__grokbox_session !== undefined) return __grokbox_session;${nl}${indent}}${nl}${indent}return __grokbox_original;${nl}`;
+function sessionEntryPrefix(window: string): string | undefined {
+  // Parse only the bounded candidate method, preserving its directive prologue.
+  if (Buffer.byteLength(window, "utf8") > 64 * 1024) return undefined;
+  try {
+    const parsed = acorn.parse(`({${window}})`, { ecmaVersion: 2022, sourceType: "script" });
+    const statement = parsed.body[0];
+    if (parsed.body.length !== 1 || statement?.type !== "ExpressionStatement" || statement.expression.type !== "ObjectExpression") return undefined;
+    const property = statement.expression.properties[0];
+    if (statement.expression.properties.length !== 1 || property?.type !== "Property" || property.value.type !== "FunctionExpression") return undefined;
+    const body = property.value.body;
+    let end = body.start + 1;
+    for (const item of body.body) {
+      if (item.type !== "ExpressionStatement" || !("directive" in item) || typeof item.directive !== "string") break;
+      end = item.end;
+    }
+    return window.slice(0, end - 2); // Remove only the synthetic object-expression prefix.
+  } catch { return undefined; }
 }
 
 function emitCreate(source: string, create: ShapeCandidate): SlicePatch | SliceEmitFail {
@@ -141,12 +148,12 @@ function emitCreate(source: string, create: ShapeCandidate): SlicePatch | SliceE
     : LIVE_SLICE_PATCHES.find((slice) => slice.id === "create-session")!.endAnchor;
   const factory = window.match(/return createCursorInferencePromptSession\([^;]+?\);\r?\n/);
   if (!factory) return fail("unsupported-binding-shape", ["unsupported-binding-shape", "factory_return"]);
-  const find = factory[0]!;
-  if (countOccurrences(window, find) !== 1) {
+  if (countOccurrences(window, factory[0]!) !== 1) {
     return fail("unsupported-binding-shape", ["find-duplicate"]);
   }
-  const replacement = wrapFactoryReturn(find, params[0]!, params[1]!);
-  if (!replacement) return fail("unsupported-binding-shape", ["unsupported-binding-shape", "wrap"]);
+  const find = sessionEntryPrefix(window);
+  if (!find) return fail("unsupported-binding-shape", ["session-entry-prefix"]);
+  const replacement = sessionEntryReplacement(find, params[0]!, params[1]!, window.includes("\r\n") ? "\r\n" : "\n");
   return {
     id: "create-session",
     startAnchor,

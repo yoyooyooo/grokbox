@@ -131,7 +131,7 @@ for (const failure of ["none", "summary-503", "checkpoint-unknown", "append-unkn
         if (!operation) { realInputs.push({ prompt, options: runOptions }); return { acceptedByOwnedShell: true }; }
         nativeCalls.push({ prompt, operationId: operation.operationId });
         const session = bindHostSessionHook(options)({ agentId: AGENT,
-          sessionOptions: { agentId: AGENT, invocationId: operation.operationId }, originalSession: { getExecutor() { throw Error("official-fallback-forbidden"); } } });
+          sessionOptions: { agentId: AGENT, invocationId: operation.operationId } });
         if (!isHostPromptSession(session)) throw Error("managed session unavailable");
         const executor = session.getExecutor(current);
         const root = { getMessages: () => executor.getMessages(), getState: () => executor.getState(), clearMessages: () => executor.clearMessages(),

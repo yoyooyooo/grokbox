@@ -162,9 +162,7 @@ for (const errorStatus of [400, 401] as const) {
         mode: "route", durableRoot, runRoot,
         binding: { generationId: hex("a"), activationId: "owned-op", pid: 1, start: 1, sourceSha: hex("b"), identitySha: hex("c") },
         compile: { profileId: "t21-state-root", profileSha256: hex("e"), sourceSha256: hex("b"), transformedSha256: hex("d") },
-      })({ agentId: AGENT, sessionOptions: { agentId: AGENT, invocationId: TURN }, originalSession: {
-        getExecutor() { throw new Error("official_main_fallback_forbidden"); },
-      } });
+      })({ agentId: AGENT, sessionOptions: { agentId: AGENT, invocationId: TURN } });
       if (!isHostPromptSession(session)) throw new Error("managed_session_missing");
       expect(session.getModelId()).toBe(MODEL);
       const executor = session.getExecutor([{ role: "system", content: SYSTEM }, { role: "user", content: LONG_INPUT }]);

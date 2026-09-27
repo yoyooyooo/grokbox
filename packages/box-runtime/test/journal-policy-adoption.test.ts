@@ -192,10 +192,9 @@ test("actual packed Host hook writes through the configured root without a model
     const entry = ensurePackedCli(), preload = join(entry, "..", "preload.cjs");
     const worker = `const fs=require('node:fs/promises');
 const [root,run,symbol,agent]=process.argv.slice(1),api=globalThis[Symbol.for(symbol)];
-const original={fixture:true};
-const result=api.bindHostSessionHook({mode:'route',durableRoot:root,runRoot:run})({agentId:agent,sessionOptions:{invocationId:'packed-policy-turn'},originalSession:original});
+const result=api.bindHostSessionHook({mode:'route',durableRoot:root,runRoot:run})({agentId:agent,sessionOptions:{invocationId:'packed-policy-turn'}});
 (async()=>{for(let i=0;i<100;i++){let body='';try{body=await fs.readFile(run+'/log/events.ndjson','utf8')}catch{}
-if(body.includes('packed-policy-turn')){console.log(JSON.stringify({declined:result===original,observed:true}));return;}
+if(body.includes('packed-policy-turn')){console.log(JSON.stringify({declined:result===undefined,observed:true}));return;}
 await new Promise(r=>setTimeout(r,10));}process.exitCode=2;})();`;
     const child = spawn("node", ["--require", preload, "-e", worker, f.root, f.run, PACKED_SESSION_SYMBOL, AGENT], {
       cwd: f.directory, env: { PATH: process.env.PATH, HOME: f.directory, GROKBOX_PACKED_SESSION_FACTORY: "1" }, stdio: ["ignore", "pipe", "pipe"], timeout: 10000,

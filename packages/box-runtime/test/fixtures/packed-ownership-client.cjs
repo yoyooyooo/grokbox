@@ -41,7 +41,7 @@ process.on('message', async message => {
     } else if (message.method === 'run' && config) {
       const hook = factory.bindHostSessionHook({ mode: 'route', durableRoot: config.durableRoot,
         runRoot: config.runRoot, binding: config.binding, compile: config.compile });
-      const session = hook({ originalSession: original, agentId: config.agentId,
+      const session = hook({ agentId: config.agentId,
         sessionOptions: { invocationId: config.turnId } });
       if (!session || typeof session.getExecutor !== 'function' || session === original) throw new Error('packed_session_not_managed');
       const executor = session.getExecutor([
