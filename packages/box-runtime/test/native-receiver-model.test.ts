@@ -16,7 +16,7 @@ import { settleJournalWrites } from "../src/internal/host/terminal-journal.node.
 
 // A separate explicit qualification pin; do not silently renew unrelated native
 // probes or make this private bundle a public build/test dependency.
-const SOURCE_SHA = "7acd9a7e9272833758f2f7aad72a4a9146da7f6098a692fb4f60e16390978797";
+const SOURCE_SHA = "656b3b5dad14dcf5b0d7afcba00f2a97f46cf2dc6860ac7b5db5cedce00df6f0";
 const nativeTest = test.skipIf(process.env.GROKBOX_TEST_NATIVE_HOST !== "1");
 nativeTest("source-pinned native preview is preserved and managed entry precedes unavailable official model/session preconditions", async () => {
   const root = mkdtempSync(join(tmpdir(), "grokbox-native-session-entry-"));

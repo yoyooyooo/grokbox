@@ -19,3 +19,11 @@
 最终隔离 63 切片候选 transformed SHA 为 `bb04f4c8b8776ade28dc9efa688ab267a35bdb5d7ab74b0f812c2d69f9f95dc2`，ordered recipe SHA 为 `a91148e6c3a9f92a649ac7dd6751e86467c75f1bdddaf133726808052fa2ecfb`。资格仍为 `qualified:false / passed-in-selected-scope`：没有执行完整 Host、提供者请求或 App 业务；本报告也不签安装、加载或 committed adoption。按最终固定制品重新发布 profile、采用与静默创建后，才继续业务与通知出口。
 
 原失败操作、10 条 unknown 和恢复回执保留。费用仍 billing not observed。
+
+## 正式采用前的来源重绑
+
+固定 `94a16e81` 已安装并验证 99 个发布文件及原生 SQLite/Level 读写，但正式 observe 时发现官方自行更新为 `b77855a`。本轮没有发布 profile、采用 Host 或创建哨兵；上一来源的资格没有沿用为当前加载资格。
+
+新 Host 为 `656b3b5dad14dcf5b0d7afcba00f2a97f46cf2dc6860ac7b5db5cedce00df6f0`，worker 未变。完整原文已保留；63 个锚点、局部模块绑定及 disposer 摘要重新核对。只更新当前配对 pin，没有增加旧版本 fallback。build、native-pair 40 pass、native-runtime 4/4 commands / 88 个外层测试、Local-first + 原生入口 2 pass / 161 assertions 均重新通过。
+
+新隔离候选 transformed SHA 为 `0311a1509b2e30438b55bf193abbc81783e20bbbd780e7059e7f874bcb256595`，ordered recipe SHA 为 `fc2523e990cb6bcb238465cea3cfe052fb2a2a413f324bea80411570012e6b87`。范围仍为 passed-in-selected-scope，未加载、未创建、未推理。
