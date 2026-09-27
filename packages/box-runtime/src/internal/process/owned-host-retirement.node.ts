@@ -17,8 +17,9 @@ export type HostRetirementPorts = {
   bootId: () => string;
   assertModeldAbsent: () => void;
   recheckOwnership: () => Promise<void>;
+  gateDescriptors: () => readonly number[];
   observeIdle: (pid: number, signal: AbortSignal) => Promise<unknown>;
-  pin?: (target: RetirementTarget, signal: AbortSignal) => Promise<HostSignalHandle>;
+  pin?: (target: RetirementTarget, signal: AbortSignal, gateDescriptors: readonly number[]) => Promise<HostSignalHandle>;
 };
 
 function publishOnce(path: string, value: unknown): string {
@@ -93,7 +94,7 @@ export async function retireFailedAdoptionHost(input: RestorationInput & {
     if (!isDeepStrictEqual(observe(), chain)) throw Error("retirement-chain-changed");
   };
   const target: RetirementTarget = { ...creation.host, ...creation.launch, operationId: input.operationId };
-  const handle = await (input.retirement.pin ?? pinOwnedHost)(target, input.signal);
+  const handle = await (input.retirement.pin ?? pinOwnedHost)(target, input.signal, input.retirement.gateDescriptors());
   try {
     await input.retirement.observeIdle(target.pid, input.signal);
     await input.retirement.recheckOwnership();

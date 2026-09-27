@@ -172,6 +172,6 @@ export async function acquireOperationRecoveryGates(paths: readonly string[]): P
       if (!gate) { await release(); return null; }
       held.push(gate);
     }
-    return { release };
+    return { release, descriptors: () => held.flatMap(gate => [...gate.descriptors()]) };
   } catch (error) { await release(); throw error; }
 }

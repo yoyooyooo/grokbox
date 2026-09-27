@@ -1,5 +1,7 @@
 """One operation-owned Host handle. Normal SIGTERM only; no retry or escalation."""
 import hashlib
+import fcntl
+import stat
 import json
 import os
 import select
@@ -12,7 +14,12 @@ def digest(value):
 
 
 def emit(event):
-    print(json.dumps(event, separators=(',', ':')), flush=True)
+    try:
+        print(json.dumps(event, separators=(',', ':')), flush=True)
+    except (BrokenPipeError, OSError):
+        # The controller may have died after dispatch. Keep the gates through
+        # the bounded signal/exit observation even when nobody can read output.
+        pass
 
 
 def observe(expected):
@@ -47,7 +54,17 @@ def observe(expected):
 
 
 fd = None
+gates = [3, 4, 5]
 try:
+    identities = []
+    for gate in gates:
+        info = os.fstat(gate)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) & 0o077:
+            raise ValueError('gate')
+        identities.append((info.st_dev, info.st_ino))
+        fcntl.flock(gate, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    if len(set(identities)) != 3:
+        raise ValueError('gate')
     line = sys.stdin.buffer.readline(4097)
     if len(line) > 4096:
         raise ValueError('size')
@@ -79,3 +96,8 @@ except Exception:
 finally:
     if fd is not None:
         os.close(fd)
+    for gate in gates:
+        try:
+            os.close(gate)
+        except OSError:
+            pass

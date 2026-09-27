@@ -176,3 +176,4 @@
 - [2026-09-27：Host 工作范围与正式空闲门](2026-09-27-host-work-gate.md)
 - [2026-09-27：84c3000e 正式采用失败与未完成的物理恢复](2026-09-27-formal-adoption-unresolved.md)
 - [2026-09-27：已知失败 Host 的单次受控退场](2026-09-27-owned-host-retirement.md)
+- [2026-09-27：原失败采用的官方回程与退场审查修复](2026-09-27-original-adoption-restored.md)

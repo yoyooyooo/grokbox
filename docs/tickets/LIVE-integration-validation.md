@@ -2,11 +2,11 @@
 
 本页是新版运行核心采用与完整功能候选的 **E2E Checklist 与当前结果唯一入口**。[Agent-first Spec](../roadmap/agent-first-cli/spec.md)决定验收义务，来源票负责实现/离线/独立审查，日期报告保存固定证据，[执行手册](../maintainers/live-end-to-end.md)拥有执行方法。本页不是逐提交发布闸门，也不是要求先把旧版本验完才能重建。
 
-### 当前排程：统一集成在正式采用恢复处阻断（2026-09-27）
+### 当前排程：官方回程已结算，准备新来源候选（2026-09-27）
 
 用户已接受[Local-first 回归主线](../roadmap/agent-first-cli/local-first-reintegration.md)。A/C 已停写交接，AH-187 统一集成者接手剩余责任并独占现场；正式 Local-first 创建、静默 canary、当前来源配对、模式声明与 Host 工作范围修复均已合回 v2。创建源头仍先于 DM/工具/compact 与其他业务，身份观察、维护和通知分别回原领域票，不以 POC 成功补签正式候选。
 
-**当前硬阻断：候选 `84c3000e` 的正式采用失败，物理恢复未完成。** 2026-09-27 在当前 `a22d48c` 上实际启动了带 preload 的 Host，编译标记与 Gateway 相符，但原操作最终 `guardian-ownership-ended`、状态 unknown；清理已发 SIGTERM，候选 Host 的退出仍未证实。原恢复入口返回 `restoration-evidence-unproven`，不能用已编译或后来的 readiness 补签采用。路由意图已 disabled，本窗口 modeld/Server 已正常停止，modeld accepted/completed 均为 0。静默创建始终未发送；现存 10 条 unknown 保留。下一步先结算同一原操作的存活资源与退出证据，不重放或追加业务。[当前采用失败与恢复边界](../evidence/2026-09/2026-09-27-formal-adoption-unresolved.md)。
+**原失败采用的物理恢复已完成，采用失败仍保留。** 06:09 UTC，原 `restore-operation` 为 `84c3000e` 的失败操作发布 exact-lifetime-absence / physicallyRestored 回执；旧 Host 已结束，当前 `0b67642` Host 位于唯一无 preload 的官方直接监督链中。原证据与 10 条 unknown 未改写，没有重放；新退场入口未在现场执行。desired=disabled，modeld/管理 Server 已停止，静默创建未发送。新增退场能力的只读审查发现父进程死亡锁寿命与中断文案两项问题，修复及 97 项回归已完成，待原审查者复看。下一次采用前还须修正已复现的诊断进程分类误报，并完成新来源资格。[当前回程与审查边界](../evidence/2026-09/2026-09-27-original-adoption-restored.md)。
 
 **可复用原生 POC 证据**：Local-first 曾由原 Server 接受为 Box；受控窗口连通普通私聊、两个正常群、原生共享 Memory、自身手动/定时 Routine、原生 ack 与用户 Mac→手机续聊；官方对照保留原路。新增的 [14:05 受控程序更新窗口](../evidence/2026-09/2026-09-26-box-creation-feasibility.md#program-update-continuity)实际完成 `35733d4 → c3282ed` 整包更新，同一 UUID/Server ID 仍获 Box，升级后私聊/群及修正完成策略后的 Routine 可用；真实 Provider 404 明确失败，后续新输入恢复，官方对照正常。**保留的失败/缺口**：原样升级变 Temporal 的反例、Routine 首次 loop_budget 和一次被中断调用均保留；费用归因仍为 `billing not observed`，网页及群界面跨端等未单独验。新的更新正例不代表永久持有或正式 v2 集成已验收；旧实验目标/binding不因此恢复许可，当前现场仍逐对象核验。
 
@@ -138,7 +138,7 @@
 | <a id="live-config-consumers"></a>**LIVE-CONFIG-CONSUMERS**<br>G1 | [ ] `partial`；`not-run` | ①实际consumer启动/写入revision与请求匹配；②storage、ops、model域互不误失效；③配置committed/effective与applied区分；④坏配置仍可取证；⑤不热加载的域显示所需重启，不伪造全storage applied | 来源与实施差额：[T51](T51-ops-capability-presets.md) · [T60](T60-config-ops-integration-proof.md) |
 | <a id="live-modeld-cutover"></a>**LIVE-MODELD-CUTOVER**<br>G0 | [ ] `partial`；`failed`（84c3000e） | ①实际 CLI/Server/modeld/Host 适配、原生版本与运行代可关联；②协议/配置相容并从真实消费者读回；③不相容版本拒新执行；④唯一 controller/明确宿主采用；⑤在途/unknown 不被清掉，不要求旧开发版零停机 | [本候选采用失败](../evidence/2026-09/2026-09-27-formal-adoption-unresolved.md)：已编译但未 committed，guardian 到期、退出未证实；停止后续业务。来源：[T40](T40-persistent-release-and-rollback.md) · [HCR](HCR-02-loaded-capabilities.md) |
 | <a id="live-reasoning-cutover"></a>**LIVE-REASONING-CUTOVER**<br>D | [ ] `partial`；`superseded` | 旧 models2 迁移/旧 schema 降级场景已退役；必要 effort/模型/凭据引用导入归 [INITIAL-ADOPTION](#live-initial-adoption)，新选择与实际请求归 MODEL-SELECTION/REASONING-PROVIDER；不删字段伪造兼容 | 来源与实施差额：[reasoning](FEAT-model-reasoning-policy.md) · [模型配置](../configuration.md#model-reasoning-schema-and-general-config-migration) |
-| <a id="live-host-capability-recovery"></a>**LIVE-HOST-CAPABILITY-RECOVERY**<br>G1 | [ ] `partial`；`blocked`（CODE：存活资源与恢复证据） | ①旧/缺wrapper或reader给出准确doctor指引；②同源profile升级保持其他能力；③受控中断经operation-recovery恢复操作元数据；④实际loaded能力和新STEP闭环；⑤busy拒绝不自动force | [本候选恢复阻断](../evidence/2026-09/2026-09-27-formal-adoption-unresolved.md)：原 restore-operation 返回 restoration-evidence-unproven，须先核对并结束同一操作存活资源；不重放 unknown。来源：[HCR](README.md#host-capability-recovery) · [能力合同](../roadmap/host-seam-ops-recognition.md#capability-recovery) |
+| <a id="live-host-capability-recovery"></a>**LIVE-HOST-CAPABILITY-RECOVERY**<br>G1 | [ ] `partial`；`blocked`（CODE：进程分类与新来源资格） | ①旧/缺wrapper或reader给出准确doctor指引；②同源profile升级保持其他能力；③受控中断经operation-recovery恢复操作元数据；④实际loaded能力和新STEP闭环；⑤busy拒绝不自动force | [原操作回程已结算](../evidence/2026-09/2026-09-27-original-adoption-restored.md)：新官方直接链与旧生命周期退出已证，unknown 不变；新退场审查待复看，新来源/分类差额尚未形成采用资格。来源：[HCR](README.md#host-capability-recovery) · [能力合同](../roadmap/host-seam-ops-recognition.md#capability-recovery) |
 
 ## E1 补充 — 共同入口与操作合同
 

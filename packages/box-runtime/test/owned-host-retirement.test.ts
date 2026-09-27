@@ -46,7 +46,7 @@ async function fixture() {
     const role = tree.roles().find(row => row.pid === p.pid)?.role; return role === "extra" ? null : role as ReturnType<RestorationPorts["classify"]>;
   }, gatewayPid: () => host.pid, hasRelevantPreload: pid => pid === host.pid };
   let signals = 0, closes = 0, pins = 0;
-  const retirement: HostRetirementPorts = { bootId: () => leaseOwner.bootId, assertModeldAbsent: () => {}, recheckOwnership: async () => {}, observeIdle: async () => ({}), pin: async () => {
+  const retirement: HostRetirementPorts = { bootId: () => leaseOwner.bootId, assertModeldAbsent: () => {}, recheckOwnership: async () => {}, gateDescriptors: () => [3, 4, 5], observeIdle: async () => ({}), pin: async () => {
     pins++;
     return { terminate: async () => { signals++; tree.kill(tree.inspect(host.pid)!); return { signaled: true, exitObserved: true }; }, close: async () => { closes++; } };
   } };
@@ -73,6 +73,36 @@ test("the live modeld service gate blocks formal retirement before any helper or
     expect(result).toMatchObject({ outcome: "blocked", reason: "retirement-modeld-busy", signaled: false });
     expect(f.counts()).toEqual({ signals: 0, pins: 0, closes: 0 });
   } finally { await gate.release(); }
+});
+
+test("formal cancellation after dispatch joins the helper and preserves signal uncertainty", async () => {
+  const f = await fixture(), cancel = new AbortController();
+  let dispatched!: () => void;
+  const started = new Promise<void>(resolve => { dispatched = resolve; });
+  let joined = false;
+  f.retirement.pin = async (_target, signal) => ({
+    terminate: async () => {
+      dispatched();
+      await new Promise<void>(resolve => signal.addEventListener("abort", () => resolve(), { once: true }));
+      return { signaled: true, exitObserved: false };
+    },
+    close: async () => {
+      const gate = await acquireAdvisoryGate(join(f.root, "state/controller-operations.lock.gate"));
+      if (gate) { await gate.release(); throw Error("controller gate released before helper join"); }
+      joined = true;
+    },
+  });
+  const work = recoverControllerOperationState({ boxRoot: f.root, ephemeralRoot: f.runRoot, retireOwnedHost: f.id,
+    confirm: true, signal: cancel.signal }, f.input.ports, f.retirement).then(value => ({ value }), error => ({ error }));
+  await started; cancel.abort();
+  const result = await work;
+  expect(joined).toBe(true); expect("error" in result).toBe(true);
+  if ("error" in result) {
+    expect(String(result.error.message)).toContain("SIGTERM may already have been requested or delivered");
+    expect(String(result.error.message)).not.toContain("no Host signal");
+  }
+  const gate = await acquireAdvisoryGate(join(f.root, "state/controller-operations.lock.gate"));
+  expect(gate).not.toBeNull(); await gate?.release();
 });
 
 test("owned retirement signals once, preserves the original unknown and never becomes restoration", async () => {

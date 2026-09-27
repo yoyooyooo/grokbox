@@ -3,7 +3,7 @@ import { constants } from "node:fs";
 import { lstat, mkdir, open } from "node:fs/promises";
 import { dirname, isAbsolute } from "node:path";
 
-export type AdvisoryGate = { release: () => Promise<void> };
+export type AdvisoryGate = { release: () => Promise<void>; descriptors: () => readonly number[] };
 
 /** Linux open-file-description lock. The permanent gate inode is never unlinked.
  * flock receives an inherited duplicate of our fd and exits; our fd owns the
@@ -39,6 +39,9 @@ export async function acquireAdvisoryGate(path: string, waitMs: 0 | 2000 = 0): P
     if (!current.isFile() || current.isSymbolicLink() || current.dev !== original.dev || current.ino !== original.ino) {
       throw new Error("advisory_gate_replaced");
     }
-    return { release };
+    return { release, descriptors: () => {
+      if (released) throw new Error("advisory_gate_released");
+      return [file.fd];
+    } };
   } catch (error) { await release(); throw error; }
 }

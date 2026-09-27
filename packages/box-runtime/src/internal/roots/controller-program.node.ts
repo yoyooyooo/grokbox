@@ -949,6 +949,7 @@ export async function recoverControllerOperationState(input: { boxRoot: string; 
               ports: restorationPorts ?? { processes: strictLinuxObservationPort(), classify: roleOf,
                 gatewayPid: () => readGatewayPid(), hasRelevantPreload: hasRelevantPreloadStrict },
               retirement: retirementPorts ?? { bootId: () => readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim(), assertModeldAbsent,
+                gateDescriptors: () => [...gate.descriptors(), ...modeldGate.descriptors()],
                 recheckOwnership: async () => { for (const snapshot of facts.snapshots) await recheckOperationLease(snapshot); },
                 observeIdle: (pid, scope) => readNativeHostIdle("/home/box/sand-data/gateway.json", pid, scope) },
             });
@@ -1039,14 +1040,17 @@ export async function recoverControllerOperationState(input: { boxRoot: string; 
     let reason: string | undefined, cause: unknown = error;
     for (let depth = 0; depth < 8 && cause && typeof cause === "object"; depth++) {
       const value = cause as { message?: unknown; cause?: unknown };
-      if (typeof value.message === "string" && /^(?:restoration-[a-z0-9-]+|advisory_gate_[a-z_]+|daemon_socket_[a-z_]+)$/.test(value.message)) {
+      if (typeof value.message === "string" && /^(?:(?:restoration|retirement)-[a-z0-9-]+|advisory_gate_[a-z_]+|daemon_socket_[a-z_]+)$/.test(value.message)) {
         reason = value.message; break;
       }
       cause = value.cause;
     }
     // Cancellation before commit has no mutation; cancellation during the short
     // uninterruptible commit may follow a metadata commit. Never promise rollback.
-    throw new BoxRuntimeError("invalid_usage", "Operation metadata recovery did not return a completion receipt; metadata may already have changed. Inspect again before any adopt; no Host signal or business replay was requested." + (reason ? ` Reason: ${reason}.` : ""),
+    const message = input.retireOwnedHost
+      ? "Owned Host retirement did not return a completion receipt; SIGTERM may already have been requested or delivered. Inspect the original immutable retirement attempt/result before further action; no business replay was requested."
+      : "Operation metadata recovery did not return a completion receipt; metadata may already have changed. Inspect again before any adopt; no Host signal or business replay was requested.";
+    throw new BoxRuntimeError("invalid_usage", message + (reason ? ` Reason: ${reason}.` : ""),
       { next: "grokbox runtime operation-recovery --json" });
   }
 }

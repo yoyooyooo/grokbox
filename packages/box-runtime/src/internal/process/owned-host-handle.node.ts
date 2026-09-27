@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { resolveRuntimeHelper, RUNTIME_HELPER_OWNED_HOST_RETIREMENT } from "./helpers/runtime-helpers.ts";
 
 export type RetirementTarget = {
@@ -12,11 +12,14 @@ export type HostSignalHandle = {
 
 /** The helper pins one kernel process handle before the parent publishes its
  * intent. It permits one normal SIGTERM, never escalates and joins on close. */
-export async function pinOwnedHost(target: RetirementTarget, signal: AbortSignal): Promise<HostSignalHandle> {
-  if (process.platform !== "linux" || signal.aborted) throw Error("retirement-handle-unavailable");
+export async function pinOwnedHost(target: RetirementTarget, signal: AbortSignal, gateDescriptors: readonly number[]): Promise<HostSignalHandle> {
+  if (process.platform !== "linux" || signal.aborted || gateDescriptors.length !== 3
+    || new Set(gateDescriptors).size !== 3 || gateDescriptors.some(fd => !Number.isSafeInteger(fd) || fd < 0)) throw Error("retirement-handle-unavailable");
   const child = spawn("python3", ["-I", "-S", resolveRuntimeHelper(RUNTIME_HELPER_OWNED_HOST_RETIREMENT)], {
-    stdio: ["pipe", "pipe", "ignore"], env: { PATH: process.env.PATH, LANG: "C.UTF-8" },
-  });
+    // Inherited duplicates retain the SAME locked open-file descriptions even
+    // if this controller dies after a command has entered the pipe.
+    stdio: ["pipe", "pipe", "ignore", ...gateDescriptors], env: { PATH: process.env.PATH, LANG: "C.UTF-8" },
+  }) as ChildProcessWithoutNullStreams;
   let readyResolve!: () => void, readyReject!: (error: Error) => void;
   const ready = new Promise<void>((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
   void ready.catch(() => undefined);
