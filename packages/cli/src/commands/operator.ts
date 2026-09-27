@@ -252,19 +252,27 @@ async function stopSpawnedDaemon(deps: CliDeps): Promise<"stopped" | "absent" | 
   return (await handshakeDaemon(deps, 500)) ? "external" : "stopped";
 }
 
-export async function listRunningBots(deps: CliDeps, timeoutMs: number): Promise<
-  { ok: true; running: RunningBot[] } | { ok: false; running: RunningBot[] }
+async function observeHostWork(deps: CliDeps, timeoutMs: number): Promise<
+  { ok: true; busy: boolean; running: RunningBot[] } | { ok: false; running: RunningBot[] }
 > {
   try {
-    const { agents } = await new GatewayClient(deps).listAgents(timeoutMs);
+    const client = new GatewayClient(deps);
+    const { agents, discovery } = await client.listAgents(timeoutMs);
     const running = agents.flatMap((row) => {
       if (row === null || typeof row !== "object" || Array.isArray(row)) return [];
       const compact = compactRosterRow(row as Record<string, unknown>);
       if (agentKind(row as Record<string, unknown>) !== "agent") return [];
       if (!compact.isRunning && !compact.isRunningTurn) return [];
+      // Temporal rounds are not owned by this Host. Unknown ownership remains blocking.
+      if ((row as Record<string, unknown>).harness === "temporal") return [];
       return [{ id: compact.id, name: compact.name }];
     });
-    return { ok: true, running };
+    const health = await client.rpc("getHostStatus", {}, { timeoutMs });
+    if (discovery.pid !== health.discovery.pid || discovery.startedAt !== health.discovery.startedAt
+      || discovery.baseUrl !== health.discovery.baseUrl || typeof rec(health.result).isBusy !== "boolean") {
+      return { ok: false, running };
+    }
+    return { ok: true, busy: rec(health.result).isBusy === true, running };
   } catch {
     return { ok: false, running: [] };
   }
@@ -377,20 +385,20 @@ async function gateRunningBots(
   force: boolean,
   timeoutMs: number,
 ): Promise<RunningBot[]> {
-  const listed = await listRunningBots(deps, timeoutMs);
+  const listed = await observeHostWork(deps, timeoutMs);
   const next = `grokbox host ${command} --force`;
   if (!force && !listed.ok) {
     throw hostSwitchBlockedError({
       running: [],
       next,
-      hint: `${HOST_SWITCH_HINT} Running bots could not be listed.`,
+      hint: `${HOST_SWITCH_HINT} Current Host work could not be observed.`,
     });
   }
-  if (!force && listed.ok && listed.running.length > 0) {
+  if (!force && listed.ok && (listed.busy || listed.running.length > 0)) {
     throw hostSwitchBlockedError({
       running: listed.running,
       next,
-      hint: HOST_SWITCH_HINT,
+      hint: `${HOST_SWITCH_HINT}${listed.busy ? " Host reports active or pending work." : ""}`,
     });
   }
   return listed.running;

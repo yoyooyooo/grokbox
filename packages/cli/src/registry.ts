@@ -279,7 +279,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["host", "start"],
     usage: "grokbox host start [--force]",
-    summary: "Ensure this computer is on the grokbox patched Host (custom-model channel). No-op when already custom. Refuses when bots are running unless --force.",
+    summary: "Ensure this computer is on the grokbox patched Host (custom-model channel). No-op when already custom. Refuses active or unverified Host work unless --force.",
     arguments: [],
     options: options([{ flags: "--force", description: "Switch even if bots are running; Host kill interrupts them" }], { timeout: true }),
     stdin: "none", table: false, timeout: true, destructive: true, gateway: true, streaming: false, profile: false, localOnly: true,
@@ -287,7 +287,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["host", "stop"],
     usage: "grokbox host stop [--force]",
-    summary: "Ensure this computer is on the official Host. No-op when already official. Refuses when bots are running unless --force.",
+    summary: "Ensure this computer is on the official Host. No-op when already official. Refuses active or unverified Host work unless --force.",
     arguments: [],
     options: options([{ flags: "--force", description: "Switch even if bots are running; Host kill interrupts them" }], { timeout: true }),
     stdin: "none", table: false, timeout: true, destructive: true, gateway: true, streaming: false, profile: false, localOnly: true,
@@ -295,7 +295,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
   {
     path: ["host", "restart"],
     usage: "grokbox host restart [--force]",
-    summary: "Bounce the Host channel: official then custom. Always intends Host kill. Refuses when bots are running unless --force.",
+    summary: "Bounce the Host channel: official then custom. Always intends Host kill. Refuses active or unverified Host work unless --force.",
     arguments: [],
     options: options([{ flags: "--force", description: "Bounce even if bots are running; Host kill interrupts them" }], { timeout: true }),
     stdin: "none", table: false, timeout: true, destructive: true, gateway: true, streaming: false, profile: false, localOnly: true,

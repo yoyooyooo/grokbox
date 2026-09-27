@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +14,7 @@ import {
   powerOnNext,
   type OperatorHost,
 } from "../packages/cli/src/commands/operator.ts";
+import { GatewayClient } from "../packages/cli/src/gateway.ts";
 import { hostControlPorts } from "../packages/cli/src/commands/runtime.ts";
 import { hostSourcePorts, profileWriteNext } from "../packages/cli/src/host-source.ts";
 import { hostCapabilityPorts } from "../packages/cli/src/host-capabilities.ts";
@@ -67,8 +68,9 @@ async function writeDesired(root: string, mode: "disabled" | "observe" | "route"
   await writeFile(join(root, "config.json"), `${JSON.stringify({ schemaVersion: 4, client: { currentProfile: "default", profiles: { default: { transport: "auto" } } }, runtime: { desiredMode: mode } })}\n`, { mode: 0o600 });
 }
 
-async function run(argv: string[], extras?: { agents?: unknown[]; boxRuntimeRoot?: string }) {
-  const gateway = await startMockGateway({ agents: extras?.agents ?? sampleAgents() });
+async function run(argv: string[], extras?: { agents?: unknown[]; boxRuntimeRoot?: string; hostStatus?: unknown }) {
+  const gateway = await startMockGateway({ agents: extras?.agents ?? sampleAgents(),
+    hostStatus: extras?.hostStatus ?? { isBusy: false } });
   const dir = await mkdtemp(join(tmpdir(), "grokbox-operator-"));
   const discoveryPath = await writeDiscovery({
     port: gateway.port,
@@ -93,6 +95,50 @@ async function run(argv: string[], extras?: { agents?: unknown[]; boxRuntimeRoot
     throw error;
   }
 }
+
+for (const scenario of [
+  { name: "cloud Temporal turn with idle Host", harness: "temporal", running: true, hostStatus: { isBusy: false }, code: 0 },
+  { name: "cloud turn with native background work", harness: "temporal", running: true, hostStatus: { isBusy: true }, code: 71 },
+  { name: "native background work without a running roster row", harness: "box", running: false, hostStatus: { isBusy: true }, code: 71 },
+  { name: "running Box contradicts idle health", harness: "box", running: true, hostStatus: { isBusy: false }, code: 71 },
+  { name: "unknown running ownership", harness: "future", running: true, hostStatus: { isBusy: false }, code: 71 },
+  { name: "native busy state missing", harness: "temporal", running: true, hostStatus: {}, code: 71 },
+]) {
+  test(`Host work gate: ${scenario.name}`, async () => {
+    const state = stubHost("official");
+    let applied = 0;
+    hostSwitchPorts.enable = async () => {
+      applied += 1;
+      state.host.value = "custom";
+      return { outcome: "signaled", reason: null, signaled: true, spawned: true, guardian: true, operationId: "owned-native-idle" };
+    };
+    const { result, gateway } = await run(["host", "start"], { agents: [{ id: "owned-bot", name: "owned", isGroup: false,
+      harness: scenario.harness, isRunning: scenario.running, isRunningTurn: scenario.running }], hostStatus: scenario.hostStatus });
+    try {
+      expect(result.code).toBe(scenario.code);
+      expect(applied).toBe(scenario.code === 0 ? 1 : 0);
+      if (scenario.code !== 0) expect(parseJson(result.stderr)).toMatchObject({ error: { code: "host_switch_blocked" } });
+    } finally { gateway.stop(); }
+  });
+}
+
+test("Host work gate rejects a changed Gateway generation between roster and native health", async () => {
+  stubHost("official");
+  let applied = false;
+  hostSwitchPorts.enable = async () => { applied = true; throw Error("must not apply"); };
+  const originalRpc = GatewayClient.prototype.rpc;
+  const changed = spyOn(GatewayClient.prototype, "rpc").mockImplementation(async function (this: GatewayClient, ...args) {
+    const response = await originalRpc.apply(this, args);
+    return args[0] === "getHostStatus"
+      ? { ...response, discovery: { ...response.discovery, startedAt: response.discovery.startedAt + 1 } }
+      : response;
+  });
+  try {
+    const { result, gateway } = await run(["host", "start"]);
+    try { expect(result.code).toBe(71); expect(applied).toBe(false); }
+    finally { gateway.stop(); }
+  } finally { changed.mockRestore(); }
+});
 
 function runningAgent() {
   const agents = sampleAgents() as Array<Record<string, unknown>>;
