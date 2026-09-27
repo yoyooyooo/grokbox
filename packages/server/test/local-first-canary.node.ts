@@ -6,9 +6,11 @@ import { join } from "node:path";
 import { runCreationCanary, creationCanaryFiles, creationCanaryCli, checkCanaryArtifact, type CreationCanaryPlan } from "../../../scripts/local-first-canary.mjs";
 import { productFixture, productCommand, P_INSTALL, P_OWNER } from "./product-fixture.node.ts";
 
-for (const mode of ["passed", "registration-unknown", "temporal", "cleanup-failed", "response-lost", "stale", "unsupported", "no-authorization"] as const) {
+for (const mode of ["passed", "owner-omitted", "owner-denied", "registration-unknown", "temporal", "cleanup-failed", "response-lost", "stale", "unsupported", "no-authorization"] as const) {
   test(`formal Node CLI creation canary: ${mode}`, { timeout: 35000 }, async () => {
     const f = await productFixture(); f.state.localFirst = true;
+    if (mode === "owner-omitted") { f.state.owner = null; f.state.nativeDefaults = true; }
+    if (mode === "owner-denied") f.state.owner = false;
     try {
       const original = structuredClone([...f.state.rows.entries()]);
       const models = await f.options.store.loadModels();
@@ -31,20 +33,20 @@ for (const mode of ["passed", "registration-unknown", "temporal", "cleanup-faile
         GROKBOX_BOX_RUNTIME_ROOT: f.root, SYNTHETIC_PRODUCT_CREDENTIAL: P_OWNER });
       const run = () => runCreationCanary({ plan, confirm: true, cli, ...files });
       const report = await run();
-      assert.equal(report.creation.state, mode === "registration-unknown" ? "uncertain" : mode === "temporal" || mode === "unsupported" ? "failed" : mode === "stale" ? "stale" : mode === "no-authorization" ? "not-run" : "passed");
-      assert.equal(report.cleanup.state, mode === "registration-unknown" || prevented ? "not-run" : mode === "cleanup-failed" ? "uncertain" : "passed");
+      assert.equal(report.creation.state, mode === "registration-unknown" ? "uncertain" : mode === "temporal" || mode === "unsupported" || mode === "owner-denied" ? "failed" : mode === "stale" ? "stale" : mode === "no-authorization" ? "not-run" : "passed");
+      assert.equal(report.cleanup.state, mode === "registration-unknown" || mode === "owner-denied" || prevented ? "not-run" : mode === "cleanup-failed" ? "uncertain" : "passed");
       assert.equal(report.executionQualified, false);
-      assert.equal(report.ok, mode === "passed" || mode === "response-lost");
+      assert.equal(report.ok, mode === "passed" || mode === "owner-omitted" || mode === "response-lost");
       const writes = f.state.writes, nativeCalls = f.state.calls.length;
       assert.equal(f.state.factories, prevented ? 0 : 1); assert.equal(f.state.registrations, prevented ? 0 : 1);
       if (prevented) assert.equal(writes, 0);
-      else if (mode !== "registration-unknown") assert.equal(writes, 2);
+      else if (mode !== "registration-unknown") assert.equal(writes, mode === "owner-denied" ? 1 : 2);
       assert.equal(f.state.calls.some(c => /sendPrompt|kickstart|Routine|Automation|createGroup|updateAgent/.test(c.method)), false);
       for (const call of f.state.calls.filter(c => c.method === "createAgent")) {
         assert.equal(call.input.isIntroductionSuppressed, true); assert.equal(call.input.isKickstartRequested, false);
       }
       for (const call of f.state.calls.filter(c => c.method === "deleteAgent")) assert.equal(call.input.id, report.targetId);
-      if (!["registration-unknown", "no-authorization"].includes(mode)) assert.deepEqual([...f.state.rows.entries()], original);
+      if (!["registration-unknown", "owner-denied", "no-authorization"].includes(mode)) assert.deepEqual([...f.state.rows.entries()], original);
       assert.deepEqual(await f.options.store.loadModels(), models);
       const again = await run(); assert.equal(f.state.writes, writes); assert.equal(f.state.factories, prevented ? 0 : 1);
       assert.equal(again.creation.state, report.creation.state); assert.equal(again.cleanup.state, report.cleanup.state);

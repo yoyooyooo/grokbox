@@ -101,7 +101,9 @@ export function productIntent(raw: unknown): ProductIntent {
   const action = raw.action as ProductAction, kind = raw.kind as ProductKind;
   const targetId = raw.targetId == null ? null : isContinuityUuid(raw.targetId) ? raw.targetId.toLowerCase() : bad();
   if ((action === "create") !== (targetId === null)) return bad();
-  const profile = raw.profile == null ? null : productProfile(raw.profile, action !== "create", true);
+  // Omitted creation fields belong to the native factory's defaults, not empty writes.
+  const profile = raw.profile == null ? null : productProfile(raw.profile, true, true);
+  if (action === "create" && !profile?.name?.trim()) return bad();
   if (["create", "update"].includes(action) !== (profile !== null)) return bad();
   const memberIds = raw.memberIds == null ? null : productMembers(raw.memberIds);
   if ((kind === "group" && ["create", "members"].includes(action)) !== (memberIds !== null) || action === "members" && kind !== "group") return bad();

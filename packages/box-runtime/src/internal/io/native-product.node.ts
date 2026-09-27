@@ -92,7 +92,10 @@ export function createNativeProductAccess(call: ProductCall, signal: AbortSignal
     if (canonicalJson(before.agents) !== canonicalJson(proof.agents)) return changed();
     if (requireOwnedBot) {
       const target = proof.agents.find(row => row.id === targetId);
-      if (!target || target.viewerIsOwner !== true || !["confirmed_box", "confirmed_temporal"].includes(target.state)) throw new NativeProductError("permission_denied");
+      // The current native account roster can omit optional sharing metadata.
+      // Match the canonical ownership contract: preserve null, reject explicit denial;
+      // the unchanged native writer still authorizes the requested effect.
+      if (!target || target.viewerIsOwner === false || !["confirmed_box", "confirmed_temporal"].includes(target.state)) throw new NativeProductError("permission_denied");
     }
     return { objects, authority: { scopeId: proof.scopeId, generation: generation!, observedAtMs: proof.observedAtMs,
       identityRevision: sha256Text(canonicalJson(proof.agents)), permission: "native-authenticated-account", atomicCompareAndSet: false }, coverage: "current-native-roster" };
@@ -104,7 +107,7 @@ export function createNativeProductAccess(call: ProductCall, signal: AbortSignal
       if (!source) throw new NativeProductError("not_found");
       const catalog = await routines(agentId), proof = await ownership([agentId]);
       const owned = proof.agents[0];
-      if (!owned || owned.viewerIsOwner !== true || !["confirmed_box", "confirmed_temporal"].includes(owned.state)
+      if (!owned || owned.viewerIsOwner === false || !["confirmed_box", "confirmed_temporal"].includes(owned.state)
         || proof.scopeId !== view.authority.scopeId || sha256Text(canonicalJson(proof.agents)) !== view.authority.identityRevision) return changed();
       return duplicateSource({ agentId, scopeId: proof.scopeId, generation: generation!,
         profileRevision: sha256Text(canonicalJson([source.profile, view.authority.identityRevision])),

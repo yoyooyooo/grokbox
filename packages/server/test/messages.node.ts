@@ -18,7 +18,7 @@ const digest = (value: string) => createHash("sha256").update(value).digest("hex
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
 
-async function fixture() {
+async function fixture(omitOwner = false) {
   const root = await mkdtemp(join(tmpdir(), "grokbox-message-"));
   cleanup.push(() => rm(root, { recursive: true, force: true }));
   const store = openRuntimeStore(root, {});
@@ -79,6 +79,7 @@ async function fixture() {
       return { agents, discovery }; },
     getAgentOwnership: async ids => {
       const result = ownedOwnershipSnapshot(ids, { scopeId });
+      if (omitOwner) delete (result.agents[0]!.server as Record<string, unknown>).viewerIsOwner;
       if (revoke) result.agents[0]!.server.viewerIsOwner = false;
       JSON.stringify(result); afterOwnership?.();
       return { result: missingIdentity ? {} : result, discovery };
@@ -122,6 +123,16 @@ async function fixture() {
     },
     botRef: botRef(INSTALLATION, BOT) };
 }
+
+test("confirmed native identity keeps optional sharing metadata distinct from explicit denial", async () => {
+  const f = await fixture(true);
+  const input = { requestId: randomUUID(), botRef: f.botRef, text: "hello", clientNonce: randomUUID() };
+  assert.equal((await f.client().sendMessage(input)).data.state, "accepted");
+  assert.equal(f.calls.send, 1);
+  f.revoke();
+  await assert.rejects(f.client().sendMessage({ ...input, requestId: randomUUID(), clientNonce: randomUUID() }), (error: any) => error.code === "source_invalid");
+  assert.equal(f.calls.send, 1);
+});
 
 test("message input persists one submission, supports original lookup, and observes bounded delivery", async () => {
   const f = await fixture();

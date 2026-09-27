@@ -182,7 +182,7 @@ async function nativeIdentity(gateway: ContinuityGateway, botId: string, generat
   const stamps = [fact.observedAt, fact.completedAt, fact.serverObservedAt].map(value => value == null ? NaN : Date.parse(value));
   if (sourceOf(reply.discovery)?.generation !== generation || fact.serverRead.state !== "observed"
     || !fact.scope?.stable || !fact.scope.id || fact.localMigrationWindow !== "inactive"
-    || !row || !["confirmed_box", "confirmed_temporal"].includes(row.state) || row.server?.viewerIsOwner !== true
+    || !row || !row.server || !["confirmed_box", "confirmed_temporal"].includes(row.state) || row.server.viewerIsOwner === false
     || !row.server.serverId || (row.server.harness !== "box" && row.server.harness !== "temporal")
     || stamps.some(stamp => !Number.isFinite(stamp) || stamp > now || now - stamp > OWNERSHIP_EVIDENCE_MAX_AGE_MS)
     || elapsed < 0 || elapsed > OWNERSHIP_EVIDENCE_MAX_AGE_MS) {

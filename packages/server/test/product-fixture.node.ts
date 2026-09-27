@@ -30,8 +30,8 @@ const WRITE = new Set(["createAgent", "createGroup", "updateAgent", "deleteAgent
 export async function productFixture() {
   const root = await mkdtemp(join(tmpdir(), "native-product-")), discoveryPath = join(root, "gateway.json");
   const state = { rows: new Map<string, Record<string, any>>([[P_A, productRow(P_A)], [P_B, productRow(P_B)], [P_GROUP, productRow(P_GROUP, true)]]),
-    localFirst: false, creationSupported: true, registrationError: false, registrationTemporal: false, registrations: 0, factories: 0, serverRows: new Map<string, any>(),
-    calls: [] as Array<{ method: string; input: any }>, writes: 0, cleanupCalls: 0, scopeId: P_SCOPE, owner: true, ownershipAgeMs: 0,
+    localFirst: false, nativeDefaults: false, creationSupported: true, registrationError: false, registrationTemporal: false, registrations: 0, factories: 0, serverRows: new Map<string, any>(),
+    calls: [] as Array<{ method: string; input: any }>, writes: 0, cleanupCalls: 0, scopeId: P_SCOPE, owner: true as boolean | null, ownershipAgeMs: 0,
     token: "synthetic-product-native", startedAt: 1000, failNative: false, failAfterWrite: false, failWriteStatus: 503, failWriteBody: "{}", failReadBack: false,
     writeReply: undefined as undefined | ((reply: unknown) => unknown),
     ownershipTransform: undefined as undefined | ((proof: ReturnType<typeof ownedOwnershipSnapshot>, ids: string[]) => unknown),
@@ -65,7 +65,8 @@ export async function productFixture() {
           if (!state.rows.has(row.agentId) || state.rows.get(row.agentId)!.isGroup || state.localFirst && !state.serverRows.has(row.agentId)) {
             Object.assign(row, { serverEvidence: "not_returned", server: null, local: { before: null, after: null, stable: true } });
           } else {
-            row.server.viewerIsOwner = state.owner;
+            if (state.owner === null) delete (row.server as Record<string, unknown>).viewerIsOwner;
+            else row.server.viewerIsOwner = state.owner;
             const harness = state.rows.get(row.agentId)!.harness;
             row.server.harness = state.localFirst ? state.serverRows.get(row.agentId)!.harness : harness;
             if (state.localFirst) row.server.serverId = state.serverRows.get(row.agentId)!.id;
@@ -83,7 +84,7 @@ export async function productFixture() {
           const fields = Object.fromEntries(["name", "description", "title", "avatarShape", "avatarColor"].filter(k => k in input).map(k => [k, input[k]]));
           output = await creation.create(input, fields, { isIntroductionSuppressed: input.isIntroductionSuppressed, isKickstartRequested: input.isKickstartRequested }, {
             createBackgroundAgent: async profile => {
-              state.factories++; const id = randomUUID(), agent = { ...productRow(id), ...profile, harness: undefined };
+              state.factories++; const id = randomUUID(), agent = { ...productRow(id), ...(state.nativeDefaults ? { avatarShape: "squircle", avatarColor: "red" } : {}), ...profile, harness: undefined };
               state.rows.set(id, agent); return { agent, transcript: [] };
             }, listAgents: async () => [...state.rows.values()],
           }, { isWriteEnabled: async () => true, ensureServerBacked: async id => {

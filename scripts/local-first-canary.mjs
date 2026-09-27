@@ -101,17 +101,19 @@ export async function runCreationCanary({ plan: raw, confirm = false, cli, read,
   const sameScope = ownership.scopeId === plan.scopeId && local.scopeId === plan.scopeId;
   const sameGeneration = ownership.sourceGeneration === plan.expectedNativeGeneration && local.sourceGeneration === plan.expectedNativeGeneration;
   if (sameGeneration && canonical(evidence?.source) === canonical(plan.expectedSource)) result.freshness = "current";
-  const exactOwner = sameScope && sameGeneration && owned?.id === result.targetId && owned.viewerIsOwner === true
+  // Corroborate the original returned identity under the same authenticated scope.
+  // Optional sharing metadata is not a positive-owner claim; explicit denial blocks.
+  const exactTarget = sameScope && sameGeneration && owned?.id === result.targetId && owned.viewerIsOwner !== false
     && ["confirmed_box", "confirmed_temporal"].includes(owned.state) && evidence?.firstResponse?.agentId === result.targetId
     && evidence.firstResponse.serverId === owned.serverId && evidence.localAgentId === result.targetId;
   if (!evidence || evidence.outcome === "unknown") result.creation = { state: "uncertain", stage: evidence?.stage ?? "server-result" };
   else if (canonical(evidence.source) !== canonical(plan.expectedSource) || !sameGeneration) result.creation = { state: "stale", stage: "loaded-source" };
-  else if (evidence.outcome === "registered" && exactOwner && owned.state === "confirmed_box" && evidence.firstResponse.harness === "box"
+  else if (evidence.outcome === "registered" && exactTarget && owned.state === "confirmed_box" && evidence.firstResponse.harness === "box"
     && evidence.request?.introductionSuppressed === true && evidence.request?.kickstartRequested === false
     && object?.id === result.targetId && object.kind === "bot" && object.harness === "box" && object.profile.name === plan.profile.name)
     result.creation = { state: "passed", stage: "readback" };
   else result.creation = { state: "failed", stage: evidence.outcome === "mismatch" ? evidence.stage : "readback" };
-  if (!exactOwner) { result.cleanup = { state: "not-run", stage: "ownership-unconfirmed" }; return finish(); }
+  if (!exactTarget) { result.cleanup = { state: "not-run", stage: "ownership-unconfirmed" }; return finish(); }
   if (!settledCreation) await save("creation-verdict", { creation: result.creation, targetId: result.targetId, source: result.source });
   return cleanupOriginal();
 

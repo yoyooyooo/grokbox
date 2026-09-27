@@ -4,7 +4,7 @@
 
 ## 读取与一次写入
 
-`bot profile get`、`bot ownership get`、`bot relations get`、`group list/get` 提供有界原生对象、实际归属、群成员与可见关系。读回的归属不是模型执行资格；关系中的原生 transcript/Routine 窗口也不是全部外部任务的穷尽清单。账号或原生代际在读取窗口中变化会拒绝混合结果。
+`bot profile get`、`bot ownership get`、`bot relations get`、`group list/get` 提供有界原生对象、实际归属、群成员与可见关系。当前原生账户名册可能省略可选共享字段 `viewerIsOwner`；保留为 null，不填成 true。普通产品变更与 Human 消息沿当前已认证作用域和已确认 Server/local 绑定提交给原生 owner，显式 false、身份冲突、代际/作用域不稳仍拒绝；原生 API 继续裁决实际效果。读回的归属不是模型执行资格；关系中的原生 transcript/Routine 窗口也不是全部外部任务的穷尽清单。账号或原生代际在读取窗口中变化会拒绝混合结果。
 
 `bot create/update/delete/duplicate`、`group create/update/delete`、`group members set` 和 Bot/Group 的 `hidden set`、`notify set` 每次仅执行一个原生产品调用。创建后的设置、改名与成员编辑是另一次明确计划，不在第一次创建后暗中补写。
 
@@ -76,9 +76,9 @@ Bot 删除后的桌面清理必须分别观察原显示停止、原座位未变�
 | authorizationRef | 当前窗口授权的 `private:...` 引用；没有授权时为 null |
 | maxAgeMs | 声明的新鲜度上限，1 分钟至 24 小时 |
 
-哨兵先核对安装、账号、原生代和已加载桥，再提交一次创建。准确返回的本地 ID、首次 Server ID、独立 `bot ownership get` 与 `bot profile get` 必须一致；清理仅消费同一原生 ID 与独立确认的自有 Server 身份。删除之后分别确认原删除回执、本地不存在、Server 未返回登记以及桌面清理结果。所有账号调用都走正式 CLI/shared API/管理 Server；没有按名字删除或模型启动步骤。
+哨兵先核对安装、账号、原生代和已加载桥，再提交一次创建。准确返回的本地 ID、首次 Server ID、独立 `bot ownership get` 与 `bot profile get` 必须一致；清理仅消费同一原生 ID、同一已认证作用域和独立匹配的 Server/local 身份，显式共享拒绝仍阻断。删除之后分别确认原删除回执、本地不存在、Server 未返回登记以及桌面清理结果。所有账号调用都走正式 CLI/shared API/管理 Server；没有按名字删除或模型启动步骤。
 
-私有输出目录保留不可覆盖的原计划、发送尝试、原回执和独立读回。重跑同目录只按原 request 查 get/reconcile，不再提交创建或删除。创建结论与清理结论分列；首次创建成功时间不会被清理失败改写，过期或来源变化显示 stale。登记 unknown 保留本地身份与原请求；无法确认归属时不清理。公开测试只用隔离端口，不提供真实 Server、实际加载或 App/DM/compact 资格。
+私有输出目录保留不可覆盖的原计划、发送尝试、原回执和独立读回。重跑同目录只按原 request 查 get/reconcile，不再提交创建或删除。创建结论与清理结论分列；首次创建成功时间不会被清理失败改写，过期或来源变化显示 stale。登记 unknown 保留本地身份与原请求；无法确认身份、作用域或存在明确拒绝时不清理。公开测试只用隔离端口，不提供真实 Server、实际加载或 App/DM/compact 资格。
 
 本入口是有界的一次哨兵。维护者授权的低频调度、HOST-01/OBS 事件入库和通知消费者仍需沿各自现有 owner 接通；没有自动创建新 Bot 的周期任务。真实候选尚未运行时，隔离结果不能作为当前账号健康。
 
