@@ -36,21 +36,11 @@ export function inspectPid(pid: number): ProcessIdentity | null {
 
 export const LIVE_TEMP_SUPERVISOR_NEEDLE = "grokbox-temp-supervisor.cjs";
 
-const DIAGNOSTIC_BASENAMES = new Set([
-  "bash",
-  "sh",
-  "dash",
-  "zsh",
-  "fish",
-  "rg",
-  "grep",
-  "egrep",
-  "fgrep",
-]);
-
 const SHELL_BASENAMES = new Set(["bash", "sh", "dash", "zsh", "fish"]);
-
-const VALUE_FLAGS = new Set(["-e", "--eval", "-p", "--print", "-c"]);
+const NODE_BASENAMES = new Set(["node", "nodejs"]);
+const NON_SCRIPT_FLAGS = new Set(["-e", "--eval", "-p", "--print", "-c", "--check", "--test", "--run"]);
+const ENTRY_VALUE_FLAGS = new Set(["-r", "--require", "--import", "--loader", "--experimental-loader", "--conditions", "-C", "--rcfile", "--init-file"]);
+const ENTRY_BOOLEAN_FLAGS = new Set(["--no-warnings", "--trace-warnings", "--enable-source-maps", "--expose-gc", "--preserve-symlinks", "--preserve-symlinks-main", "--experimental-sqlite", "--inspect", "--inspect-brk", "--noprofile", "--norc"]);
 
 function fileBasename(path: string): string {
   const trimmed = path.replace(/[\\/]+$/, "");
@@ -58,19 +48,23 @@ function fileBasename(path: string): string {
   return slash >= 0 ? trimmed.slice(slash + 1) : trimmed;
 }
 
-function roleFileBasenames(argv: readonly string[]): string[] {
-  const names: string[] = [];
-  for (let i = 0; i < argv.length; i += 1) {
+function entryBasename(argv: readonly string[], shell: boolean): string | null {
+  for (let i = 1; i < argv.length; i++) {
     const part = argv[i];
-    if (part == null || part.length === 0) continue;
-    if (i > 0 && VALUE_FLAGS.has(part)) {
-      i += 1;
-      continue;
+    if (!part) continue;
+    if (part === "--") return argv[i + 1] ? fileBasename(argv[i + 1]!) : null;
+    const flag = part.split("=", 1)[0]!;
+    if (NON_SCRIPT_FLAGS.has(flag) || shell && /^-[^-]*[cs]/.test(part)
+      || !shell && /^-[epc][^-]/.test(part)) return null;
+    if (ENTRY_VALUE_FLAGS.has(flag)) { if (!part.includes("=")) i++; continue; }
+    if (part.startsWith("-")) {
+      if (part.includes("=") || ENTRY_BOOLEAN_FLAGS.has(part)) continue;
+      return null; // An unknown value-taking option cannot supply an entry point.
     }
-    if (i > 0 && part.startsWith("-")) continue;
-    names.push(fileBasename(part));
+    // Everything after the actual program is data, including --from paths.
+    return fileBasename(part);
   }
-  return names;
+  return null;
 }
 
 export function roleOf(
@@ -80,13 +74,15 @@ export function roleOf(
   if (argv.length === 0) return null;
   const exeBase = fileBasename(identity.exe);
   const argv0 = fileBasename(argv[0] ?? "");
-  const diagnostic = DIAGNOSTIC_BASENAMES.has(exeBase) || DIAGNOSTIC_BASENAMES.has(argv0);
-  if (diagnostic && !SHELL_BASENAMES.has(exeBase) && !SHELL_BASENAMES.has(argv0)) return null;
-  const names = new Set(roleFileBasenames(argv));
-  if (names.has(LIVE_TEMP_SUPERVISOR_NEEDLE)) return "temp-supervisor";
-  if (names.has("supervise-sand-supervisor")) return "wrapper";
-  if (names.has("sand-supervisor.mjs")) return "supervisor";
-  if (names.has("host-main.cjs")) return "host";
+  const shell = SHELL_BASENAMES.has(exeBase);
+  if (argv0 === "supervise-sand-supervisor" && (shell || exeBase === argv0)) return "wrapper";
+  if (!shell && !NODE_BASENAMES.has(exeBase)) return null;
+  const entry = entryBasename(argv, shell);
+  if (entry === "supervise-sand-supervisor") return "wrapper";
+  if (shell) return null;
+  if (entry === LIVE_TEMP_SUPERVISOR_NEEDLE) return "temp-supervisor";
+  if (entry === "sand-supervisor.mjs") return "supervisor";
+  if (entry === "host-main.cjs") return "host";
   return null;
 }
 

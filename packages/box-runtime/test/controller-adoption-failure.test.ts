@@ -14,7 +14,7 @@ import type { PatchProfile } from "../src/internal/host/profile.ts";
 
 const profile: PatchProfile = { profileId: "failure-fixture", sourceSha256: "a".repeat(64), transformedSourceSha256: "b".repeat(64), slices: [] };
 
-for (const scenario of ["delayed-gateway", "guardian-expiry", "identity-reuse", "child-exit"] as const) test(`kernel and original filesystem owner retain ${scenario} failure and refuse replay`, async () => {
+for (const scenario of ["delayed-gateway", "guardian-expiry", "expiry-during-cleanup", "identity-reuse", "child-exit"] as const) test(`kernel and original filesystem owner retain ${scenario} failure and refuse replay`, async () => {
   const root = await mkdtemp(join(tmpdir(), "grokbox-controller-failure-")), tree = new FakeProcessTree();
   const wrapper = tree.spawn("wrapper"), supervisor = tree.spawn("supervisor", { parent: wrapper });
   tree.spawn("host", { parent: supervisor });
@@ -33,7 +33,10 @@ for (const scenario of ["delayed-gateway", "guardian-expiry", "identity-reuse", 
         operationId: command.operationId, ephemeralRoot: join(root, "run"), reviewedProfile: profile,
         diskSha: () => profile.sourceSha256, processes: tree, classify, now: Date.now,
         readMarker: () => marker, readGatewayPid: () => null,
-        waitGone: async identity => !tree.inspect(identity.pid) || tree.inspect(identity.pid)!.start !== identity.start,
+        waitGone: async identity => {
+          if (scenario === "expiry-during-cleanup" && identity.pid === host?.pid) ownership.abort();
+          return !tree.inspect(identity.pid) || tree.inspect(identity.pid)!.start !== identity.start;
+        },
         spawnTempSupervisor: async () => { temp = tree.spawn("temp-supervisor"); host = tree.spawn("host", { parent: temp }); return temp; },
         waitNewHost: async () => host,
         waitReady: async () => {
@@ -54,12 +57,13 @@ for (const scenario of ["delayed-gateway", "guardian-expiry", "identity-reuse", 
   const request = { intent: "apply" as const, confirmed: true, operationId: "original", boxRoot: root, strategy: "transient" as const };
   const execute = () => Effect.runPromise(runControllerOperation(request).pipe(Effect.provide(layer)));
   const result = await execute();
-  const expectedCode = scenario === "guardian-expiry" ? "guardian-ownership-ended" : "marker-mismatch";
+  const expectedCode = scenario === "guardian-expiry" || scenario === "expiry-during-cleanup" ? "guardian-ownership-ended" : "marker-mismatch";
   expect(result).toMatchObject({ outcome: "recovery-required", reason: expectedCode, signaled: true, spawned: true, guardian: true,
     diagnostic: { code: expectedCode, phase: "spawn-temp", recoveryRequired: true, readiness: { compiled: true, gatewayPid: null } } });
   const record = readControllerOperation(root, "original");
   expect(record).toMatchObject({ state: "unknown", prefix: { signaled: true, spawned: true, guardian: true, diagnostic: result.diagnostic } });
   expect(JSON.parse(await readFile(join(root, "run", "state", "adopt-op.json"), "utf8"))).toMatchObject({ operationId: "original", phase: "recovery-required", failure: result.diagnostic });
+  if (scenario === "expiry-during-cleanup") expect(result.diagnostic).toMatchObject({ initialFailure: { code: "marker-mismatch", phase: "spawn-temp" } });
   if (scenario === "identity-reuse") {
     expect(tree.alive(temp!.pid)).toBe(true);
     expect(tree.signals.some(row => row.pid === temp!.pid && row.signal === "SIGTERM")).toBe(false);

@@ -11,7 +11,7 @@ import { nativeReceiverModelRevision } from "@grokbox/runtime-kernel/observation
 
 // A separate explicit qualification pin; do not silently renew unrelated native
 // probes or make this private bundle a public build/test dependency.
-const SOURCE_SHA = "462603791cf7516915084d175cb96125241cacb1352e2e42fb100ebe4feb71e0";
+const SOURCE_SHA = "7acd9a7e9272833758f2f7aad72a4a9146da7f6098a692fb4f60e16390978797";
 const nativeTest = test.skipIf(process.env.GROKBOX_TEST_NATIVE_HOST !== "1");
 nativeTest("source-pinned automation preview follows original native model selection without starting a session or marking experiment application", () => {
   const source = readFileSync(LIVE_HOST_BUNDLE, "utf8");

@@ -39,6 +39,19 @@ describe("roleOf exact argv shapes", () => {
     ).toBe("temp-supervisor");
   });
 
+  test("only the executable entry point can supply a runtime role", () => {
+    expect(roleOf(proc(["/owned/node", "/owned/grokbox.js", "runtime", "profile", "observe", "--from", "/owned/host-main.cjs"]))).toBeNull();
+    expect(roleOf(proc(["/owned/node", "/owned/read-only.js", "/owned/sand-supervisor.mjs"]))).toBeNull();
+    expect(roleOf(proc(["/owned/node", "--require", "/owned/host-main.cjs", "/owned/read-only.js"]))).toBeNull();
+    expect(roleOf(proc(["/owned/node", "--check", "/owned/host-main.cjs"]))).toBeNull();
+    expect(roleOf(proc(["/owned/node", "--redirect-warnings", "/owned/host-main.cjs", "/owned/read-only.js"]))).toBeNull();
+    expect(roleOf(proc(["/owned/node", "--eval=42", "/owned/host-main.cjs"]))).toBeNull();
+    expect(roleOf(proc(["/owned/validator", "--source", "/owned/host-main.cjs"]))).toBeNull();
+    expect(roleOf(proc(["bash", "-lc", "/owned/host-main.cjs"], "/usr/bin/bash"))).toBeNull();
+    expect(roleOf(proc(["/owned/node", "--require", "/owned/preload.cjs", "--max-old-space-size=4096", "/owned/host-main.cjs", "/owned/sand-supervisor.mjs"]))).toBe("host");
+    expect(roleOf(proc(["/owned/node", "--", "/owned/sand-supervisor.mjs", "/owned/host-main.cjs"]))).toBe("supervisor");
+  });
+
   test("bash -c, rg, and node -e mentioning role files are not official roles", () => {
     const needles = [
       "/home/box/sand-host/host-main.cjs",

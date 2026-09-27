@@ -195,11 +195,17 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
   let guardianContinued: () => boolean | null = () => null;
   let ownedTemp: ProcessIdentity | null = null, ownedHost: ProcessIdentity | null = null;
   let lastFailure: IdentityOpResult["diagnostic"];
+  let initialFailure: { code: string; phase: string } | undefined;
+  const rememberFailure = (code: string) => { initialFailure ??= {
+    code: ctx.signal?.aborted ? "operation-cancelled" : lifetime?.aborted ? "guardian-ownership-ended" : code, phase,
+  }; };
   const signals: NonNullable<NonNullable<IdentityOpResult["diagnostic"]>["signals"]> = [];
   const cleanup: NonNullable<NonNullable<IdentityOpResult["diagnostic"]>["cleanup"]> = [];
-  const reap = (temp: ProcessIdentity | null, host: ProcessIdentity | null) =>
-    reapOperationOwned(ctx, temp, host, lifetime, event => { if (signals.length < 8) signals.push(event); },
+  const reap = (temp: ProcessIdentity | null, host: ProcessIdentity | null, code: string) => {
+    rememberFailure(code);
+    return reapOperationOwned(ctx, temp, host, lifetime, event => { if (signals.length < 8) signals.push(event); },
       result => { if (cleanup.length < 8) cleanup.push(result); });
+  };
   const signalOwned = (identity: ProcessIdentity, signal: "SIGSTOP" | "SIGTERM") => {
     assertOwned();
     const result = signalIfMatch(ctx.processes, identity, signal);
@@ -232,7 +238,9 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
     try { marker = ctx.readMarker(); child = ctx.childEvidence?.(); } catch { /* Evidence remains absent. */ }
     const expectedPid = ownedHost?.pid ?? child?.pid;
     const end = guardianEnd();
+    rememberFailure(code);
     lastFailure = {
+      initialFailure,
       code: ctx.signal?.aborted ? "operation-cancelled" : lifetime?.aborted ? "guardian-ownership-ended" : code,
       phase, recoveryRequired, guardianEnd: end, guardianContinued: guardianContinued(), signals: [...signals], cleanup: [...cleanup],
       ...(child ? { child } : {}),
@@ -374,18 +382,18 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
       const owned = hosts.filter((ident) => ident.ppid === temp.pid);
       const competitors = hosts.filter((ident) => ident.ppid !== temp.pid);
       if (competitors.length > 0) {
-        await reap(temp, owned[0] ?? null);
+        await reap(temp, owned[0] ?? null, "competitor-host");
         release();
         return fail("competitor-host", true, true);
       }
       const birth = ctx.creationEvidence?.();
       if (ctx.creationEvidence && (!birth || birth.operationId !== ctx.operationId || birth.tempSupervisor.pid !== temp.pid || birth.tempSupervisor.start !== temp.start)) {
-        await reap(temp, null); release(); return fail("creation-provenance-unavailable", true, true);
+        await reap(temp, null, "creation-provenance-unavailable"); release(); return fail("creation-provenance-unavailable", true, true);
       }
       const replacement = birth ? owned.find(row => row.pid === birth.host.pid && row.start === birth.host.start) : owned[0];
       ownedHost = replacement ?? null;
       if (!replacement) {
-        await reap(temp, null);
+        await reap(temp, null, "relaunch-failed");
         release();
         return fail("relaunch-failed", true, true);
       }
@@ -404,7 +412,7 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         marker.modeld !== false ||
         !compileReceiptAgrees(marker.compile, expectedCompile)
       ) {
-        await reap(temp, replacement);
+        await reap(temp, replacement, "marker-mismatch");
         release();
         return fail("marker-mismatch", true, true);
       }
@@ -419,12 +427,12 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
       });
       const handoffMs = ctx.adoptProveMs ?? 8000;
       if (!(await waitHandoffReady(ctx, replacement.pid, handoffMs, lifetime))) {
-        await reap(temp, replacement);
+        await reap(temp, replacement, "gateway-unproven");
         release();
         return fail("gateway-unproven", true, true);
       }
       if (ctx.diskSha() !== shaBefore) {
-        await reap(temp, replacement);
+        await reap(temp, replacement, "disk-sha-changed");
         release();
         return fail("disk-sha-changed", true, true);
       }
@@ -437,12 +445,12 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         host: stableHost,
       });
       if (!signalOwned(temp, "SIGTERM").ok) {
-        await reap(temp, replacement);
+        await reap(temp, replacement, "identity-mismatch");
         release();
         return fail("identity-mismatch", true, true);
       }
       if (!(await ctx.waitGone(temp, lifetime))) {
-        await reap(null, replacement);
+        await reap(null, replacement, "temp-still-alive");
         release();
         return fail("temp-still-alive", true, true);
       }
@@ -458,7 +466,7 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
           identityHostAlive: true,
         })
       ) {
-        await reap(null, afterTemp);
+        await reap(null, afterTemp, "gateway-unproven");
         release();
         return fail("gateway-unproven", true, true);
       }
@@ -562,7 +570,7 @@ export async function runTransientAdoptOperation(ctx: TransientAdoptContext): Pr
         const children = ctx.processes.list().filter(row => row.ppid === ownedTemp!.pid && ctx.classify(row) === "host");
         if (children.length === 1) ownedHost = children[0]!;
       }
-      try { await reap(ownedTemp, ownedHost); }
+      try { await reap(ownedTemp, ownedHost, failureCode ?? "adopt-stage-failed"); }
       catch { failureCode = "owned-cleanup-unproven"; }
       release();
       return fail(failureCode ?? "adopt-stage-failed", signaled, signaled);

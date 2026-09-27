@@ -148,6 +148,8 @@ export type ControllerDiagnostic = {
   phase: string;
   recoveryRequired: boolean;
   guardianEnd: "active" | "released" | "expired" | "lost" | "unarmed";
+  /** First observed failing decision, captured before child cleanup can change ownership state. */
+  initialFailure?: { code: string; phase: string };
   /** null: independent CONT outcome was not yet observed, never proof of no signal. */
   guardianContinued?: boolean | null;
   signals?: Array<{ pid: number; start: number; signal: "SIGSTOP" | "SIGTERM"; sent: boolean }>;

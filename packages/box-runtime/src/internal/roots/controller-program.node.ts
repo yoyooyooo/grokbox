@@ -118,6 +118,11 @@ function parsePrefix(value: unknown): OperationPrefix | undefined {
     if (!value || typeof value !== "object" || !(value.code === null || code(value.code)) || !code(value.phase)
       || typeof value.recoveryRequired !== "boolean" || !["active", "released", "expired", "lost", "unarmed"].includes(value.guardianEnd)) return undefined;
     diagnostic = { code: value.code, phase: value.phase, recoveryRequired: value.recoveryRequired, guardianEnd: value.guardianEnd };
+    if (value.initialFailure !== undefined) {
+      const first = value.initialFailure;
+      if (!first || typeof first !== "object" || Array.isArray(first) || !code(first.code) || !code(first.phase)) return undefined;
+      diagnostic.initialFailure = { code: first.code, phase: first.phase };
+    }
     if (value.guardianContinued !== undefined) {
       if (value.guardianContinued !== null && typeof value.guardianContinued !== "boolean") return undefined;
       diagnostic.guardianContinued = value.guardianContinued;
