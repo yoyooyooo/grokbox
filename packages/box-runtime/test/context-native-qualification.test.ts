@@ -79,7 +79,7 @@ test.skipIf(!nativeHostQualificationEnabled())("pinned native summarizer and arc
     __addDisposableResource20: (_env: unknown, value: unknown) => value,
     __disposeResources20(env: { hasError: boolean; error: unknown }) { if (env.hasError) throw env.error; },
     createSpan: (ctx: unknown) => ({ ctx }),
-    logger6: log, logger7: log, logger62: log,
+    logger6: log, logger7: log, logger63: log,
     PrivacyMode: { UNSPECIFIED: 0 }, PrivacyCapability: { UNSAFE_ALWAYS_ALLOWED: 0 }, DataClassification: { CODE: 0 },
     fromRedactedCoreMessages: (rows: unknown[]) => rows, fromRedactedCoreMessage: (row: unknown) => row,
     toRedactedCoreMessage: (row: unknown) => row, isRedactedString: () => false,

@@ -8,7 +8,7 @@ import { LIVE_SLICE_PATCHES } from "../src/internal/host/live-slices.ts";
 const nativeTest = test.skipIf(!nativeContinuityEnabled());
 const identities = [
   ["__addDisposableResource22", "\nvar __disposeResources22 =", "6b765884eb79ed9a26a3d4a190fddb0592faa7028ea5ff7c90422f9b2157c532"],
-  ["__disposeResources22", "\nvar logger67 =", "7264d5865d223a37befd23f893d068a4994f7748e14e9c30c3bf79c32c0e9e1f"],
+  ["__disposeResources22", "\nvar logger68 =", "7264d5865d223a37befd23f893d068a4994f7748e14e9c30c3bf79c32c0e9e1f"],
 ] as const;
 function originalHelpers() {
   const source = readNativeSource("source").toString("utf8");

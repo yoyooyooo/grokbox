@@ -122,7 +122,7 @@ export function nativeCurrentStateSlices(pair: NativeCheckpointPair): readonly S
       scheduleConversationSizeMaintenance(maintenance, dbPath, db);
     }
     __grokbox_current?.register(agentId, { store: agentStore, metadata: db, ctx: this.host.ctx,
-      material: { memory: this.host.memory().createAgentStore((0, import_node_path142.dirname)(dbPath)), history: db },
+      material: { memory: this.host.memory().createAgentStore((0, import_node_path143.dirname)(dbPath)), history: db },
       rootId: SAND_CONVERSATION_ROOT_SLOT_ID,
       source: { hostSourceSha: "${pair.host}", nativeSchema: "${pair.schema}" },
       valid: () => db.isClosed !== true });
