@@ -224,8 +224,9 @@ export function httpStatusToError(
       failureCode,
     });
   }
-  return new CliError("gateway_internal", fallbackMessage, {
-    httpStatus: status,
-    failureCode,
-  });
+  return new CliError(
+    status >= 500 ? "gateway_internal" : "gateway_bad_request",
+    fallbackMessage,
+    { httpStatus: status, failureCode },
+  );
 }
