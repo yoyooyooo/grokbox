@@ -795,6 +795,13 @@ export class GatewayClient {
     for (const [name, value] of Object.entries(this.gatewayHeaders)) headers.set(name, value);
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), input.timeoutMs);
+    const onUserAbort = () => ac.abort();
+    this.deps.signal?.addEventListener("abort", onUserAbort, { once: true });
+    if (this.deps.signal?.aborted) ac.abort();
+    const cleanup = () => {
+      clearTimeout(timer);
+      this.deps.signal?.removeEventListener("abort", onUserAbort);
+    };
     let response: Response;
     try {
       response = await this.deps.fetch(`${discovery.baseUrl}${input.path}`, {
@@ -805,7 +812,7 @@ export class GatewayClient {
         redirect: "manual",
       });
     } catch (error) {
-      clearTimeout(timer);
+      cleanup();
       if (isAbortError(error)) {
         if (write) {
           throw new CliError(
@@ -826,7 +833,7 @@ export class GatewayClient {
       });
     }
     if (input.stream) {
-      clearTimeout(timer);
+      cleanup();
       if (!response.ok) {
         const text = await response.text();
         let parsed: unknown;
@@ -843,7 +850,7 @@ export class GatewayClient {
     try {
       text = await response.text();
     } catch {
-      clearTimeout(timer);
+      cleanup();
       if (write) {
         throw new CliError(
           unknownOutcomeCode,
@@ -852,7 +859,7 @@ export class GatewayClient {
       }
       throw new CliError("gateway_unreachable", "Gateway is unreachable.");
     } finally {
-      clearTimeout(timer);
+      cleanup();
     }
     let body: unknown = null;
     if (text.length > 0) {
