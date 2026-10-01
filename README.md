@@ -10,9 +10,8 @@ This project is not affiliated with or endorsed by Anysphere, Cursor, xAI, or
 Grok Bot. Grok Bot, Cursor, and related names identify compatible products and
 remain the property of their respective owners.
 
-> **Alpha:** current source is `0.1.0-alpha.7`. npm `next` currently points to
-> `0.1.0-alpha.6`; `0.0.1` remains `latest`. `v0.1.0-alpha.1` through
-> `v0.1.0-alpha.6` exist as Git tags only. Prereleases publish only after
+> **Alpha:** current source is `0.1.0-alpha.8`. npm `next` currently points to
+> `0.1.0-alpha.7`; `0.0.1` remains `latest`. Prereleases publish only after
 > release checks and explicitly scoped external acceptance.
 
 ## What it does
@@ -148,7 +147,7 @@ grokbox jobs list --table
 grokbox desktop status --table
 ```
 
-Routine reads expose bounded metadata only: prompt bodies, webhook credentials, native paths, and unknown provider fields stay private. Routine create always writes a disabled definition; update/enable/disable/delete require explicit confirmation, and all mutations other than create also require the exact revision from a fresh `agents routines list/show`. Upstream Routine writes have no native compare-and-swap or idempotency contract, so an uncertain acknowledgement is never replayed automatically.
+Routine reads expose bounded metadata only: prompt bodies, webhook credentials, native paths, and unknown provider fields stay private. Box-local Bots support create/update/enable/disable/delete; create always writes a disabled definition and later mutations require explicit confirmation plus the exact revision from a fresh `agents routines list/show`. Temporal Bots are Server-authoritative: list/show, webhook credential, enable/disable, and delete use the bounded Temporal Routine bridge; current upstream contracts do not expose Temporal definition create/update, so those commands refuse instead of writing the legacy Box store. `agents routines webhook credential <agent> <routine-id> --confirm` returns the URL while hiding the key; add `--reveal-key` only when secret output is explicitly required. Without the Host bridge, Temporal Routine reads fail closed rather than reporting a false empty list. Upstream Routine writes have no native compare-and-swap or idempotency contract, so an uncertain acknowledgement is never replayed automatically.
 
 Mutating commands require explicit capability and, where destructive, explicit
 confirmation. `desktop prune run` defaults to dry-run; `--yes` invokes the

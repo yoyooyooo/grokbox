@@ -564,6 +564,25 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     gateway: true,
     streaming: false,
   },
+  {
+    path: ["agents", "routines", "webhook", "credential"],
+    usage: "grokbox agents routines webhook credential <agent> <routine-id> --confirm [--reveal-key]",
+    summary: "Read or mint one webhook Routine credential; key is hidden unless explicitly revealed.",
+    arguments: [
+      { syntax: "<agent>", description: "Agent ID or unambiguous name/title", role: "agent", kinds: ["agent"] },
+      { syntax: "<routine-id>", description: "Exact native Routine ID" },
+    ],
+    options: options([
+      { flags: "--confirm", description: "Confirm credential access/mint", required: true },
+      { flags: "--reveal-key", description: "Include the sensitive webhook key in stdout" },
+    ], { timeout: true }),
+    stdin: "none",
+    table: false,
+    timeout: true,
+    destructive: true,
+    gateway: true,
+    streaming: false,
+  },
   ...(["enable", "disable", "delete"] as const).map((action): LeafCommand => ({
     path: ["agents", "routines", action],
     usage: `grokbox agents routines ${action} <agent> <routine-id> --expect-revision <sha256> --confirm`,
@@ -1244,6 +1263,8 @@ export function renderCommandReference(cliVersion: string): string {
 
 export const GATEWAY_METHODS = [
   "getAgentAutomations",
+  "getGrokboxRoutineAuthority",
+  "getAutomationWebhookCredential",
   "createAgentAutomation",
   "updateAgentAutomation",
   "setAgentAutomationEnabled",

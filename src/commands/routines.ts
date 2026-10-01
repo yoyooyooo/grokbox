@@ -19,12 +19,13 @@ import {
   type RoutineSnapshot,
   type RoutineView,
 } from "../routines.ts";
-import { asString } from "../util.ts";
+import { asString, isRecord } from "../util.ts";
 import { findRosterRow } from "./roster.ts";
 
 export type RoutineAction =
   | "list"
   | "show"
+  | "webhook-credential"
   | "create"
   | "update"
   | "enable"
@@ -42,13 +43,20 @@ export type RoutineOptions = {
   expectRevision?: string;
   confirm?: boolean;
   operationId?: string;
+  revealKey?: boolean;
 };
 
-type Snapshot = RoutineSnapshot & { discovery: GatewayMeta };
+type RoutineAuthority = "box-local" | "server-temporal";
+type AgentRoutineTarget = {
+  id: string;
+  discovery: GatewayMeta;
+  harness: "box" | "temporal" | null;
+};
+type Snapshot = RoutineSnapshot & { discovery: GatewayMeta; authority: RoutineAuthority };
 
 type RoutineReceipt = {
   schemaVersion: 1;
-  action: Exclude<RoutineAction, "list" | "show">;
+  action: Exclude<RoutineAction, "list" | "show" | "webhook-credential">;
   agentId: string;
   routineId: string | null;
   operationId: string;
@@ -121,11 +129,15 @@ async function resolveAgent(
   client: GatewayClient,
   target: string,
   timeoutMs: number,
-): Promise<{ id: string; discovery: GatewayMeta }> {
+): Promise<AgentRoutineTarget> {
   const roster = await client.listAgents(timeoutMs);
   const row = findRosterRow(roster.agents, target, ["agent"]);
   try {
-    return { id: routineAgentId(asString(row.id)), discovery: gatewayMeta(roster.discovery) };
+    return {
+      id: routineAgentId(asString(row.id)),
+      discovery: gatewayMeta(roster.discovery),
+      harness: row.harness === "temporal" ? "temporal" : row.harness === "box" ? "box" : null,
+    };
   } catch {
     throw new CliError(
       "capability_unavailable",
@@ -134,16 +146,57 @@ async function resolveAgent(
   }
 }
 
+async function resolveRoutineAuthority(
+  client: GatewayClient,
+  agent: AgentRoutineTarget,
+  timeoutMs: number,
+): Promise<{ authority: RoutineAuthority; discovery: GatewayMeta }> {
+  if (agent.harness !== "temporal") {
+    return { authority: "box-local", discovery: agent.discovery };
+  }
+  let response;
+  try {
+    response = await client.getGrokboxRoutineAuthority(agent.id, timeoutMs);
+  } catch (error) {
+    if (error instanceof CliError && ["gateway_not_found", "gateway_bad_request", "capability_unavailable"].includes(error.code)) {
+      throw new CliError(
+        "capability_unavailable",
+        "This Temporal Bot requires the Grokbox Temporal Routine bridge before Routine state can be read safely.",
+      );
+    }
+    throw error;
+  }
+  const discovery = gatewayMeta(response.discovery);
+  if (!sameGeneration(agent.discovery, discovery)) {
+    throw new CliError("gateway_conflict", "Gateway generation changed while resolving Routine authority.");
+  }
+  if (!isRecord(response.result) ||
+      JSON.stringify(Object.keys(response.result).sort()) !== JSON.stringify(["source"]) ||
+      response.result.source !== "server-temporal") {
+    throw new CliError(
+      "capability_unavailable",
+      "Temporal Routine authority is not Server-backed on the selected Host.",
+    );
+  }
+  return { authority: "server-temporal", discovery };
+}
+
 async function readSnapshot(
   client: GatewayClient,
-  agentId: string,
+  agent: AgentRoutineTarget,
   timeoutMs: number,
 ): Promise<Snapshot> {
-  const response = await client.getAgentAutomations(agentId, timeoutMs);
+  const authority = await resolveRoutineAuthority(client, agent, timeoutMs);
+  const response = await client.getAgentAutomations(agent.id, timeoutMs);
+  const discovery = gatewayMeta(response.discovery);
+  if (!sameGeneration(authority.discovery, discovery)) {
+    throw new CliError("gateway_conflict", "Gateway generation changed while reading Routines.");
+  }
   try {
     return {
-      ...projectNativeRoutines(agentId, response.result),
-      discovery: gatewayMeta(response.discovery),
+      ...projectNativeRoutines(agent.id, response.result),
+      discovery,
+      authority: authority.authority,
     };
   } catch (error) {
     throw routineCliError(error);
@@ -231,19 +284,19 @@ async function listOrShow(
 ): Promise<void> {
   const io = ioFromOpts(raw);
   const agent = await resolveAgent(client, agentTarget, io.timeoutMs);
-  const snapshot = await readSnapshot(client, agent.id, io.timeoutMs);
+  const snapshot = await readSnapshot(client, agent, io.timeoutMs);
   if (action === "list") {
     if (io.table) {
       deps.stdout.write(listTable(snapshot.catalog));
       return;
     }
-    writeSuccess(deps.stdout, snapshot.catalog, snapshot.discovery);
+    writeSuccess(deps.stdout, { ...snapshot.catalog, authority: snapshot.authority }, snapshot.discovery);
     return;
   }
   const routine = findRoutine(snapshot, routineTarget ?? "");
   writeSuccess(
     deps.stdout,
-    { schemaVersion: 1, agentId: agent.id, routine, coverage: snapshot.catalog.coverage },
+    { schemaVersion: 1, agentId: agent.id, authority: snapshot.authority, routine, coverage: snapshot.catalog.coverage },
     snapshot.discovery,
   );
 }
@@ -257,9 +310,15 @@ async function createRoutine(
   requireConfirmed(raw);
   const io = ioFromOpts(raw);
   const op = operationId(raw, deps);
-  const desired = await definition(raw, deps);
   const agent = await resolveAgent(client, agentTarget, io.timeoutMs);
-  const before = await readSnapshot(client, agent.id, io.timeoutMs);
+  if (agent.harness === "temporal") {
+    throw new CliError(
+      "capability_unavailable",
+      "The current official Temporal Routine contract does not expose create through the Box management surface.",
+    );
+  }
+  const desired = await definition(raw, deps);
+  const before = await readSnapshot(client, agent, io.timeoutMs);
   if (before.catalog.coverage.atLimit) {
     throw new CliError(
       "capability_unavailable",
@@ -283,7 +342,7 @@ async function createRoutine(
   if (!sameGeneration(before.discovery, gatewayMeta(write.discovery))) {
     return unknown(op, "Gateway generation changed during Routine create; inspect the Routine list before any retry.");
   }
-  const after = await readSnapshot(client, agent.id, io.timeoutMs);
+  const after = await readSnapshot(client, agent, io.timeoutMs);
   if (!sameGeneration(before.discovery, after.discovery)) {
     return unknown(op, "Gateway generation changed after Routine create; inspect the Routine list before any retry.");
   }
@@ -320,9 +379,15 @@ async function updateRoutine(
   const io = ioFromOpts(raw);
   const op = operationId(raw, deps);
   const expected = expectedRevision(raw);
-  const desired = await definition(raw, deps);
   const agent = await resolveAgent(client, agentTarget, io.timeoutMs);
-  const before = await readSnapshot(client, agent.id, io.timeoutMs);
+  if (agent.harness === "temporal") {
+    throw new CliError(
+      "capability_unavailable",
+      "The current official Temporal Routine contract does not expose definition update through the Box management surface.",
+    );
+  }
+  const desired = await definition(raw, deps);
+  const before = await readSnapshot(client, agent, io.timeoutMs);
   const prior = mutableRoutine(before, routineTarget);
   if (prior.revision !== expected) throw routineCliError(new RoutineError("revision_conflict"));
   const desiredDigest = routineDefinitionDigest(desired, prior.enabled);
@@ -356,7 +421,7 @@ async function updateRoutine(
   if (!sameGeneration(before.discovery, gatewayMeta(write.discovery))) {
     return unknown(op, "Gateway generation changed during Routine update; inspect the Routine before any retry.");
   }
-  const after = await readSnapshot(client, agent.id, io.timeoutMs);
+  const after = await readSnapshot(client, agent, io.timeoutMs);
   if (!sameGeneration(before.discovery, after.discovery)) {
     return unknown(op, "Gateway generation changed after Routine update; inspect the Routine before any retry.");
   }
@@ -394,7 +459,7 @@ async function setRoutineEnabled(
   const op = operationId(raw, deps);
   const expected = expectedRevision(raw);
   const agent = await resolveAgent(client, agentTarget, io.timeoutMs);
-  const before = await readSnapshot(client, agent.id, io.timeoutMs);
+  const before = await readSnapshot(client, agent, io.timeoutMs);
   const prior = mutableRoutine(before, routineTarget);
   if (prior.revision !== expected) throw routineCliError(new RoutineError("revision_conflict"));
   const enabled = action === "enable";
@@ -428,7 +493,7 @@ async function setRoutineEnabled(
   if (!sameGeneration(before.discovery, gatewayMeta(write.discovery))) {
     return unknown(op, "Gateway generation changed during Routine state change; inspect the Routine before any retry.");
   }
-  const after = await readSnapshot(client, agent.id, io.timeoutMs);
+  const after = await readSnapshot(client, agent, io.timeoutMs);
   if (!sameGeneration(before.discovery, after.discovery)) {
     return unknown(op, "Gateway generation changed after Routine state change; inspect the Routine before any retry.");
   }
@@ -453,6 +518,59 @@ async function setRoutineEnabled(
   }, after.discovery);
 }
 
+async function showWebhookCredential(
+  deps: CliDeps,
+  client: GatewayClient,
+  agentTarget: string,
+  routineTarget: string,
+  raw: RoutineOptions,
+): Promise<void> {
+  requireConfirmed(raw);
+  const io = ioFromOpts(raw);
+  const agent = await resolveAgent(client, agentTarget, io.timeoutMs);
+  const snapshot = await readSnapshot(client, agent, io.timeoutMs);
+  const routine = findRoutine(snapshot, routineTarget);
+  if (routine.trigger.type !== "webhook") {
+    throw new CliError("capability_unavailable", "Routine is not webhook-triggered.");
+  }
+
+  const response = await client.getAutomationWebhookCredential(agent.id, routine.id, io.timeoutMs);
+  const discovery = gatewayMeta(response.discovery);
+  if (!sameGeneration(snapshot.discovery, discovery)) {
+    throw new CliError("gateway_conflict", "Gateway generation changed while reading webhook credentials.");
+  }
+  if (!isRecord(response.result) ||
+      JSON.stringify(Object.keys(response.result).sort()) !== JSON.stringify(["key", "url"]) ||
+      typeof response.result.url !== "string" ||
+      typeof response.result.key !== "string" ||
+      response.result.key.length < 1 ||
+      response.result.key.length > 4096 ||
+      response.result.key.includes("\0")) {
+    throw new CliError("gateway_internal", "Gateway returned an invalid webhook credential.");
+  }
+  let url: URL;
+  try {
+    url = new URL(response.result.url);
+  } catch {
+    throw new CliError("gateway_internal", "Gateway returned an invalid webhook URL.");
+  }
+  if (url.protocol !== "https:" || url.username || url.password || url.hash) {
+    throw new CliError("gateway_internal", "Gateway returned an unsafe webhook URL.");
+  }
+
+  const revealKey = raw.revealKey === true;
+  writeSuccess(deps.stdout, {
+    schemaVersion: 1,
+    agentId: agent.id,
+    routineId: routine.id,
+    authority: snapshot.authority,
+    url: url.toString(),
+    keyPresent: true,
+    keyIncluded: revealKey,
+    ...(revealKey ? { key: response.result.key } : {}),
+  }, discovery);
+}
+
 async function deleteRoutine(
   deps: CliDeps,
   client: GatewayClient,
@@ -465,7 +583,7 @@ async function deleteRoutine(
   const op = operationId(raw, deps);
   const expected = expectedRevision(raw);
   const agent = await resolveAgent(client, agentTarget, io.timeoutMs);
-  const before = await readSnapshot(client, agent.id, io.timeoutMs);
+  const before = await readSnapshot(client, agent, io.timeoutMs);
   const prior = mutableRoutine(before, routineTarget);
   if (prior.revision !== expected) throw routineCliError(new RoutineError("revision_conflict"));
 
@@ -483,7 +601,7 @@ async function deleteRoutine(
   if (!sameGeneration(before.discovery, gatewayMeta(write.discovery))) {
     return unknown(op, "Gateway generation changed during Routine delete; inspect the Routine list before any retry.");
   }
-  const after = await readSnapshot(client, agent.id, io.timeoutMs);
+  const after = await readSnapshot(client, agent, io.timeoutMs);
   if (!sameGeneration(before.discovery, after.discovery)) {
     return unknown(op, "Gateway generation changed after Routine delete; inspect the Routine list before any retry.");
   }
@@ -520,6 +638,10 @@ export async function runRoutines(
     return;
   }
   if (!routineTarget) throw usage("Routine ID is required.");
+  if (action === "webhook-credential") {
+    await showWebhookCredential(deps, client, agentTarget, routineTarget, raw);
+    return;
+  }
   if (action === "update") {
     await updateRoutine(deps, client, agentTarget, routineTarget, raw);
     return;

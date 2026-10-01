@@ -16,6 +16,7 @@ import {
 } from "./helpers.ts";
 
 const BOT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const TEMPORAL_BOT = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const OP = "routine-op-1";
 const PRIVATE_PROMPT = "PRIVATE routine body that must never appear in output";
 
@@ -33,6 +34,16 @@ function botRow() {
     hasUnread: false,
     updatedAt: 1,
     memberIds: [],
+  };
+}
+
+function temporalBotRow() {
+  return {
+    ...botRow(),
+    id: TEMPORAL_BOT,
+    name: "temporal-routine-bot",
+    title: "Temporal Routine Bot",
+    harness: "temporal",
   };
 }
 
@@ -57,6 +68,38 @@ async function fixture() {
   const gateway = await startMockGateway({
     agents: [...sampleAgents(), botRow()],
     routines: { [BOT]: [seedRoutine()] },
+  });
+  const discoveryPath = await writeDiscovery({
+    port: gateway.port,
+    pid: gateway.pid,
+    startedAt: gateway.startedAt,
+    token: gateway.token,
+  });
+  const base: Partial<CliDeps> = {
+    configDir,
+    env: {},
+    discoveryPath,
+    daemonSocket: socket,
+    transport: "auto",
+    stdinIsTTY: true,
+    confirm: async () => false,
+    randomUUID: () => OP,
+  };
+  const run = async (argv: string[], overrides: Partial<CliDeps> = {}) =>
+    await captureCli(argv, { ...base, ...overrides });
+  return { configDir, socket, gateway, discoveryPath, run };
+}
+
+async function temporalFixture(routines: unknown[] = [seedRoutine()]) {
+  const configDir = await mkdtemp(join(tmpdir(), "grokbox-temporal-routines-test-"));
+  const socket = join(configDir, "run", "daemon.sock");
+  const gateway = await startMockGateway({
+    agents: [...sampleAgents(), temporalBotRow()],
+    routines: { [TEMPORAL_BOT]: routines },
+    webhookCredential: {
+      url: "https://example.test/automations/webhook/server-routine-id",
+      key: "fixture-temporal-webhook-secret",
+    },
   });
   const discoveryPath = await writeDiscovery({
     port: gateway.port,
@@ -334,6 +377,93 @@ describe("native Routine management", () => {
         phase: "native-routine",
       });
       expect(writes).toBe(1);
+    } finally {
+      f.gateway.stop();
+    }
+  });
+
+  test("Temporal routines use Server authority, expose webhook credentials safely, and refuse unsupported definition writes", async () => {
+    const f = await temporalFixture();
+    try {
+      const listed = await f.run(["agents", "routines", "list", TEMPORAL_BOT]);
+      expect(listed.code, listed.stderr).toBe(0);
+      const listedData = body<{
+        authority: string;
+        routines: Array<{ id: string; trigger: { type: string } }>;
+      }>(listed.stdout);
+      expect(listedData.authority).toBe("server-temporal");
+      expect(listedData.routines).toHaveLength(1);
+
+      const hidden = await f.run([
+        "agents", "routines", "webhook", "credential",
+        TEMPORAL_BOT, "seed-routine",
+        "--confirm",
+      ]);
+      expect(hidden.code, hidden.stderr).toBe(0);
+      const hiddenData = body<{
+        authority: string;
+        url: string;
+        keyPresent: boolean;
+        keyIncluded: boolean;
+        key?: string;
+      }>(hidden.stdout);
+      expect(hiddenData).toMatchObject({
+        authority: "server-temporal",
+        url: "https://example.test/automations/webhook/server-routine-id",
+        keyPresent: true,
+        keyIncluded: false,
+      });
+      expect(hiddenData.key).toBeUndefined();
+      expect(hidden.stdout).not.toContain("fixture-temporal-webhook-secret");
+
+      const revealed = await f.run([
+        "agents", "routines", "webhook", "credential",
+        TEMPORAL_BOT, "seed-routine",
+        "--confirm",
+        "--reveal-key",
+      ]);
+      expect(revealed.code, revealed.stderr).toBe(0);
+      expect(body<{ keyIncluded: boolean; key: string }>(revealed.stdout)).toMatchObject({
+        keyIncluded: true,
+        key: "fixture-temporal-webhook-secret",
+      });
+
+      const noConfirm = await f.run([
+        "agents", "routines", "webhook", "credential",
+        TEMPORAL_BOT, "seed-routine",
+      ]);
+      expect(noConfirm.code).toBe(2);
+
+      const beforeWrites = routineWriteCalls(f.gateway).length;
+      const create = await f.run([
+        "agents", "routines", "create", TEMPORAL_BOT,
+        "--name", "Unsupported",
+        "--text", "body",
+        "--webhook",
+        "--confirm",
+      ]);
+      expect(create.code).not.toBe(0);
+      expect(parseJson(create.stderr)).toMatchObject({
+        error: { code: "capability_unavailable" },
+      });
+      expect(create.stderr).toContain("does not expose create");
+
+      const shown = await f.run(["agents", "routines", "show", TEMPORAL_BOT, "seed-routine"]);
+      const revision = body<{ routine: { revision: string } }>(shown.stdout).routine.revision;
+      const update = await f.run([
+        "agents", "routines", "update", TEMPORAL_BOT, "seed-routine",
+        "--name", "Unsupported",
+        "--text", "body",
+        "--webhook",
+        "--expect-revision", revision,
+        "--confirm",
+      ]);
+      expect(update.code).not.toBe(0);
+      expect(parseJson(update.stderr)).toMatchObject({
+        error: { code: "capability_unavailable" },
+      });
+      expect(update.stderr).toContain("does not expose definition update");
+      expect(routineWriteCalls(f.gateway)).toHaveLength(beforeWrites);
     } finally {
       f.gateway.stop();
     }

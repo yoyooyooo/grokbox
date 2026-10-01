@@ -263,6 +263,19 @@ export async function startDaemonHost(
       const value = await gateway.getAgentAutomations(id, params.timeoutMs as number);
       return { result: value.result, gateway: gatewayMeta(value.discovery) };
     }
+    if (method === "getGrokboxRoutineAuthority") {
+      assertExactParams(params, { id: "string", timeoutMs: "number" });
+      const id = routineInput(() => routineAgentId(params.id));
+      const value = await gateway.getGrokboxRoutineAuthority(id, params.timeoutMs as number);
+      return { result: value.result, gateway: gatewayMeta(value.discovery) };
+    }
+    if (method === "getAutomationWebhookCredential") {
+      assertExactParams(params, { id: "string", automationId: "string", timeoutMs: "number" });
+      const id = routineInput(() => routineAgentId(params.id));
+      const automationId = routineInput(() => routineId(params.automationId));
+      const value = await gateway.getAutomationWebhookCredential(id, automationId, params.timeoutMs as number);
+      return { result: value.result, gateway: gatewayMeta(value.discovery) };
+    }
     if (method === "createAgentAutomation") {
       assertParamKeys(params, ["id", "spec", "timeoutMs", "expectedGatewayPid", "expectedGatewayStartedAt"], "Routine create");
       const id = routineInput(() => routineAgentId(params.id));
