@@ -76,6 +76,8 @@ describe("release version contract", () => {
     expect(workflow).toContain('npm publish --access public --provenance --tag "${NPM_DIST_TAG}"');
     expect(workflow).toContain("Manual dispatch is repair-only");
     expect(workflow).toContain('"$integrity" == "$LOCAL_INTEGRITY"');
+    expect(workflow).toContain("readback_deadline=$((SECONDS + 300))");
+    expect(workflow).toContain("waiting up to 5 minutes for registry propagation");
     expect(workflow).toContain("Provenance commit does not match the release tag");
     expect(workflow).not.toContain("NPM_TOKEN");
     expect(workflow.indexOf("Verify npm package, channel, and provenance"))
