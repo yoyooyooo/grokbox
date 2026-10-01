@@ -516,6 +516,54 @@ describe("history, memory, events, and running", () => {
     expect(line.event).toMatchObject({ kind: "gap", payload: { reason: "malformed_frame", resumable: false } });
   });
 
+  test("direct Gateway once emits exactly one gap for multiple malformed frames", async () => {
+    const result = await withGateway(["events", "--once"], { eventsSse: "data: {bad1\n\ndata: {bad2\n\n" });
+    expect(result.code, result.stderr).toBe(0);
+    const lines = result.stdout.trim().split("\n").filter(Boolean);
+    expect(lines).toHaveLength(1);
+    const line = parseJson(lines[0]!) as {
+      event: { source: string; kind: string; sequence: number; payload: { reason: string; resumable: boolean } };
+      cursor: string;
+    };
+    expect(line.event).toMatchObject({
+      source: "gateway",
+      kind: "gap",
+      sequence: 1,
+      payload: { reason: "malformed_frame", resumable: false },
+    });
+    expect(line.cursor).toBe("direct:1");
+  });
+
+  test("direct Gateway once exits promptly after the first gap on a held-open stream", async () => {
+    const start = Date.now();
+    const result = await withGateway(["events", "--once"], {
+      eventsSseStream: () => {
+        let timer: ReturnType<typeof setTimeout>;
+        return new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(Buffer.from("data: {held-open-bad\n\n"));
+            timer = setTimeout(() => {
+              try {
+                controller.enqueue(Buffer.from("data: {later1\n\ndata: {later2\n\n"));
+                controller.close();
+              } catch {
+                /* stream already canceled by --once */
+              }
+            }, 300);
+          },
+          cancel() { clearTimeout(timer); },
+        });
+      },
+    });
+    const elapsed = Date.now() - start;
+    expect(result.code, result.stderr).toBe(0);
+    const lines = result.stdout.trim().split("\n").filter(Boolean);
+    expect(lines).toHaveLength(1);
+    const line = parseJson(lines[0]!) as { event: { kind: string; payload: { reason: string } } };
+    expect(line.event).toMatchObject({ kind: "gap", payload: { reason: "malformed_frame" } });
+    expect(elapsed).toBeLessThan(200);
+  });
+
   test("is running resolves a cross-kind title through listAgents", async () => {
     const result = await withGateway(["is", "running", "Ops"]);
     expect(result.code).toBe(0);

@@ -33,6 +33,7 @@ export type MockOptions = {
   routines?: Record<string, unknown[]>;
   sendPrompt?: (index: number, body: unknown) => { status: number; body?: unknown };
   eventsSse?: string;
+  eventsSseStream?: () => ReadableStream<Uint8Array>;
 };
 
 export type MockGateway = {
@@ -325,6 +326,11 @@ export async function startMockGateway(options: MockOptions = {}): Promise<MockG
         return Response.json({ accepted: true });
       }
       if (url.pathname === "/events" && req.method === "GET") {
+        if (options.eventsSseStream) {
+          return new Response(options.eventsSseStream(), {
+            headers: { "content-type": "text/event-stream" },
+          });
+        }
         const sse =
           options.eventsSse ??
           `retry: 1000\n\ndata: {"channel":"transcript","payload":{"type":"appended","entry":{"kind":"user"}}}\n\n`;
