@@ -4,7 +4,7 @@ This project follows [Semantic Versioning](https://semver.org/). While the
 version is below 1.0, documented experimental compatibility surfaces may change
 when upstream Grok Bot or Cursor internals change.
 
-## 0.1.0-alpha.6 — Unreleased
+## 0.1.0-alpha.7 — Unreleased
 
 - Add bounded native Grok Bot Routine lifecycle commands under `agents routines`: list/show plus confirmed create/update/enable/disable/delete with revision preflight, same-generation readback, disabled-by-default creation, and no prompt/credential disclosure.
 - Retry GitHub Actions Trusted Publishing now that npm `grokbox` has a
