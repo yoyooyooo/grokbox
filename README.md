@@ -36,7 +36,7 @@ Highlights:
 
 - strict local and remote Profiles with separate credential authorities;
 - finite Unix-socket/loopback daemon and private Tailscale Serve mapping;
-- agent/group management, send, transcript, Memory, and bounded events;
+- agent/group and native Routine lifecycle management, send, transcript, Memory, and bounded events;
 - named-root governed file reads and mutations;
 - literal structured execution with durable Jobs and bounded logs;
 - layered read-only diagnosis and explicit recovery;
@@ -138,6 +138,7 @@ grokbox profile list --table
 grokbox doctor
 grokbox daemon status
 grokbox agents list --table
+grokbox agents routines list <agent> --table
 grokbox groups list --table
 grokbox history tail <target> --limit 20
 grokbox memory list <agent>
@@ -146,6 +147,8 @@ grokbox fs stat workspace:/artifact.txt
 grokbox jobs list --table
 grokbox desktop status --table
 ```
+
+Routine reads expose bounded metadata only: prompt bodies, webhook credentials, native paths, and unknown provider fields stay private. Routine create always writes a disabled definition; update/enable/disable/delete require explicit confirmation, and all mutations other than create also require the exact revision from a fresh `agents routines list/show`. Upstream Routine writes have no native compare-and-swap or idempotency contract, so an uncertain acknowledgement is never replayed automatically.
 
 Mutating commands require explicit capability and, where destructive, explicit
 confirmation. `desktop prune run` defaults to dry-run; `--yes` invokes the

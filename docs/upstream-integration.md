@@ -36,6 +36,11 @@ searchAgents
 getAgentTranscriptTail
 getAgentThread
 getAgentMemories
+getAgentAutomations
+createAgentAutomation
+updateAgentAutomation
+setAgentAutomationEnabled
+deleteAgentAutomation
 sendPrompt
 createAgent
 createGroup
@@ -47,6 +52,8 @@ deleteAgent
 ```
 
 Every write has an explicit schema and command. Groups reject nested groups, membership is bounded, updates preserve required existing fields, and uncertain delivery is not blindly replayed.
+
+The native Routine surface is deliberately narrow. `getAgentAutomations` is projected into a bounded metadata-only window; prompt bodies, filesystem paths, webhook credentials and unknown provider fields never enter normal output. Supported mutations are `createAgentAutomation`, `updateAgentAutomation`, `setAgentAutomationEnabled`, and `deleteAgentAutomation`. grokbox creates new definitions disabled, requires revision preflight plus explicit confirmation for later mutations, preserves enabled state on definition update, and performs a same-generation readback. The upstream API does not expose compare-and-swap or native idempotency for these methods, so an uncertain write is reported as `operation_outcome_unknown` and is never automatically replayed. Credential minting or Routine invocation is not part of this command surface.
 
 `sendPrompt` represents one Human message to an ordinary agent or group. It is not peer delivery, an administrative broadcast, approval resolution, or arbitrary host execution.
 

@@ -30,6 +30,7 @@ export type MockOptions = {
   tail?: unknown;
   thread?: unknown;
   memories?: unknown[];
+  routines?: Record<string, unknown[]>;
   sendPrompt?: (index: number, body: unknown) => { status: number; body?: unknown };
   eventsSse?: string;
 };
@@ -40,6 +41,7 @@ export type MockGateway = {
   startedAt: number;
   token: string;
   requests: RecordedRequest[];
+  routines: Map<string, Array<Record<string, unknown>>>;
   stop: () => void;
 };
 
@@ -128,6 +130,15 @@ export async function startMockGateway(options: MockOptions = {}): Promise<MockG
   );
   let createdAgentCount = 0;
   let createdGroupCount = 0;
+  let createdRoutineCount = 0;
+  const routines = new Map<string, Array<Record<string, unknown>>>(
+    Object.entries(options.routines ?? {}).map(([agentId, rows]) => [
+      agentId,
+      structuredClone(rows).filter(
+        (row): row is Record<string, unknown> => row !== null && typeof row === "object" && !Array.isArray(row),
+      ),
+    ]),
+  );
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -251,6 +262,60 @@ export async function startMockGateway(options: MockOptions = {}): Promise<MockG
           ],
         );
       }
+      if (url.pathname === "/api/getAgentAutomations" && req.method === "POST") {
+        const input = body as { id?: unknown };
+        return Response.json(routines.get(String(input.id)) ?? []);
+      }
+      if (url.pathname === "/api/createAgentAutomation" && req.method === "POST") {
+        const input = body as { id?: unknown; spec?: unknown };
+        const agentId = String(input.id);
+        const list = routines.get(agentId) ?? [];
+        const spec = input.spec && typeof input.spec === "object" && !Array.isArray(input.spec)
+          ? input.spec as Record<string, unknown>
+          : {};
+        createdRoutineCount += 1;
+        list.push({
+          id: `routine-created-${createdRoutineCount}`,
+          name: spec.name,
+          prompt: spec.prompt,
+          trigger: structuredClone(spec.trigger),
+          isEnabled: spec.isEnabled === true,
+          createdAt: Date.now(),
+          lastRunAt: null,
+          nextRunAt: null,
+        });
+        routines.set(agentId, list);
+        return Response.json(list);
+      }
+      if (url.pathname === "/api/updateAgentAutomation" && req.method === "POST") {
+        const input = body as { id?: unknown; automationId?: unknown; spec?: unknown };
+        const list = routines.get(String(input.id)) ?? [];
+        const row = list.find((candidate) => candidate.id === input.automationId);
+        const spec = input.spec && typeof input.spec === "object" && !Array.isArray(input.spec)
+          ? input.spec as Record<string, unknown>
+          : {};
+        if (row) {
+          if (typeof spec.name === "string") row.name = spec.name;
+          if (typeof spec.prompt === "string") row.prompt = spec.prompt;
+          if (spec.trigger && typeof spec.trigger === "object") row.trigger = structuredClone(spec.trigger);
+          if (typeof spec.isEnabled === "boolean") row.isEnabled = spec.isEnabled;
+        }
+        return Response.json(list);
+      }
+      if (url.pathname === "/api/setAgentAutomationEnabled" && req.method === "POST") {
+        const input = body as { id?: unknown; automationId?: unknown; isEnabled?: unknown };
+        const list = routines.get(String(input.id)) ?? [];
+        const row = list.find((candidate) => candidate.id === input.automationId);
+        if (row && typeof input.isEnabled === "boolean") row.isEnabled = input.isEnabled;
+        return Response.json(list);
+      }
+      if (url.pathname === "/api/deleteAgentAutomation" && req.method === "POST") {
+        const input = body as { id?: unknown; automationId?: unknown };
+        const list = routines.get(String(input.id)) ?? [];
+        const index = list.findIndex((candidate) => candidate.id === input.automationId);
+        if (index >= 0) list.splice(index, 1);
+        return Response.json(list);
+      }
       if (url.pathname === "/api/sendPrompt" && req.method === "POST") {
         sendCount += 1;
         if (options.sendPrompt) {
@@ -276,6 +341,7 @@ export async function startMockGateway(options: MockOptions = {}): Promise<MockG
     startedAt,
     token,
     requests,
+    routines,
     stop: () => server.stop(true),
   };
 }

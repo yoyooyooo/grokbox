@@ -15,6 +15,10 @@ const FILESYSTEM_OPERATIONS = new Set(["stat", "list", "read", "download", "writ
 
 const MANAGEMENT_WRITES = new Set<DaemonMethod>([
   "createAgent",
+  "createAgentAutomation",
+  "updateAgentAutomation",
+  "setAgentAutomationEnabled",
+  "deleteAgentAutomation",
   "createGroup",
   "updateAgent",
   "setGroupMembers",

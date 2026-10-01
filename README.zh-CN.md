@@ -29,7 +29,7 @@ fs  exec  jobs  desktop
 
 - 严格区分本机与远端 Profile，并分离不同凭据权威；
 - 有限的 Unix socket/loopback daemon 与私有 Tailscale Serve 映射；
-- Agent/Group 管理、消息发送、Transcript、Memory 和有界事件读取；
+- Agent/Group 与原生 Routine 全生命周期管理、消息发送、Transcript、Memory 和有界事件读取；
 - 通过命名根目录治理文件读取与变更；
 - 字面量结构化执行、持久 Job 和有界日志；
 - 分层只读诊断与显式恢复；
@@ -118,6 +118,7 @@ grokbox profile list --table
 grokbox doctor
 grokbox daemon status
 grokbox agents list --table
+grokbox agents routines list <agent> --table
 grokbox groups list --table
 grokbox history tail <target> --limit 20
 grokbox memory list <agent>
@@ -126,6 +127,8 @@ grokbox fs stat workspace:/artifact.txt
 grokbox jobs list --table
 grokbox desktop status --table
 ```
+
+Routine 读取只输出有界元数据，不暴露 prompt 正文、Webhook credential、原生路径或未知 provider 字段。Routine create 始终只创建 disabled definition；update/enable/disable/delete 需要显式确认，create 之外的 mutation 还必须携带刚从 `agents routines list/show` 读到的精确 revision。上游 Routine 写接口没有 native compare-and-swap 或 idempotency 合同，因此回执不确定时不会自动重放。
 
 变更命令需要显式 capability；破坏性操作还需要显式确认。`desktop prune run` 默认 dry-run；传入 `--yes` 后会调用上游 stop-window 路径，并删除该 fork 的 Chrome profile。
 
