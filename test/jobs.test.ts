@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, realpath, rename, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runExec } from "../src/commands/exec.ts";
@@ -90,6 +90,41 @@ describeLinux("structured execution and durable Jobs", () => {
     expect(() => validateDaemonConfig({ ...base, filesystem: { roots: [{ ...base.filesystem.roots[0], operations: ["read"] }] } })).toThrow();
     expect(() => validateDaemonConfig({ ...base, process: { ...base.process, environment: ["NODE_OPTIONS"] } })).toThrow();
     expect(() => validateDaemonConfig({ ...base, process: { ...base.process, executables: [...base.process.executables, ...base.process.executables] } })).toThrow();
+  });
+
+  test("executable and shell paths traversing symlinked ancestor directories are accepted", async () => {
+    const base = await mkdtemp(join(tmpdir(), "grokbox-symlink-ancestor-"));
+    const realDir = join(base, "real");
+    await mkdir(realDir, { recursive: true, mode: 0o700 });
+    const realFile = join(realDir, "exe");
+    await writeFile(realFile, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    await chmod(realFile, 0o755);
+    const linkDir = join(base, "link");
+    await symlink(realDir, linkDir, "dir");
+    const throughSymlink = join(linkDir, "exe");
+    expect(await realpath(throughSymlink)).toBe(realFile);
+
+    const aliasPolicy: DaemonProcessConfig = {
+      cwdRoots: ["workspace"], defaultCwdRoot: "workspace",
+      executables: [{ name: "exe", path: throughSymlink }], environment: [],
+      maxConcurrent: 1, maxQueued: 1, maxRuntimeMs: 1000, maxOutputBytes: 1024,
+    };
+    const authority = await ProcessAuthority.create(aliasPolicy);
+    expect(authority.capabilities()).toContain("host.process.run");
+
+    const shellAuthority = await ProcessAuthority.create({ ...aliasPolicy, shell: { executable: throughSymlink } });
+    expect(shellAuthority.capabilities()).toContain("host.process.shell");
+
+    const finalLink = join(base, "linkexe");
+    await symlink(realFile, finalLink, "file");
+    await expect(ProcessAuthority.create({
+      ...aliasPolicy, executables: [{ name: "exe", path: finalLink }],
+    })).rejects.toMatchObject({
+      code: "process_forbidden",
+      message: "Configured executable must be an executable non-symlink file.",
+    });
+
+    await rm(base, { recursive: true, force: true });
   });
 
   test("Gateway-only execution fails before argv and environment handling", async () => {
