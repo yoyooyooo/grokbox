@@ -129,7 +129,8 @@ export async function runJobsCancel(deps: CliDeps, jobId: string, raw: JobsOptio
   } catch (error) {
     if (!(error instanceof CliError) || error.code !== "operation_outcome_unknown") throw error;
     const current = validateJobProjection((await daemon.call("jobShow", { jobId, waitMs: 0 })).result, jobId);
-    if (current.cancelOperationId !== cancelOperationId) throw error;
+    const cancelInEffect = current.cancelOperationId !== undefined && current.state !== "queued";
+    if (current.cancelOperationId !== cancelOperationId && !cancelInEffect) throw error;
     writeSuccess(deps.stdout, current);
   }
 }

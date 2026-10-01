@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, realpath, rename, writeFile } from "node:fs/p
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runExec } from "../src/commands/exec.ts";
+import { runJobsCancel } from "../src/commands/jobs.ts";
 import { writeProfileFile } from "../src/config/profile.ts";
 import type { DaemonProcessConfig } from "../src/daemon/config.ts";
 import { validateDaemonConfig } from "../src/daemon/config.ts";
@@ -72,6 +73,76 @@ async function terminal(run: (argv: string[]) => ReturnType<typeof captureCli>, 
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error("Job did not terminate");
+}
+
+function makeJobProjection(
+  jobId: string,
+  state: string,
+  cancelOperationId: string | undefined,
+  extras: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    jobId,
+    state,
+    createdAt: 1_000,
+    cwd: "workspace:/",
+    command: { executable: "node", argumentCount: 0, shell: false },
+    output: "capture",
+    runTimeoutMs: 10_000,
+    logs: { bytes: 0, nextOffset: 0, truncated: false },
+    ...(cancelOperationId === undefined ? {} : { cancelOperationId }),
+    ...extras,
+  };
+}
+
+function cancelRecoveryDeps(
+  stdout: { write(chunk: string): void },
+  jobShowProjection: (cancelOperationId: string) => Record<string, unknown>,
+): { deps: ReturnType<typeof createProductionDeps>; methods: string[]; cancelOperationIds: string[] } {
+  const methods: string[] = [];
+  const cancelOperationIds: string[] = [];
+  let captured: string | undefined;
+  const fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    const request = JSON.parse(String(init?.body)) as { method: string; params: Record<string, unknown> };
+    methods.push(request.method);
+    if (request.method === "handshake") {
+      return Response.json({
+        ok: true,
+        result: {
+          protocolMajor: 1,
+          daemonVersion: "0.0.1",
+          daemonPid: 1,
+          startedAt: 1,
+          daemonGeneration: "11111111-1111-4111-8111-111111111111",
+          capabilities: ["host.process.run", "host.process.manage"],
+          filesystemRoots: [],
+          gateway: { pid: 2, startedAt: 2 },
+        },
+      });
+    }
+    if (request.method === "jobCancel") {
+      cancelOperationIds.push(String(request.params.cancelOperationId));
+      captured = String(request.params.cancelOperationId);
+      throw new TypeError("transport loss");
+    }
+    if (request.method === "jobShow") {
+      return Response.json({ ok: true, result: jobShowProjection(captured ?? "") });
+    }
+    return Response.json(
+      { ok: false, error: { code: "job_not_found", message: "x", retryable: false } },
+      { status: 400 },
+    );
+  }) as typeof globalThis.fetch;
+  const deps = {
+    ...createProductionDeps(),
+    transport: "daemon" as const,
+    daemonServerUrl: "https://daemon.invalid",
+    daemonToken: "test-token",
+    fetch,
+    stdout,
+    stderr: { write() {} },
+  };
+  return { deps, methods, cancelOperationIds };
 }
 
 describeLinux("structured execution and durable Jobs", () => {
@@ -210,6 +281,47 @@ describeLinux("structured execution and durable Jobs", () => {
     expect(methods.filter((method) => method === "jobSubmit")).toHaveLength(1);
     expect(submittedAuthorities).toEqual(["11111111-1111-4111-8111-111111111111"]);
     expect(methods.at(-1)).toBe("jobShow");
+  });
+
+  test("jobs cancel recovery confirms an idempotent repeat cancel whose prior cancel is in effect under transport loss", async () => {
+    let stdout = "";
+    const priorId = "22222222-2222-4222-8222-222222222222";
+    const jobId = "33333333-3333-4333-8333-333333333333";
+    const { deps, methods, cancelOperationIds } = cancelRecoveryDeps(
+      { write: (chunk: string) => { stdout += chunk; } },
+      () => makeJobProjection(jobId, "running", priorId, { startedAt: 1_000 }),
+    );
+    await runJobsCancel(deps, jobId, { json: true });
+    const out = JSON.parse(stdout) as { ok: boolean; data: { state: string; cancelOperationId: string } };
+    expect(out.ok).toBe(true);
+    expect(out.data.state).toBe("running");
+    expect(out.data.cancelOperationId).toBe(priorId);
+    expect(methods).toEqual(["handshake", "jobCancel", "jobShow"]);
+    expect(cancelOperationIds).toHaveLength(1);
+    expect(cancelOperationIds[0]).not.toBe(priorId);
+  });
+
+  test("jobs cancel recovery still reports unknown when no cancel is recorded on a running Job", async () => {
+    let stdout = "";
+    const jobId = "33333333-3333-4333-8333-333333333333";
+    const { deps, methods } = cancelRecoveryDeps(
+      { write: (chunk: string) => { stdout += chunk; } },
+      () => makeJobProjection(jobId, "running", undefined, { startedAt: 1_000 }),
+    );
+    await expect(runJobsCancel(deps, jobId, { json: true })).rejects.toMatchObject({ code: "operation_outcome_unknown" });
+    expect(stdout).toBe("");
+    expect(methods).toEqual(["handshake", "jobCancel", "jobShow"]);
+  });
+
+  test("jobs cancel recovery still reports unknown when a queued Job has no cancel recorded", async () => {
+    let stdout = "";
+    const jobId = "33333333-3333-4333-8333-333333333333";
+    const { deps } = cancelRecoveryDeps(
+      { write: (chunk: string) => { stdout += chunk; } },
+      () => makeJobProjection(jobId, "queued", undefined),
+    );
+    await expect(runJobsCancel(deps, jobId, { json: true })).rejects.toMatchObject({ code: "operation_outcome_unknown" });
+    expect(stdout).toBe("");
   });
 
   test("failed queued cancellation rollback retriggers scheduling", async () => {
