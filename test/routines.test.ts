@@ -415,6 +415,8 @@ describe("native Routine management", () => {
       });
       expect(hiddenData.key).toBeUndefined();
       expect(hidden.stdout).not.toContain("fixture-temporal-webhook-secret");
+      expect(hidden.stdout).not.toContain("PRIVATE_SEED_PROMPT");
+      expect(body<{ promptIncluded: boolean; prompt?: string }>(hidden.stdout).promptIncluded).toBe(false);
 
       const revealed = await f.run([
         "agents", "routines", "webhook", "credential",
@@ -423,9 +425,11 @@ describe("native Routine management", () => {
         "--reveal-key",
       ]);
       expect(revealed.code, revealed.stderr).toBe(0);
-      expect(body<{ keyIncluded: boolean; key: string }>(revealed.stdout)).toMatchObject({
+      expect(body<{ keyIncluded: boolean; key: string; promptIncluded: boolean; prompt: string }>(revealed.stdout)).toMatchObject({
         keyIncluded: true,
+        promptIncluded: true,
         key: "fixture-temporal-webhook-secret",
+        prompt: "PRIVATE_SEED_PROMPT",
       });
 
       const noConfirm = await f.run([

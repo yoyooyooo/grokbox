@@ -52,7 +52,11 @@ type AgentRoutineTarget = {
   discovery: GatewayMeta;
   harness: "box" | "temporal" | null;
 };
-type Snapshot = RoutineSnapshot & { discovery: GatewayMeta; authority: RoutineAuthority };
+type Snapshot = RoutineSnapshot & {
+  discovery: GatewayMeta;
+  authority: RoutineAuthority;
+  prompts: ReadonlyMap<string, string>;
+};
 
 type RoutineReceipt = {
   schemaVersion: 1;
@@ -193,14 +197,33 @@ async function readSnapshot(
     throw new CliError("gateway_conflict", "Gateway generation changed while reading Routines.");
   }
   try {
+    const projected = projectNativeRoutines(agent.id, response.result);
     return {
-      ...projectNativeRoutines(agent.id, response.result),
+      ...projected,
       discovery,
       authority: authority.authority,
+      prompts: nativePrompts(response.result, projected.catalog),
     };
   } catch (error) {
     throw routineCliError(error);
   }
+}
+
+function nativePrompts(value: unknown, catalog: RoutineCatalog): Map<string, string> {
+  if (!Array.isArray(value)) throw new RoutineError("unsupported_shape");
+  const prompts = new Map<string, string>();
+  for (const raw of value) {
+    if (!isRecord(raw) || typeof raw.id !== "string" || typeof raw.prompt !== "string" ||
+        raw.prompt.length < 1 || raw.prompt.includes("\0") ||
+        Buffer.byteLength(raw.prompt) > 128 * 1024) {
+      throw new RoutineError("unsupported_shape");
+    }
+    prompts.set(raw.id, raw.prompt);
+  }
+  for (const routine of catalog.routines) {
+    if (!prompts.has(routine.id)) throw new RoutineError("unsupported_shape");
+  }
+  return prompts;
 }
 
 function findRoutine(snapshot: RoutineSnapshot, id: string): RoutineView {
@@ -558,6 +581,10 @@ async function showWebhookCredential(
     throw new CliError("gateway_internal", "Gateway returned an unsafe webhook URL.");
   }
 
+  const prompt = snapshot.prompts.get(routine.id);
+  if (prompt === undefined) {
+    throw new CliError("gateway_internal", "Gateway returned a Routine without a prompt.");
+  }
   const revealKey = raw.revealKey === true;
   writeSuccess(deps.stdout, {
     schemaVersion: 1,
@@ -567,7 +594,8 @@ async function showWebhookCredential(
     url: url.toString(),
     keyPresent: true,
     keyIncluded: revealKey,
-    ...(revealKey ? { key: response.result.key } : {}),
+    promptIncluded: revealKey,
+    ...(revealKey ? { key: response.result.key, prompt } : {}),
   }, discovery);
 }
 

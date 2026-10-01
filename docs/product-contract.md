@@ -360,7 +360,7 @@ The mutation surface is intentionally owner-aware:
 - `enable`, `disable`, `update`, and `delete` require the exact `--expect-revision` from a fresh `list/show` plus `--confirm`.
 - Every mutation performs one native/Server write followed by a same-Gateway-generation readback. The upstream APIs provide neither compare-and-swap nor native idempotency; the revision is therefore a preflight guard, not a Server CAS.
 - Lost/ambiguous write acknowledgement returns `operation_outcome_unknown` with the caller correlation ID and is never automatically replayed. Box create also refuses when the native returned window is already at its limit because a newly created ID could not be reconciled safely.
-- `agents routines webhook credential <agent> <routine-id> --confirm` is the explicit credential boundary. It returns the webhook URL and only reports key presence by default; `--reveal-key` is required to emit the sensitive key to stdout. Credential access may mint/persist a key upstream. Webhook invocation, run-now semantics, and cancellation of in-flight runs remain outside this command family.
+- `agents routines webhook credential <agent> <routine-id> --confirm` is the explicit credential boundary. It returns the webhook URL and only reports key and prompt presence by default; `--reveal-key` emits the sensitive key and the routine prompt together. `list` and `show` still omit both. Credential access may mint/persist a key upstream. Webhook invocation, run-now semantics, and cancellation of in-flight runs remain outside this command family.
 
 ### 7.2 Groups
 

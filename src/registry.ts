@@ -574,7 +574,7 @@ export const LEAF_COMMANDS: readonly LeafCommand[] = [
     ],
     options: options([
       { flags: "--confirm", description: "Confirm credential access/mint", required: true },
-      { flags: "--reveal-key", description: "Include the sensitive webhook key in stdout" },
+      { flags: "--reveal-key", description: "Include the webhook key and routine prompt in stdout" },
     ], { timeout: true }),
     stdin: "none",
     table: false,
