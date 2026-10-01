@@ -414,12 +414,22 @@ describeLinux("structured execution and durable Jobs", () => {
     const shown = await f.run(["jobs", "show", jobId]);
     expect(shown.code).toBe(0);
     expect(data(shown.stdout)).toMatchObject({ state: "unknown", reason: "daemon_restart" });
-    const recovered = await f.run(["events", "--once", "--sources", "job"]);
-    expect(recovered.code, recovered.stderr).toBe(0);
-    const recoveredEvent = parseJson(recovered.stdout) as {
-      event: { source: string; payload: { jobId: string; state: string; reason: string } };
-    };
-    expect(recoveredEvent.event).toMatchObject({
+    let cursor: string | undefined;
+    let recoveredEvent: { source: string; payload: { jobId: string; state: string; reason: string } } | undefined;
+    for (let count = 0; count < 4 && !recoveredEvent; count += 1) {
+      const recovered = await f.run([
+        "events", "--once", "--sources", "job",
+        ...(cursor ? ["--cursor", cursor] : []),
+      ]);
+      expect(recovered.code, recovered.stderr).toBe(0);
+      const projected = parseJson(recovered.stdout) as {
+        cursor: string;
+        event: { source: string; payload: { jobId: string; state: string; reason: string } };
+      };
+      cursor = projected.cursor;
+      if (projected.event.payload.jobId === jobId) recoveredEvent = projected.event;
+    }
+    expect(recoveredEvent).toMatchObject({
       source: "job",
       payload: { jobId, state: "unknown", reason: "daemon_restart" },
     });
