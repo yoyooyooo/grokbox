@@ -195,7 +195,7 @@ describe("published Node package", () => {
     expect(grokboxHelp.stdout).toBe(gboxHelp.stdout);
     expect(grokboxHelp.stdout).toContain("recover");
     expect(routinesHelp.code, routinesHelp.stderr).toBe(0);
-    for (const action of ["list", "show", "create", "update", "enable", "disable", "delete"]) {
+    for (const action of ["list", "show", "create", "update", "enable", "disable", "delete", "webhook"]) {
       expect(routinesHelp.stdout).toContain(action);
     }
     expect(grokboxVersion.stdout.trim()).toBe(cliPackage.version);

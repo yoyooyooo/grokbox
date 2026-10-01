@@ -4,11 +4,16 @@ This project follows [Semantic Versioning](https://semver.org/). While the
 version is below 1.0, documented experimental compatibility surfaces may change
 when upstream Grok Bot or Cursor internals change.
 
-## 0.1.0-alpha.7 — Unreleased
+## 0.1.0-alpha.8 — Unreleased
+
+- Make Routine management owner-aware: Temporal Bots read Server-authoritative Routines through the bounded Host bridge instead of the legacy local Box store, with fail-closed authority checks.
+- Add explicit webhook credential access with URL-by-default output and opt-in `--reveal-key`; support Temporal enable/disable/delete while refusing unsupported Temporal definition create/update.
+- Allow up to five minutes for npm registry/provenance propagation after a successful Trusted Publishing upload.
+
+## 0.1.0-alpha.7 — 2026-10-01
 
 - Add bounded native Grok Bot Routine lifecycle commands under `agents routines`: list/show plus confirmed create/update/enable/disable/delete with revision preflight, same-generation readback, disabled-by-default creation, and no prompt/credential disclosure.
-- Retry GitHub Actions Trusted Publishing now that npm `grokbox` has a
-  `repository` field from the `0.1.0-alpha.5` web publish.
+- Publish through GitHub Actions Trusted Publishing with npm provenance and a prerelease GitHub Release.
 
 ## 0.1.0-alpha.5 — 2026-09-04
 

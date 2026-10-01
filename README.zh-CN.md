@@ -6,7 +6,7 @@
 
 本项目与 Anysphere、Cursor、xAI 或 Grok Bot 没有隶属或背书关系。Grok Bot、Cursor 及相关名称仅用于标识兼容产品，其权利归各自所有者。
 
-> **Alpha：** 当前源码版本是 `0.1.0-alpha.7`。npm 的 `next` dist-tag 目前指向 `0.1.0-alpha.6`；`0.0.1` 仍是 `latest`。`v0.1.0-alpha.1` 到 `v0.1.0-alpha.6` 已有 Git tag。只有通过发布检查及明确范围的外部验收后，才会发布新的预发布版本。
+> **Alpha：** 当前源码版本是 `0.1.0-alpha.8`。npm 的 `next` dist-tag 目前指向 `0.1.0-alpha.7`；`0.0.1` 仍是 `latest`。只有通过发布检查及明确范围的外部验收后，才会发布新的预发布版本。
 
 ## 它能做什么
 
@@ -128,7 +128,7 @@ grokbox jobs list --table
 grokbox desktop status --table
 ```
 
-Routine 读取只输出有界元数据，不暴露 prompt 正文、Webhook credential、原生路径或未知 provider 字段。Routine create 始终只创建 disabled definition；update/enable/disable/delete 需要显式确认，create 之外的 mutation 还必须携带刚从 `agents routines list/show` 读到的精确 revision。上游 Routine 写接口没有 native compare-and-swap 或 idempotency 合同，因此回执不确定时不会自动重放。
+Routine 读取只输出有界元数据，不暴露 prompt 正文、Webhook credential、原生路径或未知 provider 字段。Box-local Bot 支持 create/update/enable/disable/delete；create 始终只创建 disabled definition，后续 mutation 需要显式确认，并携带刚从 `agents routines list/show` 读到的精确 revision。Temporal Bot 的 Routine 以 Server 为权威：list/show、Webhook credential、enable/disable/delete 通过受限的 Temporal Routine bridge；当前官方合同没有暴露 Temporal definition create/update，因此 CLI 会明确拒绝，而不会误写旧 Box store。`agents routines webhook credential <agent> <routine-id> --confirm` 默认返回 URL 并隐藏 key；只有显式增加 `--reveal-key` 才把 key 输出到 stdout。Host bridge 不可用时，Temporal Routine 查询 fail-closed，不再冒充为空列表。上游 Routine 写接口没有 native compare-and-swap 或 idempotency 合同，因此回执不确定时不会自动重放。
 
 变更命令需要显式 capability；破坏性操作还需要显式确认。`desktop prune run` 默认 dry-run；传入 `--yes` 后会调用上游 stop-window 路径，并删除该 fork 的 Chrome profile。
 

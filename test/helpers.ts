@@ -31,6 +31,7 @@ export type MockOptions = {
   thread?: unknown;
   memories?: unknown[];
   routines?: Record<string, unknown[]>;
+  webhookCredential?: { url: string; key: string };
   sendPrompt?: (index: number, body: unknown) => { status: number; body?: unknown };
   eventsSse?: string;
 };
@@ -265,6 +266,19 @@ export async function startMockGateway(options: MockOptions = {}): Promise<MockG
       if (url.pathname === "/api/getAgentAutomations" && req.method === "POST") {
         const input = body as { id?: unknown };
         return Response.json(routines.get(String(input.id)) ?? []);
+      }
+      if (url.pathname === "/api/getGrokboxRoutineAuthority" && req.method === "POST") {
+        const input = body as { id?: unknown };
+        const row = agents.find((candidate) => candidate.id === input.id);
+        return Response.json({
+          source: row?.harness === "temporal" ? "server-temporal" : "box-local",
+        });
+      }
+      if (url.pathname === "/api/getAutomationWebhookCredential" && req.method === "POST") {
+        return Response.json(options.webhookCredential ?? {
+          url: "https://example.test/automations/webhook/test-routine",
+          key: "fixture-webhook-key",
+        });
       }
       if (url.pathname === "/api/createAgentAutomation" && req.method === "POST") {
         const input = body as { id?: unknown; spec?: unknown };

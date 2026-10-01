@@ -123,6 +123,8 @@ grokbox (alias: gbox)
 │   └── routines
 │       ├── list <agent>
 │       ├── show <agent> <routine-id>
+│       ├── webhook
+│       │   └── credential <agent> <routine-id> --confirm [--reveal-key]
 │       ├── create <agent> --name <name> (--webhook | --cron <schedule>) [--text <prompt> | stdin] --confirm
 │       ├── update <agent> <routine-id> --name <name> (--webhook | --cron <schedule>) --expect-revision <sha256> [--text <prompt> | stdin] --confirm
 │       ├── enable <agent> <routine-id> --expect-revision <sha256> --confirm
@@ -308,7 +310,7 @@ App descriptor 或 secret reference 的 absent、locked/denied、malformed、uns
 | Domain | Capability examples | Local Gateway | Direct Gateway | Daemon |
 | --- | --- | ---: | ---: | ---: |
 | agents/groups | `grok.roster.read/write` | yes | yes | yes |
-| native Routines | `grok.routines.read/write` | yes | yes | yes |
+| native Routines | `grok.routines.read/write/credentials` | yes | yes | yes |
 | send/history | `grok.transcript.read/write` | yes | yes | yes |
 | memory/events | `grok.memory.read`, `grok.events.read` | yes | yes | yes |
 | files | `host.fs.read/write` | no | no | yes |
@@ -344,18 +346,21 @@ Quota adapter 同样独立声明 `quota.read`。静态 Profile 只能报告 `pro
 
 #### 7.1.1 Native Routines
 
-`agents routines list/show` directly reads the upstream Bot automation window. Output is a bounded projection: it includes the native Routine ID, name, enabled state, supported trigger, timestamps, an opaque definition revision and an opaque state revision. It never emits the prompt body, webhook credential, native file path, provider-specific nested fields, or a claim that the returned window is complete. `coverage.complete` is always false; hitting the observed native limit is reported explicitly.
+`agents routines list/show` reads the authoritative Routine owner for the selected Bot. Box-local Bots use the native automation store; Temporal Bots require the bounded Grokbox Host bridge and read the Server's `ListGrokBotAgentAutomations` projection instead of the legacy empty Box store. If a Temporal Bot is selected and the bridge is missing or cannot prove Server authority, the CLI fails closed with `capability_unavailable` rather than returning a false empty list.
+
+Output is a bounded projection: it includes the Routine ID, name, enabled state, supported trigger, timestamps, an opaque definition revision and an opaque state revision. It never emits the prompt body, webhook credential, native file path, provider-specific nested fields, or a claim that the returned window is complete. `coverage.complete` is always false; hitting the observed native limit is reported explicitly. The projection also names the observed authority as `box-local` or `server-temporal`.
 
 Supported trigger shapes are `webhook` and `cron`. Unknown native trigger/session shapes remain readable as `unsupported` but are not mutable through grokbox.
 
-The mutation surface is intentionally explicit:
+The mutation surface is intentionally owner-aware:
 
-- `create` always creates a **disabled** Routine. Enabling is a separate command, so defining a schedule cannot itself start future model work.
-- `update` is a full definition replacement for name/prompt/trigger and preserves the current enabled state. The prompt is supplied by `--text` or stdin and is never returned.
+- Box-local `create` always creates a **disabled** Routine. Enabling is a separate command, so defining a schedule cannot itself start future model work.
+- Box-local `update` is a full definition replacement for name/prompt/trigger and preserves the current enabled state. The prompt is supplied by `--text` or stdin and is never returned.
+- Current official Temporal contracts expose list, webhook credential, enable/disable, and delete, but **not** definition create/update. For a Temporal Bot, `create` and `update` therefore refuse before any local write instead of falling back to the legacy Box store.
 - `enable`, `disable`, `update`, and `delete` require the exact `--expect-revision` from a fresh `list/show` plus `--confirm`.
-- Every mutation performs one native write followed by a same-Gateway-generation readback. The upstream API provides neither compare-and-swap nor native idempotency; the revision is therefore a preflight guard, not a Server CAS.
-- Lost/ambiguous write acknowledgement returns `operation_outcome_unknown` with the caller correlation ID and is never automatically replayed. Create also refuses when the native returned window is already at its limit because a newly created ID could not be reconciled safely.
-- Routine credential minting, webhook invocation, run-now semantics, and cancellation of in-flight runs are not exposed by this command family.
+- Every mutation performs one native/Server write followed by a same-Gateway-generation readback. The upstream APIs provide neither compare-and-swap nor native idempotency; the revision is therefore a preflight guard, not a Server CAS.
+- Lost/ambiguous write acknowledgement returns `operation_outcome_unknown` with the caller correlation ID and is never automatically replayed. Box create also refuses when the native returned window is already at its limit because a newly created ID could not be reconciled safely.
+- `agents routines webhook credential <agent> <routine-id> --confirm` is the explicit credential boundary. It returns the webhook URL and only reports key presence by default; `--reveal-key` is required to emit the sensitive key to stdout. Credential access may mint/persist a key upstream. Webhook invocation, run-now semantics, and cancellation of in-flight runs remain outside this command family.
 
 ### 7.2 Groups
 

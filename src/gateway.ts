@@ -578,6 +578,37 @@ export class GatewayClient {
     return await this.rpc("getAgentAutomations", { id }, { timeoutMs });
   }
 
+  async getGrokboxRoutineAuthority(
+    id: string,
+    timeoutMs: number,
+  ): Promise<{ result: unknown; discovery: Discovery }> {
+    const daemon = await this.daemonFor("grok.routines.read", timeoutMs);
+    if (daemon) {
+      const response = await daemon.call("getGrokboxRoutineAuthority", { id, timeoutMs });
+      if (!response.gateway) throw new CliError("gateway_internal", "Daemon Routine authority response lacks generation.");
+      const discovery = this.discoveryFromDaemon(response.gateway);
+      this.lastDiscovery = discovery;
+      return { result: response.result, discovery };
+    }
+    return await this.rpc("getGrokboxRoutineAuthority", { id }, { timeoutMs });
+  }
+
+  async getAutomationWebhookCredential(
+    id: string,
+    automationId: string,
+    timeoutMs: number,
+  ): Promise<{ result: unknown; discovery: Discovery }> {
+    const daemon = await this.daemonFor("grok.routines.credentials", timeoutMs);
+    if (daemon) {
+      const response = await daemon.call("getAutomationWebhookCredential", { id, automationId, timeoutMs });
+      if (!response.gateway) throw new CliError("gateway_internal", "Daemon Routine credential response lacks generation.");
+      const discovery = this.discoveryFromDaemon(response.gateway);
+      this.lastDiscovery = discovery;
+      return { result: response.result, discovery };
+    }
+    return await this.rpc("getAutomationWebhookCredential", { id, automationId }, { timeoutMs });
+  }
+
   async createAgentAutomation(
     body: Record<string, unknown>,
     timeoutMs: number,

@@ -125,6 +125,7 @@ type CliOptions = ProfileOptions & {
   expectRevision?: string;
   confirm?: boolean;
   operationId?: string;
+  revealKey?: boolean;
 };
 
 type LeafAction = (
@@ -139,6 +140,7 @@ const FAMILY_DESCRIPTIONS: Readonly<Record<string, string>> = {
   daemon: "Local daemon lifecycle",
   agents: "Non-group Grok Bot agents",
   "agents routines": "Native Grok Bot Routines",
+  "agents routines webhook": "Webhook Routine credentials",
   groups: "Product groups",
   "groups members": "Product group membership",
   history: "Search and read display transcript",
@@ -217,6 +219,8 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
       await runRoutines(deps, "disable", args[0] ?? "", args[1], options),
     "agents routines delete": async (deps, args, options) =>
       await runRoutines(deps, "delete", args[0] ?? "", args[1], options),
+    "agents routines webhook credential": async (deps, args, options) =>
+      await runRoutines(deps, "webhook-credential", args[0] ?? "", args[1], options),
     "groups list": async (deps, _args, options) => await runGroupsList(deps, options),
     "groups show": async (deps, args, options) => await runGroupsShow(deps, args[0] ?? "", options),
     "groups create": async (deps, _args, options) => await runGroupsCreate(deps, options),
