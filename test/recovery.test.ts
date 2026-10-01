@@ -420,4 +420,54 @@ describe("layered doctor and explicit recovery", () => {
     expect(trace).not.toContain("npm");
     expect(trace).not.toContain("scp");
   });
+
+  test("daemon ensure attaches operationId/phase context when the post-ensure handshake fails with daemon_unreachable", async () => {
+    let sshEnsureCount = 0;
+    const commands = commandAdapter((_argv, command) => {
+      if (command.includes('nohup "$binary" daemon serve')) {
+        sshEnsureCount += 1;
+        return { code: 0, stdout: "changed\n", stderr: "" };
+      }
+      if (command === "true") return { code: 0, stdout: "", stderr: "" };
+      return { code: 127, stdout: "", stderr: "unexpected command" };
+    });
+    const fetchFn = (async () => { throw new Error("unreachable"); }) as unknown as typeof fetch;
+    const run = await remoteFixture({ fetch: fetchFn, runCommand: commands });
+    const result = await run(["daemon", "ensure"]);
+    expect(result.code).toBe(26);
+    const error = (parseJson(result.stderr) as {
+      error: { code: string; retryable: boolean; context?: { operationId: string; phase: string } };
+    }).error;
+    expect(error.code).toBe("daemon_unreachable");
+    expect(sshEnsureCount).toBe(1);
+    expect(error.context).toEqual({ operationId: nonce, phase: "daemon-ensure" });
+  });
+
+  test("daemon ensure attaches operationId/phase context when the post-ensure handshake fails with daemon_protocol_mismatch", async () => {
+    let sshEnsureCount = 0;
+    const commands = commandAdapter((_argv, command) => {
+      if (command.includes('nohup "$binary" daemon serve')) {
+        sshEnsureCount += 1;
+        return { code: 0, stdout: "changed\n", stderr: "" };
+      }
+      if (command === "true") return { code: 0, stdout: "", stderr: "" };
+      return { code: 127, stdout: "", stderr: "unexpected command" };
+    });
+    let handshakeAttempts = 0;
+    const fetchFn = (async () => {
+      handshakeAttempts += 1;
+      if (handshakeAttempts === 1) throw new Error("unreachable");
+      return Response.json({ ok: true, result: { protocolMajor: 99 } });
+    }) as unknown as typeof fetch;
+    const run = await remoteFixture({ fetch: fetchFn, runCommand: commands });
+    const result = await run(["daemon", "ensure"]);
+    expect(result.code).toBe(27);
+    const error = (parseJson(result.stderr) as {
+      error: { code: string; context?: { operationId: string; phase: string } };
+    }).error;
+    expect(error.code).toBe("daemon_protocol_mismatch");
+    expect(sshEnsureCount).toBe(1);
+    expect(handshakeAttempts).toBe(2);
+    expect(error.context).toEqual({ operationId: nonce, phase: "daemon-ensure" });
+  });
 });
