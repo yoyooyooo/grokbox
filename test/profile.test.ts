@@ -311,6 +311,59 @@ describe("Profile v1 storage", () => {
     expect(sshOption.stderr).not.toContain("ProxyCommand");
   });
 
+  test("IPv6 loopback HTTP URLs qualify for the loopback exemption like localhost and 127.0.0.1", async () => {
+    const configDir = await makeConfigDir();
+
+    const accepted: ReadonlyArray<readonly [string, string, string, string]> = [
+      ["--server-url", "http://[::1]:8443", "server_url", "http://[::1]:8443"],
+      ["--server-url", "http://[::1]", "server_url", "http://[::1]"],
+      ["--gateway-url", "http://[::1]:8443", "gateway_url", "http://[::1]:8443"],
+      ["--gateway-url", "http://[::1]:80", "gateway_url", "http://[::1]"],
+    ];
+    for (let i = 0; i < accepted.length; i += 1) {
+      const [flag, url, field, expected] = accepted[i]!;
+      const name = `ipv6-${i}`;
+      const added = await cli(configDir, ["profile", "add", name, flag, url]);
+      expect(added.code, `${flag}=${url}: ${added.stderr}`).toBe(0);
+      const persisted = JSON.parse(
+        await readFile(join(configDir, "profiles", name, "config.json"), "utf8"),
+      ) as Record<string, string>;
+      expect(persisted[field]).toBe(expected);
+      expect(persisted[field]).toContain("[::1]");
+      expect(persisted[field]).toMatch(/^http:\/\//);
+    }
+
+    const regressions: ReadonlyArray<readonly [string, string]> = [
+      ["--server-url", "http://127.0.0.1:8443"],
+      ["--server-url", "http://localhost:8443"],
+      ["--gateway-url", "http://127.0.0.1:1"],
+    ];
+    for (let i = 0; i < regressions.length; i += 1) {
+      const [flag, url] = regressions[i]!;
+      const name = `reg-${i}`;
+      const added = await cli(configDir, ["profile", "add", name, flag, url]);
+      expect(added.code, `${flag}=${url}: ${added.stderr}`).toBe(0);
+    }
+
+    const httpsCases = ["https://[::1]:8443", "https://[2001:db8::1]:8443"];
+    for (const url of httpsCases) {
+      const name = `https6-${url.length}`;
+      const added = await cli(configDir, ["profile", "add", name, "--server-url", url]);
+      expect(added.code, `${url}: ${added.stderr}`).toBe(0);
+    }
+
+    const rejected = ["http://[2001:db8::1]:8443", "http://[fe80::1]:8443"];
+    for (const url of rejected) {
+      const name = `bad6-${url.length}`;
+      const added = await cli(configDir, ["profile", "add", name, "--server-url", url]);
+      expect(added.code, `${url}: ${added.stderr}`).toBe(21);
+      expect(code(added.stderr)).toBe("profile_invalid");
+      expect(added.stderr).toContain("must use HTTPS unless its host is loopback");
+      expect(added.stderr).not.toContain("[2001:db8::1]");
+      expect(added.stderr).not.toContain("[fe80::1]");
+    }
+  });
+
   test("global --profile only selects an existing Profile and is rejected on local config commands", async () => {
     const configDir = await makeConfigDir();
     const missing = await cli(configDir, ["--profile", "missing", "agents", "list"]);

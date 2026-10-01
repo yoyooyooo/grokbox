@@ -181,6 +181,47 @@ describe("layered doctor and explicit recovery", () => {
     expect(trace).not.toContain("sendPrompt");
   });
 
+  test("doctor recognizes an IPv6 loopback server_url and skips Tailscale/Serve probes", async () => {
+    const configDir = await mkdtemp(join(tmpdir(), "grokbox-ipv6-doctor-"));
+    await writeProfileFile(configDir, "ipv6-loopback", {
+      version: 1,
+      transport: "daemon",
+      server_url: "http://[::1]:8443",
+      daemon_token_ref: "env:DAEMON_TOKEN",
+    });
+    const commands = commandAdapter((argv) => {
+      if (argv[0] === "tailscale") {
+        return { code: 1, stdout: "", stderr: "tailscale must not be probed for IPv6 loopback" };
+      }
+      return { code: 127, stdout: "", stderr: "unexpected command" };
+    });
+    const result = await captureCli(["--profile", "ipv6-loopback", "doctor"], {
+      configDir,
+      env: { DAEMON_TOKEN: "ipv6-loopback-daemon-token" },
+      fetch: healthyDaemonFetch([]),
+      runCommand: commands,
+      skillsDir,
+      stdinIsTTY: true,
+      readStdin: async () => "",
+    });
+    expect(result.code, result.stderr).toBe(0);
+    const report = (parseJson(result.stdout) as { data: Record<string, any> }).data;
+    expect(report.ok).toBe(true);
+    expect(report.checks.tailnet).toMatchObject({
+      status: "skipped",
+      code: "tailnet_not_applicable_loopback",
+    });
+    expect(report.checks.serve).toMatchObject({
+      status: "skipped",
+      code: "serve_not_applicable_loopback",
+    });
+    expect(report.checks.daemonHttp).toMatchObject({ status: "pass", code: "daemon_http_auth_gate_reached" });
+    expect(report.checks.daemonAuth).toMatchObject({ status: "pass", code: "daemon_credential_accepted" });
+    expect(report.checks.gateway).toMatchObject({ status: "pass", code: "gateway_healthy" });
+    expect(report.checks.loopbackTarget).toBe(true);
+    expect(commands.calls.filter((argv) => argv[0] === "tailscale")).toHaveLength(0);
+  });
+
   test("authenticated daemon HTTPS reconciles a false-negative Tailscale ping", async () => {
     const commands = commandAdapter((argv, command) => {
       if (argv[0] === "tailscale" && argv[1] === "status") {

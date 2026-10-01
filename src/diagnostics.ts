@@ -67,7 +67,7 @@ function refSource(ref: string | undefined): string {
 
 function isLoopbackHost(hostname: string): boolean {
   const host = hostname.toLowerCase();
-  return host === "localhost" || host === "::1" || /^127(?:\.\d{1,3}){3}$/.test(host);
+  return host === "localhost" || host === "::1" || host === "[::1]" || /^127(?:\.\d{1,3}){3}$/.test(host);
 }
 
 function publicFailure(error: unknown, fallback: string): string {
