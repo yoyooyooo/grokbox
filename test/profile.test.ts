@@ -671,4 +671,73 @@ describe("init discovery boundaries", () => {
     expect(code(result.stderr)).toBe("tailscale_not_ready");
     expect(await readFile(join(configDir, "config.json"), "utf8").catch(() => null)).toBeNull();
   });
+
+  test("init --peer against an existing Profile pointing at a different peer rejects without mutating", async () => {
+    const configDir = await makeConfigDir();
+    await writeProfileFile(configDir, "foo", {
+      version: 1,
+      transport: "daemon",
+      server_url: "https://old.example.ts.net:8443",
+      daemon_token_ref: "env:DAEMON_TOKEN",
+      ssh_host: "old",
+    });
+    const twoPeers = JSON.stringify({
+      Self: { HostName: "outside", DNSName: "outside.example.ts.net.", TailscaleIPs: ["192.0.2.10"] },
+      Peer: {
+        old: { HostName: "old", DNSName: "old.example.ts.net.", TailscaleIPs: ["192.0.2.40"] },
+        newpeer: { HostName: "newpeer", DNSName: "newpeer.example.ts.net.", TailscaleIPs: ["192.0.2.50"] },
+      },
+    });
+    const result = await cli(configDir, ["init", "foo", "--peer", "newpeer"], {
+      env: { DAEMON_TOKEN: "tok-for-old" },
+      stdinIsTTY: false,
+      runCommand: async (argv) => {
+        if (argv[0] === "tailscale") return { code: 0, stdout: twoPeers, stderr: "" };
+        return { code: 127, stdout: "", stderr: "" };
+      },
+    });
+    expect(result.code).toBe(21);
+    expect(code(result.stderr)).toBe("profile_invalid");
+    expect(result.stderr).toContain("grokbox init foo --peer newpeer --bootstrap --yes");
+    expect(result.stderr).toContain("old.example.ts.net");
+    expect(result.stderr).toContain("newpeer.example.ts.net");
+    expect(await readFile(join(configDir, "config.json"), "utf8").catch(() => null)).toBeNull();
+    const persisted = JSON.parse(await readFile(join(configDir, "profiles", "foo", "config.json"), "utf8"));
+    expect(persisted.server_url).toBe("https://old.example.ts.net:8443");
+    expect(persisted.ssh_host).toBe("old");
+  });
+
+  test("init --peer against an existing Profile that matches the selected peer reselects idempotently", async () => {
+    const configDir = await makeConfigDir();
+    await writeProfileFile(configDir, "foo", {
+      version: 1,
+      transport: "daemon",
+      server_url: "https://remote.example.ts.net:8443",
+      daemon_token_ref: "env:DAEMON_TOKEN",
+      ssh_host: "remote",
+    });
+    const result = await cli(configDir, ["init", "foo", "--peer", "remote"], {
+      env: { DAEMON_TOKEN: "tok-for-remote" },
+      stdinIsTTY: false,
+      runCommand: async (argv) => {
+        if (argv[0] === "tailscale") return { code: 0, stdout: tailnetStatus(), stderr: "" };
+        return { code: 127, stdout: "", stderr: "" };
+      },
+    });
+    expect(result.code).toBe(0);
+    const body = parseJson(result.stdout) as {
+      data: { profile: string; selected: boolean; existing: boolean; peer: { name: string } };
+    };
+    expect(body.data).toMatchObject({
+      profile: "foo",
+      selected: true,
+      existing: true,
+      peer: { name: "remote" },
+    });
+    const global = JSON.parse(await readFile(join(configDir, "config.json"), "utf8"));
+    expect(global.current_profile).toBe("foo");
+    const persisted = JSON.parse(await readFile(join(configDir, "profiles", "foo", "config.json"), "utf8"));
+    expect(persisted.server_url).toBe("https://remote.example.ts.net:8443");
+    expect(persisted.ssh_host).toBe("remote");
+  });
 });

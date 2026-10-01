@@ -148,6 +148,12 @@ export async function runInit(
       const existing = await resolveProfile(deps, name);
       previousDaemonTokenRef = existing.daemon_token_ref;
       if (existing.server_url && !raw.bootstrap) {
+        if (new URL(existing.server_url).hostname !== selectedPeer.dnsName) {
+          throw new CliError(
+            "profile_invalid",
+            `The existing Profile endpoint (${new URL(existing.server_url).hostname}) and the selected peer (${selectedPeer.dnsName}) resolve to different tailnet nodes; rerun with grokbox init ${name} --peer ${sshHost} --bootstrap --yes to rotate.`,
+          );
+        }
         await writeGlobalConfig(deps.configDir, { version: 1, current_profile: name });
         writeSuccess(deps.stdout, { profile: name, selected: true, peer: selectedPeer, existing: true });
         return;
