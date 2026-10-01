@@ -58,6 +58,7 @@ import {
   runProfileUse,
   type ProfileOptions,
 } from "./commands/profile.ts";
+import { runRoutines } from "./commands/routines.ts";
 import { runSend } from "./commands/send.ts";
 import { resolveProfile } from "./config/profile.ts";
 import type { CliDeps } from "./deps.ts";
@@ -119,6 +120,11 @@ type CliOptions = ProfileOptions & {
   limitBytes?: string;
   follow?: boolean;
   intervalMs?: string;
+  webhook?: boolean;
+  cron?: string;
+  expectRevision?: string;
+  confirm?: boolean;
+  operationId?: string;
 };
 
 type LeafAction = (
@@ -132,6 +138,7 @@ const FAMILY_DESCRIPTIONS: Readonly<Record<string, string>> = {
   profile: "Profile configuration and selection",
   daemon: "Local daemon lifecycle",
   agents: "Non-group Grok Bot agents",
+  "agents routines": "Native Grok Bot Routines",
   groups: "Product groups",
   "groups members": "Product group membership",
   history: "Search and read display transcript",
@@ -196,6 +203,20 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
     "agents create": async (deps, _args, options) => await runAgentsCreate(deps, options),
     "agents update": async (deps, args, options) => await runAgentsUpdate(deps, args[0] ?? "", options),
     "agents delete": async (deps, args, options) => await runAgentsDelete(deps, args[0] ?? "", options),
+    "agents routines list": async (deps, args, options) =>
+      await runRoutines(deps, "list", args[0] ?? "", undefined, options),
+    "agents routines show": async (deps, args, options) =>
+      await runRoutines(deps, "show", args[0] ?? "", args[1], options),
+    "agents routines create": async (deps, args, options) =>
+      await runRoutines(deps, "create", args[0] ?? "", undefined, options),
+    "agents routines update": async (deps, args, options) =>
+      await runRoutines(deps, "update", args[0] ?? "", args[1], options),
+    "agents routines enable": async (deps, args, options) =>
+      await runRoutines(deps, "enable", args[0] ?? "", args[1], options),
+    "agents routines disable": async (deps, args, options) =>
+      await runRoutines(deps, "disable", args[0] ?? "", args[1], options),
+    "agents routines delete": async (deps, args, options) =>
+      await runRoutines(deps, "delete", args[0] ?? "", args[1], options),
     "groups list": async (deps, _args, options) => await runGroupsList(deps, options),
     "groups show": async (deps, args, options) => await runGroupsShow(deps, args[0] ?? "", options),
     "groups create": async (deps, _args, options) => await runGroupsCreate(deps, options),

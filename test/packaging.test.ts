@@ -183,16 +183,21 @@ describe("published Node package", () => {
     const binDir = npm ? join(prefix, "node_modules", ".bin") : join(prefix, "bin");
     const grokbox = join(binDir, "grokbox");
     const gbox = join(binDir, "gbox");
-    const [grokboxHelp, gboxHelp, grokboxVersion, gboxVersion] = await Promise.all([
+    const [grokboxHelp, gboxHelp, grokboxVersion, gboxVersion, routinesHelp] = await Promise.all([
       run([grokbox, "--help"]),
       run([gbox, "--help"]),
       run([grokbox, "--version"]),
       run([gbox, "--version"]),
+      run([grokbox, "agents", "routines", "--help"]),
     ]);
     expect(grokboxHelp.code, grokboxHelp.stderr).toBe(0);
     expect(gboxHelp.code, gboxHelp.stderr).toBe(0);
     expect(grokboxHelp.stdout).toBe(gboxHelp.stdout);
     expect(grokboxHelp.stdout).toContain("recover");
+    expect(routinesHelp.code, routinesHelp.stderr).toBe(0);
+    for (const action of ["list", "show", "create", "update", "enable", "disable", "delete"]) {
+      expect(routinesHelp.stdout).toContain(action);
+    }
     expect(grokboxVersion.stdout.trim()).toBe(cliPackage.version);
     expect(gboxVersion.stdout).toBe(grokboxVersion.stdout);
 

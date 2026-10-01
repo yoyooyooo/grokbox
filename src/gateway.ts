@@ -386,6 +386,7 @@ export class GatewayClient {
       write?: boolean;
       slim?: boolean;
       unknownOutcomeCode?: UnknownOutcomeCode;
+      expectedGateway?: GatewayMeta;
     },
   ): Promise<{ result: unknown; discovery: Discovery }> {
     const result = await this.request({
@@ -398,6 +399,7 @@ export class GatewayClient {
       slim: options.slim === true,
       write: options.write === true,
       unknownOutcomeCode: options.unknownOutcomeCode,
+      expectedGateway: options.expectedGateway,
     });
     return { result: result.body, discovery: this.lastDiscovery! };
   }
@@ -561,6 +563,100 @@ export class GatewayClient {
     return await this.managementWrite("deleteAgent", { id }, timeoutMs, operationId);
   }
 
+  async getAgentAutomations(
+    id: string,
+    timeoutMs: number,
+  ): Promise<{ result: unknown; discovery: Discovery }> {
+    const daemon = await this.daemonFor("grok.routines.read", timeoutMs);
+    if (daemon) {
+      const response = await daemon.call("getAgentAutomations", { id, timeoutMs });
+      if (!response.gateway) throw new CliError("gateway_internal", "Daemon Routine response lacks generation.");
+      const discovery = this.discoveryFromDaemon(response.gateway);
+      this.lastDiscovery = discovery;
+      return { result: response.result, discovery };
+    }
+    return await this.rpc("getAgentAutomations", { id }, { timeoutMs });
+  }
+
+  async createAgentAutomation(
+    body: Record<string, unknown>,
+    timeoutMs: number,
+    operationId?: string,
+    expectedGateway?: GatewayMeta,
+  ): Promise<{ result: unknown; discovery: Discovery }> {
+    return await this.routineWrite("createAgentAutomation", body, timeoutMs, operationId, expectedGateway);
+  }
+
+  async updateAgentAutomation(
+    body: Record<string, unknown>,
+    timeoutMs: number,
+    operationId?: string,
+    expectedGateway?: GatewayMeta,
+  ): Promise<{ result: unknown; discovery: Discovery }> {
+    return await this.routineWrite("updateAgentAutomation", body, timeoutMs, operationId, expectedGateway);
+  }
+
+  async setAgentAutomationEnabled(
+    body: Record<string, unknown>,
+    timeoutMs: number,
+    operationId?: string,
+    expectedGateway?: GatewayMeta,
+  ): Promise<{ result: unknown; discovery: Discovery }> {
+    return await this.routineWrite("setAgentAutomationEnabled", body, timeoutMs, operationId, expectedGateway);
+  }
+
+  async deleteAgentAutomation(
+    body: Record<string, unknown>,
+    timeoutMs: number,
+    operationId?: string,
+    expectedGateway?: GatewayMeta,
+  ): Promise<{ result: unknown; discovery: Discovery }> {
+    return await this.routineWrite("deleteAgentAutomation", body, timeoutMs, operationId, expectedGateway);
+  }
+
+  private async routineWrite(
+    method: Extract<GatewayMethod,
+      | "createAgentAutomation"
+      | "updateAgentAutomation"
+      | "setAgentAutomationEnabled"
+      | "deleteAgentAutomation">,
+    body: Record<string, unknown>,
+    timeoutMs: number,
+    operationId?: string,
+    expectedGateway?: GatewayMeta,
+  ): Promise<{ result: unknown; discovery: Discovery }> {
+    try {
+      const daemon = await this.daemonFor("grok.routines.write", timeoutMs);
+      if (daemon) {
+        const response = await daemon.call(method, {
+          ...body,
+          timeoutMs,
+          ...(expectedGateway ? {
+            expectedGatewayPid: expectedGateway.pid,
+            expectedGatewayStartedAt: expectedGateway.startedAt,
+          } : {}),
+        });
+        if (!response.gateway) throw new CliError("gateway_internal", "Daemon Routine response lacks generation.");
+        const discovery = this.discoveryFromDaemon(response.gateway);
+        this.lastDiscovery = discovery;
+        return { result: response.result, discovery };
+      }
+      return await this.rpc(method, body, {
+        timeoutMs,
+        write: true,
+        unknownOutcomeCode: "operation_outcome_unknown",
+        expectedGateway,
+      });
+    } catch (error) {
+      if (operationId && error instanceof CliError && error.code === "operation_outcome_unknown") {
+        throw new CliError("operation_outcome_unknown", error.message, {
+          context: { operationId, phase: "native-routine" },
+        });
+      }
+      throw error;
+    }
+  }
+
   private async managementWrite(
     method: Extract<GatewayMethod,
       | "createAgent"
@@ -629,6 +725,7 @@ export class GatewayClient {
     slim?: boolean;
     write?: boolean;
     unknownOutcomeCode?: UnknownOutcomeCode;
+    expectedGateway?: GatewayMeta;
     accept?: string;
     stream?: boolean;
   }): Promise<HttpResult> {
@@ -637,6 +734,13 @@ export class GatewayClient {
     let attemptedIdentity: string | undefined;
     const attempt = async (rejectIdentity?: string): Promise<HttpResult> => {
       const discovery = await this.load();
+      if (input.expectedGateway &&
+        (discovery.pid !== input.expectedGateway.pid || discovery.startedAt !== input.expectedGateway.startedAt)) {
+        throw new CliError(
+          "gateway_conflict",
+          "Gateway generation changed before request dispatch; read current state and retry the intended operation.",
+        );
+      }
       const identity = createHash("sha256")
         .update(discovery.token)
         .digest("hex");

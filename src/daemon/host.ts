@@ -6,6 +6,7 @@ import type { CliDeps } from "../deps.ts";
 import { CliError } from "../errors.ts";
 import { GatewayClient, gatewayMeta } from "../gateway.ts";
 import { ALLOWED_EVENT_CHANNELS } from "../registry.ts";
+import { routineAgentId, routineId, validateNativeRoutineSpec } from "../routines.ts";
 import { asNumber, asString, isRecord } from "../util.ts";
 import type { DaemonDesktopConfig, DaemonFilesystemRootConfig, DaemonNetworkConfig, DaemonProcessConfig } from "./config.ts";
 import { DesktopManager, type DesktopIo } from "./desktop.ts";
@@ -100,6 +101,26 @@ function gatewayBody(params: Record<string, unknown>): Record<string, unknown> {
   const body = { ...params };
   delete body.timeoutMs;
   return body;
+}
+
+function routineInput<T>(read: () => T): T {
+  try {
+    return read();
+  } catch {
+    throw new CliError("gateway_bad_request", "Daemon Routine params are invalid.");
+  }
+}
+
+function expectedRoutineGateway(params: Record<string, unknown>) {
+  const pid = params.expectedGatewayPid;
+  const startedAt = params.expectedGatewayStartedAt;
+  if (
+    typeof pid !== "number" || !Number.isSafeInteger(pid) ||
+    typeof startedAt !== "number" || !Number.isSafeInteger(startedAt)
+  ) {
+    throw new CliError("gateway_bad_request", "Daemon Routine generation preflight is invalid.");
+  }
+  return { pid, startedAt };
 }
 
 function authorized(req: IncomingMessage, tokenSha256: string): boolean {
@@ -234,6 +255,74 @@ export async function startDaemonHost(
     }
     if (method === "getAgentMemories") {
       const value = await gateway.getAgentMemories(asString(params.id), asNumber(params.timeoutMs, 10_000));
+      return { result: value.result, gateway: gatewayMeta(value.discovery) };
+    }
+    if (method === "getAgentAutomations") {
+      assertExactParams(params, { id: "string", timeoutMs: "number" });
+      const id = routineInput(() => routineAgentId(params.id));
+      const value = await gateway.getAgentAutomations(id, params.timeoutMs as number);
+      return { result: value.result, gateway: gatewayMeta(value.discovery) };
+    }
+    if (method === "createAgentAutomation") {
+      assertParamKeys(params, ["id", "spec", "timeoutMs", "expectedGatewayPid", "expectedGatewayStartedAt"], "Routine create");
+      const id = routineInput(() => routineAgentId(params.id));
+      const spec = routineInput(() => validateNativeRoutineSpec(params.spec, "create"));
+      const value = await gateway.createAgentAutomation(
+        { id, spec },
+        asNumber(params.timeoutMs, 10_000),
+        undefined,
+        expectedRoutineGateway(params),
+      );
+      return { result: value.result, gateway: gatewayMeta(value.discovery) };
+    }
+    if (method === "updateAgentAutomation") {
+      assertParamKeys(params, ["id", "automationId", "spec", "timeoutMs", "expectedGatewayPid", "expectedGatewayStartedAt"], "Routine update");
+      const id = routineInput(() => routineAgentId(params.id));
+      const automationId = routineInput(() => routineId(params.automationId));
+      const spec = routineInput(() => validateNativeRoutineSpec(params.spec, "update"));
+      const value = await gateway.updateAgentAutomation(
+        { id, automationId, spec },
+        asNumber(params.timeoutMs, 10_000),
+        undefined,
+        expectedRoutineGateway(params),
+      );
+      return { result: value.result, gateway: gatewayMeta(value.discovery) };
+    }
+    if (method === "setAgentAutomationEnabled") {
+      assertExactParams(params, {
+        id: "string",
+        automationId: "string",
+        isEnabled: "boolean",
+        timeoutMs: "number",
+        expectedGatewayPid: "number",
+        expectedGatewayStartedAt: "number",
+      });
+      const id = routineInput(() => routineAgentId(params.id));
+      const automationId = routineInput(() => routineId(params.automationId));
+      const value = await gateway.setAgentAutomationEnabled(
+        { id, automationId, isEnabled: params.isEnabled as boolean },
+        params.timeoutMs as number,
+        undefined,
+        expectedRoutineGateway(params),
+      );
+      return { result: value.result, gateway: gatewayMeta(value.discovery) };
+    }
+    if (method === "deleteAgentAutomation") {
+      assertExactParams(params, {
+        id: "string",
+        automationId: "string",
+        timeoutMs: "number",
+        expectedGatewayPid: "number",
+        expectedGatewayStartedAt: "number",
+      });
+      const id = routineInput(() => routineAgentId(params.id));
+      const automationId = routineInput(() => routineId(params.automationId));
+      const value = await gateway.deleteAgentAutomation(
+        { id, automationId },
+        params.timeoutMs as number,
+        undefined,
+        expectedRoutineGateway(params),
+      );
       return { result: value.result, gateway: gatewayMeta(value.discovery) };
     }
     if (method === "sendPrompt") {

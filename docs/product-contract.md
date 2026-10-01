@@ -119,7 +119,15 @@ grokbox (alias: gbox)
 │   ├── show <id-or-name>
 │   ├── create --name <name> [agent attributes]
 │   ├── update <id-or-name> [agent attributes]
-│   └── delete <id-or-name> [--yes]
+│   ├── delete <id-or-name> [--yes]
+│   └── routines
+│       ├── list <agent>
+│       ├── show <agent> <routine-id>
+│       ├── create <agent> --name <name> (--webhook | --cron <schedule>) [--text <prompt> | stdin] --confirm
+│       ├── update <agent> <routine-id> --name <name> (--webhook | --cron <schedule>) --expect-revision <sha256> [--text <prompt> | stdin] --confirm
+│       ├── enable <agent> <routine-id> --expect-revision <sha256> --confirm
+│       ├── disable <agent> <routine-id> --expect-revision <sha256> --confirm
+│       └── delete <agent> <routine-id> --expect-revision <sha256> --confirm
 ├── groups
 │   ├── list
 │   ├── show <id-or-name>
@@ -300,6 +308,7 @@ App descriptor 或 secret reference 的 absent、locked/denied、malformed、uns
 | Domain | Capability examples | Local Gateway | Direct Gateway | Daemon |
 | --- | --- | ---: | ---: | ---: |
 | agents/groups | `grok.roster.read/write` | yes | yes | yes |
+| native Routines | `grok.routines.read/write` | yes | yes | yes |
 | send/history | `grok.transcript.read/write` | yes | yes | yes |
 | memory/events | `grok.memory.read`, `grok.events.read` | yes | yes | yes |
 | files | `host.fs.read/write` | no | no | yes |
@@ -332,6 +341,21 @@ Quota adapter 同样独立声明 `quota.read`。静态 Profile 只能报告 `pro
 ```
 
 名称解析规则：精确 ID 优先；否则匹配大小写不敏感的 name/title；零命中为 `target_not_found`，多命中为 `target_ambiguous`。破坏性命令默认要求交互确认；非 TTY 必须显式 `--yes`。
+
+#### 7.1.1 Native Routines
+
+`agents routines list/show` directly reads the upstream Bot automation window. Output is a bounded projection: it includes the native Routine ID, name, enabled state, supported trigger, timestamps, an opaque definition revision and an opaque state revision. It never emits the prompt body, webhook credential, native file path, provider-specific nested fields, or a claim that the returned window is complete. `coverage.complete` is always false; hitting the observed native limit is reported explicitly.
+
+Supported trigger shapes are `webhook` and `cron`. Unknown native trigger/session shapes remain readable as `unsupported` but are not mutable through grokbox.
+
+The mutation surface is intentionally explicit:
+
+- `create` always creates a **disabled** Routine. Enabling is a separate command, so defining a schedule cannot itself start future model work.
+- `update` is a full definition replacement for name/prompt/trigger and preserves the current enabled state. The prompt is supplied by `--text` or stdin and is never returned.
+- `enable`, `disable`, `update`, and `delete` require the exact `--expect-revision` from a fresh `list/show` plus `--confirm`.
+- Every mutation performs one native write followed by a same-Gateway-generation readback. The upstream API provides neither compare-and-swap nor native idempotency; the revision is therefore a preflight guard, not a Server CAS.
+- Lost/ambiguous write acknowledgement returns `operation_outcome_unknown` with the caller correlation ID and is never automatically replayed. Create also refuses when the native returned window is already at its limit because a newly created ID could not be reconciled safely.
+- Routine credential minting, webhook invocation, run-now semantics, and cancellation of in-flight runs are not exposed by this command family.
 
 ### 7.2 Groups
 
