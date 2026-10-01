@@ -93,6 +93,9 @@ it.
    invokes `npm publish` locally.
 8. Watch `Publish to npm`. A new tag must point to the exact current
    `origin/main` commit. The workflow rejects package-name or version mismatch.
+   npm registry visibility, dist-tags, and provenance may lag a successful
+   `npm publish`; the workflow allows up to five minutes for that propagation
+   before treating readback as failed.
 9. Verify:
 
    ```bash

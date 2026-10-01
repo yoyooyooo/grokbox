@@ -188,7 +188,8 @@ jobs:
         run: |
           set -euo pipefail
           attestation_url=""
-          for attempt in 1 2 3 4 5 6; do
+          readback_deadline=$((SECONDS + 300))
+          while true; do
             published_version="$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version --registry https://registry.npmjs.org 2>/tmp/npm-version.err || true)"
             integrity="$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" dist.integrity --registry https://registry.npmjs.org 2>/tmp/npm-integrity.err || true)"
             attestation_url="$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" dist.attestations.url --registry https://registry.npmjs.org 2>/tmp/npm-attestation.err || true)"
@@ -201,13 +202,13 @@ jobs:
               break
             fi
 
-            if [[ "$attempt" == 6 ]]; then
-              echo "npm release readback failed after retries." >&2
+            if (( SECONDS >= readback_deadline )); then
+              echo "npm release readback failed after waiting up to 5 minutes for registry propagation." >&2
               echo "version=$published_version integrity=$integrity local_integrity=$LOCAL_INTEGRITY channel=$dist_tag_version provenance=$attestation_url" >&2
               cat /tmp/npm-version.err /tmp/npm-integrity.err /tmp/npm-dist-tag.err /tmp/npm-attestation.err >&2 || true
               exit 1
             fi
-            sleep "$((attempt * 5))"
+            sleep 10
           done
 
           curl --fail --silent --show-error --location "$attestation_url" --output "$RUNNER_TEMP/npm-attestations.json"
