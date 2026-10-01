@@ -175,8 +175,11 @@ export function createProductionDeps(signal?: AbortSignal): CliDeps {
     confirm: async (prompt) => {
       const terminal = createInterface({ input: process.stdin, output: process.stderr });
       try {
-        const answer = await terminal.question(prompt);
+        const answer = await terminal.question(prompt, { signal });
         return answer.trim().toLowerCase() === "y" || answer.trim().toLowerCase() === "yes";
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") return false;
+        throw error;
       } finally {
         terminal.close();
       }
