@@ -89,6 +89,39 @@ describe("unified events and recovery", () => {
     expect((await left).events).toEqual((await right).events);
   });
 
+  test("long-poll waits past a non-matching daemon started entry for the first job event", async () => {
+    const journal = new EventJournal(generation, Date.now);
+    journal.publish({ source: "daemon", kind: "started", payload: { daemonPid: 1 } });
+
+    const start = Date.now();
+    const poll = journal.read({
+      cursor: undefined, sources: ["job"], channels: ["agents"],
+      includeMemoryContent: false, limit: 10, waitMs: 500,
+    });
+    setTimeout(() => {
+      journal.publish({ source: "job", kind: "state", operationId: "j1", payload: { jobId: "j1", state: "queued" } });
+    }, 100);
+
+    const page = await poll;
+    expect(page.events).toEqual([expect.objectContaining({ source: "job", kind: "state" })]);
+    expect(page.cursor).toBe(`${generation}:2`);
+    expect(Date.now() - start).toBeGreaterThanOrEqual(90);
+  });
+
+  test("long-poll returns an empty page after waitMs when no matching event arrives", async () => {
+    const journal = new EventJournal(generation, Date.now);
+    journal.publish({ source: "daemon", kind: "started", payload: { daemonPid: 1 } });
+
+    const start = Date.now();
+    const page = await journal.read({
+      cursor: undefined, sources: ["job"], channels: ["agents"],
+      includeMemoryContent: false, limit: 10, waitMs: 200,
+    });
+    expect(page.events).toEqual([]);
+    expect(page.cursor).toBe(`${generation}:1`);
+    expect(Date.now() - start).toBeGreaterThanOrEqual(190);
+  });
+
   testLinux("Job lifecycle transitions publish safe operation events", async () => {
     const configDir = await mkdtemp(join(tmpdir(), "grokbox-event-jobs-config-"));
     const root = await mkdtemp(join(tmpdir(), "grokbox-event-jobs-root-"));
