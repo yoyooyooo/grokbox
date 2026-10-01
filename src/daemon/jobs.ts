@@ -839,17 +839,18 @@ export class JobManager {
     await Promise.allSettled([...this.jobs.values()].map((job) => job.cancellationQueue));
     for (const job of this.jobs.values()) {
       if (job.state === "queued") {
-        job.terminalIntent = "interrupted";
-        job.reason = "daemon_shutdown";
+        job.terminalIntent ??= "interrupted";
+        job.reason ??= job.terminalIntent === "cancelled" ? "cancelled_before_spawn" : "daemon_shutdown";
         if (job.launching) {
           this.terminateGroup(job);
           await this.persist(job);
         } else {
-          job.state = "interrupted"; job.finishedAt = this.now(); job.request = undefined;
+          job.state = job.terminalIntent === "cancelled" ? "cancelled" : "interrupted";
+          job.finishedAt = this.now(); job.request = undefined;
           await this.publishTerminal(job);
         }
       } else if (job.state === "running") {
-        job.terminalIntent = "interrupted"; this.terminateGroup(job);
+        job.terminalIntent ??= "interrupted"; this.terminateGroup(job);
       }
     }
     await Promise.allSettled([...this.launches]);
