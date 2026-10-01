@@ -12,7 +12,7 @@ export function parseInteger(
     if (spec.defaultValue !== undefined) return spec.defaultValue;
     throw usage(`${spec.name} is required.`);
   }
-  const n = typeof raw === "number" ? raw : Number.parseInt(String(raw), 10);
+  const n = typeof raw === "number" ? raw : Number(raw);
   if (!Number.isInteger(n) || n < spec.min || n > spec.max) {
     throw usage(`${spec.name} must be an integer between ${spec.min} and ${spec.max}.`);
   }
