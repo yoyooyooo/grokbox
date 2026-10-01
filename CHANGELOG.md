@@ -4,7 +4,11 @@ This project follows [Semantic Versioning](https://semver.org/). While the
 version is below 1.0, documented experimental compatibility surfaces may change
 when upstream Grok Bot or Cursor internals change.
 
-## 0.1.0-alpha.8 — Unreleased
+## 0.1.0-alpha.9 — 2026-10-01
+
+- Reveal a webhook Routine prompt together with its URL and key when `agents routines webhook credential --confirm --reveal-key` is used. Credential output without `--reveal-key`, and `list`/`show`, still omit the key and prompt.
+
+## 0.1.0-alpha.8 — 2026-10-01
 
 - Make Routine management owner-aware: Temporal Bots read Server-authoritative Routines through the bounded Host bridge instead of the legacy local Box store, with fail-closed authority checks.
 - Add explicit webhook credential access with URL-by-default output and opt-in `--reveal-key`; support Temporal enable/disable/delete while refusing unsupported Temporal definition create/update.
