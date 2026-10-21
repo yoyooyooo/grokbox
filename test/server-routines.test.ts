@@ -1,333 +1,374 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, readFile, writeFile, open } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeProfileFile } from "../src/config/profile.ts";
 import type { CliDeps } from "../src/deps.ts";
-import { CliError } from "../src/errors.ts";
-import {
-  listServerAgents,
-  listServerRoutines,
-  mintWebhookKey,
-  probeWebhookKey,
-  stableAutomationId,
-  webhookUrlFor,
-} from "../src/server-routines.ts";
-import { assertNoSecrets, captureCli, parseJson } from "./helpers.ts";
+import type { ServerCallDeps } from "../src/server-routines.ts";
+import { assertNoSecrets, captureCli, parseJson, startMockGateway, writeDiscovery } from "./helpers.ts";
 
-const SERVER_TOKEN = "server-account-token-should-never-be-printed";
+const TOKEN = "cloud-account-secret-never-output";
 const BACKEND = "https://server.example.test";
-const AGENT = "98eedf67-6deb-4c35-a452-009cd9e22a77";
-const ROUTINE_LOCAL_ID = "x-webhook";
-const ROUTINE_SERVER_ID = "59557d02-396a-590a-8191-99ecbb5c0871";
-const WEBHOOK_KEY = "crsr_fixture_webhook_key_do_not_leak";
+const AGENT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const OTHER = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const LOCAL = "x-webhook";
+// Deliberately unrelated to any derivation from the local ID.
+const SERVER = "server-returned-automation-id";
+const KEY = "crsr_fixture_webhook_key_do_not_leak";
+const NIL = "00000000-0000-5000-8000-000000000000";
 
-// --- minimal protobuf writer, so the fake provider speaks the real wire format ---
+type Agent = { id: string; name: string; harness?: string; kind?: number };
+type Automation = { serverId: string; record: string };
+type Call = { path: string; authorization: string | null; body: Buffer; signal?: AbortSignal | null };
 
-function varint(value: number): Buffer {
+function varint(value: bigint | number): Buffer {
+  let rest = BigInt(value);
   const bytes: number[] = [];
-  let rest = value;
-  while (rest > 0x7f) {
-    bytes.push((rest & 0x7f) | 0x80);
-    rest = Math.floor(rest / 128);
+  while (rest > 127n) {
+    bytes.push(Number(rest & 127n) | 128);
+    rest >>= 7n;
   }
-  bytes.push(rest);
+  bytes.push(Number(rest));
   return Buffer.from(bytes);
 }
 
-function field(number: number, payload: Buffer): Buffer {
-  return Buffer.concat([varint((number << 3) | 2), varint(payload.length), payload]);
+function field(number: number, value: Buffer | string): Buffer {
+  const bytes = typeof value === "string" ? Buffer.from(value) : value;
+  return Buffer.concat([varint(number * 8 + 2), varint(bytes.length), bytes]);
 }
 
-function routineRecord(overrides: Record<string, unknown> = {}): string {
+function record(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
-    id: ROUTINE_LOCAL_ID,
-    name: "X 搜寻 webhook",
-    prompt: "PRIVATE routine prompt",
-    trigger: { type: "webhook" },
-    isEnabled: true,
-    createdAt: 1792570713584,
-    filePath: "/PRIVATE/routine.json",
-    credential: "PRIVATE_CREDENTIAL",
+    id: LOCAL, name: "云上新任务", prompt: "PRIVATE prompt", trigger: { type: "webhook" },
+    isEnabled: true, createdAt: 1792570713584, filePath: "/PRIVATE/path", credential: "PRIVATE credential",
     ...overrides,
   });
 }
 
-function agentsResponse(): Buffer {
-  const rows = [
-    { id: AGENT, name: "小钻风", harness: "temporal" },
-    { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "box-bot", harness: "box" },
-  ];
-  return Buffer.concat(rows.map((row) => field(1, Buffer.concat([
-    field(1, Buffer.from(String(row.id.length), "utf8")),
-    field(2, Buffer.from(row.id, "utf8")),
-    field(3, Buffer.from(row.name, "utf8")),
-    field(13, Buffer.from(row.harness, "utf8")),
-  ]))));
+function automations(rows: Automation[] = [{ serverId: SERVER, record: record() }]): Buffer {
+  return Buffer.concat(rows.map((row) => field(1, Buffer.concat([field(1, row.serverId), field(2, row.record)]))));
 }
 
-function automationsResponse(record = routineRecord()): Buffer {
-  return field(1, Buffer.concat([
-    field(1, Buffer.from(ROUTINE_SERVER_ID, "utf8")),
-    field(2, Buffer.from(record, "utf8")),
-  ]));
+function proto(body: Buffer): Response {
+  return new Response(new Uint8Array(body), { headers: { "content-type": "application/proto" } });
 }
 
-type Call = { path: string; authorization: string | null; contentType: string | null; body: Buffer };
-
-function fakeServer(handlers: {
-  agents?: () => Response;
-  automations?: (body: Buffer) => Response;
-  mint?: (body: Buffer) => Response;
-  probe?: (body: Buffer) => Response;
-}): { fetch: CliDeps["fetch"]; calls: Call[] } {
+function fakeServer(options: {
+  agents?: Agent[];
+  automationBody?: Buffer;
+  agentBody?: Buffer;
+  mint?: (call: Call) => Response | Promise<Response>;
+  probe?: (call: Call) => Response | Promise<Response>;
+} = {}) {
   const calls: Call[] = [];
-  const fetchImpl = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-    const url = new URL(String(input));
-    const body = Buffer.from((init?.body as Uint8Array | undefined) ?? new Uint8Array());
-    calls.push({
-      path: url.pathname,
-      authorization: new Headers(init?.headers).get("authorization"),
-      contentType: new Headers(init?.headers).get("content-type"),
-      body,
-    });
-    if (url.pathname.endsWith("/ListGrokBotAgents")) {
-      return handlers.agents ? handlers.agents() : proto(agentsResponse());
+  const fetchImpl = async (input: Parameters<CliDeps["fetch"]>[0], init?: Parameters<CliDeps["fetch"]>[1]) => {
+    const path = new URL(String(input)).pathname;
+    const call: Call = {
+      path, authorization: new Headers(init?.headers).get("authorization"),
+      body: Buffer.from((init?.body as Uint8Array | undefined) ?? []), signal: init?.signal,
+    };
+    calls.push(call);
+    if (path.endsWith("/ListGrokBotAgents")) {
+      if (options.agentBody) return proto(options.agentBody);
+      return proto(Buffer.concat((options.agents ?? [{ id: AGENT, name: "新机器人", harness: "temporal" }]).map((agent) =>
+        field(1, Buffer.concat([field(2, "legacy-not-a-public-uuid"), field(12, agent.id), field(3, agent.name), field(13, agent.harness ?? "temporal"), varint(19 * 8), varint(agent.kind ?? 1)])))));
     }
-    if (url.pathname.endsWith("/ListGrokBotAgentAutomations")) {
-      return handlers.automations ? handlers.automations(body) : proto(automationsResponse());
+    if (path.endsWith("/ListGrokBotAgentAutomations")) return proto(options.automationBody ?? automations());
+    if (path.endsWith("/CreateAutomationWebhookApiKey")) return options.mint ? await options.mint(call) : proto(field(1, KEY));
+    if (path.startsWith("/automations/webhook/")) {
+      // Any attempt to invoke the real Routine fails the test immediately.
+      expect(path).toBe(`/automations/webhook/${NIL}`);
+      return options.probe ? await options.probe(call) : Response.json({
+        code: "error", message: `User API key missing required scope: automation:${NIL}`,
+      }, { status: 401 });
     }
-    if (url.pathname.endsWith("/CreateAutomationWebhookApiKey")) {
-      return handlers.mint ? handlers.mint(body) : proto(field(1, Buffer.from(WEBHOOK_KEY, "utf8")));
-    }
-    if (url.pathname.startsWith("/automations/webhook/")) {
-      return handlers.probe
-        ? handlers.probe(body)
-        : Response.json({ code: "error", message: "User API key missing required scope: automation:x" }, { status: 401 });
-    }
-    return new Response("unexpected path", { status: 500 });
+    throw new Error("Unexpected endpoint; Gateway/account fallback is forbidden");
   };
   return { fetch: fetchImpl as CliDeps["fetch"], calls };
 }
 
-function proto(body: Buffer): Response {
-  return new Response(new Uint8Array(body), {
-    status: 200,
-    headers: { "content-type": "application/proto" },
+async function fixture(options: Parameters<typeof fakeServer>[0] = {}, overrides: Partial<CliDeps> = {}) {
+  const configDir = await mkdtemp(join(tmpdir(), "grokbox-cloud-routine-"));
+  await writeProfileFile(configDir, "cloud", {
+    version: 1, server: { access_token_ref: "env:CLOUD_TOKEN", backend_url: BACKEND },
   });
+  const server = fakeServer(options);
+  const run = (args: string[], extra: Partial<CliDeps> = {}) => captureCli(args, {
+    configDir, env: { CLOUD_TOKEN: TOKEN, GROKBOX_PROFILE: "cloud" }, fetch: server.fetch,
+    discoveryPath: "/dev/null", ...overrides, ...extra,
+  });
+  return { ...server, configDir, run };
 }
 
-function deps(fetchImpl: CliDeps["fetch"], overrides: Partial<CliDeps> = {}): CliDeps {
-  return {
-    fetch: fetchImpl,
-    now: () => 1_700_000_000_000,
-    signal: undefined,
-    ...overrides,
-  } as CliDeps;
-}
+const credentialArgs = ["agents", "routines", "webhook", "credential", "新机器人", LOCAL];
 
-async function serverProfile(configDir: string): Promise<void> {
-  await writeProfileFile(configDir, "server", {
-    version: 1,
-    server: { access_token_ref: "env:SERVER_TOKEN", backend_url: BACKEND },
-  });
-}
-
-describe("Server Routine surface", () => {
-  test("derives the Server automation id from agent and local routine id", () => {
-    expect(stableAutomationId(AGENT, ROUTINE_LOCAL_ID)).toBe(ROUTINE_SERVER_ID);
-    expect(stableAutomationId("2a956666-854d-48a8-bc28-2430f178d374", "webhook"))
-      .toBe("7913938a-0760-5079-a14a-b099fa1f3f5a");
-    expect(webhookUrlFor(BACKEND, ROUTINE_SERVER_ID))
-      .toBe(`${BACKEND}/automations/webhook/${ROUTINE_SERVER_ID}`);
+describe("unified agents routines cloud authority", () => {
+  test("has no separate server command root", async () => {
+    const f = await fixture();
+    const result = await f.run(["server", "routines"]);
+    expect(result.code).toBe(2);
+    expect(f.calls.length).toBe(0);
   });
 
-  test("lists agents and routines over bounded application/proto calls", async () => {
-    const server = fakeServer({});
-    const callDeps = deps(server.fetch);
-
-    const agents = await listServerAgents(callDeps, {
-      backendUrl: BACKEND,
-      token: SERVER_TOKEN,
-      timeoutMs: 5_000,
+  test("Host verify is explicitly refused before any credential access", async () => {
+    let requests = 0;
+    const result = await captureCli([...credentialArgs, "--confirm", "--verify"], {
+      discoveryPath: "/dev/null", fetch: (async () => { requests += 1; throw new Error("must not fetch"); }) as unknown as CliDeps["fetch"],
     });
-    expect(agents).toEqual([
-      { id: AGENT, name: "小钻风", harness: "temporal" },
-      { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "box-bot", harness: "box" },
-    ]);
-
-    const routines = await listServerRoutines(callDeps, {
-      backendUrl: BACKEND,
-      token: SERVER_TOKEN,
-      timeoutMs: 5_000,
-      agentId: AGENT,
-    });
-    expect(routines).toEqual([{
-      serverId: ROUTINE_SERVER_ID,
-      localId: ROUTINE_LOCAL_ID,
-      name: "X 搜寻 webhook",
-      triggerType: "webhook",
-      isEnabled: true,
-      createdAtMs: 1792570713584,
-      webhookUrl: `${BACKEND}/automations/webhook/${ROUTINE_SERVER_ID}`,
-    }]);
-    // The prompt, filesystem path, and credential in the native record never surface.
-    expect(JSON.stringify(routines)).not.toContain("PRIVATE");
-
-    for (const call of server.calls) {
-      expect(call.contentType).toBe("application/proto");
-      expect(call.authorization).toBe(`Bearer ${SERVER_TOKEN}`);
-    }
-    // The agent id travels as protobuf field 1, not as JSON.
-    expect(server.calls[1]!.body.subarray(0, 2)).toEqual(Buffer.from([0x0a, AGENT.length]));
+    expect(result.code).toBe(22);
+    expect(parseJson(result.stderr)).toMatchObject({ error: { code: "capability_unavailable" } });
+    expect(requests).toBe(0);
   });
 
-  test("mints a webhook key and proves liveness without firing the routine", async () => {
-    const server = fakeServer({});
-    const callDeps = deps(server.fetch);
-    const key = await mintWebhookKey(callDeps, {
-      backendUrl: BACKEND,
-      token: SERVER_TOKEN,
-      timeoutMs: 5_000,
-      serverId: ROUTINE_SERVER_ID,
-    });
-    expect(key).toBe(WEBHOOK_KEY);
-
-    expect(await probeWebhookKey(callDeps, {
-      backendUrl: BACKEND,
-      token: SERVER_TOKEN,
-      key,
-      timeoutMs: 5_000,
-    })).toBe(true);
-    // The probe must never address the routine's own id: that would run it.
-    const probeCall = server.calls.at(-1)!;
-    expect(probeCall.path).toBe("/automations/webhook/00000000-0000-5000-8000-000000000000");
-
-    const dead = fakeServer({
-      probe: () => Response.json({ code: "error", message: "Invalid API key" }, { status: 401 }),
-    });
-    expect(await probeWebhookKey(deps(dead.fetch), {
-      backendUrl: BACKEND,
-      token: SERVER_TOKEN,
-      key: "crsr_dead",
-      timeoutMs: 5_000,
-    })).toBe(false);
-  });
-
-  test("maps authorization refusals to typed credential failures", async () => {
-    const server = fakeServer({
-      mint: () => Response.json(
-        { code: "unauthenticated", message: "Only the automation owner can create webhook API keys" },
-        { status: 401 },
-      ),
-    });
-    let failure: unknown;
-    try {
-      await mintWebhookKey(deps(server.fetch), {
-        backendUrl: BACKEND,
-        token: SERVER_TOKEN,
-        timeoutMs: 5_000,
-        serverId: ROUTINE_SERVER_ID,
-      });
-    } catch (error) {
-      failure = error;
-    }
-    expect(failure).toBeInstanceOf(CliError);
-    expect((failure as CliError).code).toBe("credential_invalid");
-    expect((failure as CliError).failureCode).toBe("not_routine_owner");
-  });
-
-  test("rejects an oversized or malformed provider record instead of guessing", async () => {
-    const malformed = fakeServer({
-      automations: () => proto(automationsResponse(JSON.stringify({
-        id: ROUTINE_LOCAL_ID,
-        name: "malformed",
-      }))),
-    });
-    let failure: unknown;
-    try {
-      await listServerRoutines(deps(malformed.fetch), {
-        backendUrl: BACKEND,
-        token: SERVER_TOKEN,
-        timeoutMs: 5_000,
-        agentId: AGENT,
-      });
-    } catch (error) {
-      failure = error;
-    }
-    expect(failure).toBeInstanceOf(CliError);
-    expect((failure as CliError).code).toBe("capability_unavailable");
-    expect((failure as CliError).failureCode).toBe("routine_enabled_invalid");
-  });
-});
-
-describe("grokbox server commands", () => {
-  test("requires an explicit Server credential in the selected Profile", async () => {
-    const configDir = await mkdtemp(join(tmpdir(), "grokbox-server-cmd-"));
-    const result = await captureCli(["server", "agents"], {
-      configDir,
-      env: {},
-      discoveryPath: "/dev/null",
-    });
-    expect(result.code).toBe(29);
-    expect(parseJson(result.stderr)).toMatchObject({
-      ok: false,
-      error: { code: "credential_unavailable" },
-    });
-  });
-
-  test("lists Server routines and keeps webhook keys hidden unless revealed", async () => {
-    const configDir = await mkdtemp(join(tmpdir(), "grokbox-server-cmd-"));
-    await serverProfile(configDir);
-    const server = fakeServer({});
-    const run = async (argv: string[]) => await captureCli(argv, {
-      configDir,
-      env: { SERVER_TOKEN, GROKBOX_PROFILE: "server" },
-      fetch: server.fetch,
-      discoveryPath: "/dev/null",
-    });
-
-    const listed = await run(["server", "routines", "--agent", "小钻风"]);
+  test("reads a bridge-less new cloud bot with canonical envelopes and safe fields", async () => {
+    const f = await fixture();
+    const listed = await f.run(["agents", "routines", "list", "新机器人"]);
     expect(listed.code, listed.stderr).toBe(0);
-    const listedBody = parseJson(listed.stdout) as {
-      ok: boolean;
-      data: { count: number; routines: Array<Record<string, unknown>> };
-    };
-    expect(listedBody.data.count).toBe(1);
-    expect(listedBody.data.routines[0]).toMatchObject({
-      serverId: ROUTINE_SERVER_ID,
-      triggerType: "webhook",
-    });
-    assertNoSecrets(listed.stdout, [SERVER_TOKEN, WEBHOOK_KEY]);
+    expect(parseJson(listed.stdout)).toMatchObject({ ok: true, data: {
+      schemaVersion: 1, agentId: AGENT, authority: "server-temporal",
+      coverage: { kind: "native_returned_window", complete: false },
+      routines: [{ id: LOCAL, serverId: SERVER, name: "云上新任务", enabled: true,
+        trigger: { type: "webhook" }, mutable: false, promptIncluded: false, credentialsIncluded: false,
+        webhookUrl: `${BACKEND}/automations/webhook/${SERVER}` }],
+    } });
+    const shown = await f.run(["agents", "routines", "show", AGENT, SERVER]);
+    expect(shown.code, shown.stderr).toBe(0);
+    expect(parseJson(shown.stdout)).toMatchObject({ data: { agentId: AGENT, routine: { id: LOCAL, serverId: SERVER } } });
+    expect(listed.stdout + shown.stdout).not.toContain("PRIVATE");
+    assertNoSecrets(listed.stdout + shown.stdout + listed.stderr, [TOKEN, KEY]);
+    expect(f.calls.every((call) => call.authorization === `Bearer ${TOKEN}`)).toBe(true);
+  });
 
-    const hidden = await run([
-      "server", "webhook", "credential",
-      "--agent", "小钻风", "--routine", ROUTINE_LOCAL_ID,
-    ]);
+  test("preserves Gateway behavior when no explicit cloud credential exists", async () => {
+    const gateway = await startMockGateway({ agents: [{ id: AGENT, name: "local", harness: "box" }],
+      routines: { [AGENT]: [JSON.parse(record())] } });
+    try {
+      const discoveryPath = await writeDiscovery(gateway);
+      const result = await captureCli(["agents", "routines", "list", "local"], { discoveryPath, transport: "gateway" });
+      expect(result.code, result.stderr).toBe(0);
+      expect(parseJson(result.stdout)).toMatchObject({ data: { authority: "box-local", routines: [{ id: LOCAL }] } });
+      expect(gateway.requests.some((call) => call.pathname === "/api/getAgentAutomations")).toBe(true);
+    } finally { gateway.stop(); }
+  });
+
+  test("cloud room kind is rejected and cannot shadow an agent with the same name", async () => {
+    const f = await fixture({ agents: [{ id: AGENT, name: "same", kind: 1 }, { id: OTHER, name: "same", kind: 2 }] });
+    expect((await f.run(["agents", "routines", "list", "same"])).code).toBe(0);
+    const before = f.calls.length;
+    expect((await f.run(["agents", "routines", "list", OTHER])).code).toBe(18);
+    expect(f.calls.length).toBe(before + 1);
+    const roomOnly = await fixture({ agents: [{ id: OTHER, name: "room", kind: 2 }] });
+    expect((await roomOnly.run(["agents", "routines", "list", "room"])).code).toBe(18);
+  });
+
+  test("uses exact IDs first and rejects duplicate routine/agent names", async () => {
+    const f = await fixture({ automationBody: automations([
+      { serverId: SERVER, record: record() },
+      { serverId: "second-server", record: record({ id: "second", name: "云上新任务" }) },
+    ]) });
+    const ambiguous = await f.run(["agents", "routines", "show", AGENT, "云上新任务"]);
+    expect(ambiguous.code).toBe(19);
+    expect((await f.run(["agents", "routines", "show", AGENT, SERVER])).code).toBe(0);
+    expect((await f.run(["agents", "routines", "webhook", "credential", AGENT, "云上新任务", "--confirm"])).code).toBe(19);
+    expect(f.calls.filter((call) => call.path.endsWith("/CreateAutomationWebhookApiKey")).length).toBe(0);
+    const duplicate = await fixture({ agents: [{ id: AGENT, name: "same" }, { id: OTHER, name: "same" }] });
+    expect((await duplicate.run(["agents", "routines", "list", "same"])).code).toBe(19);
+    expect((await duplicate.run(["agents", "routines", "list", AGENT])).code).toBe(0);
+  });
+
+  test("never searches a wrong account or cached roster on cloud target miss", async () => {
+    const f = await fixture({ agents: [] });
+    const result = await f.run(["agents", "routines", "list", "local-only-name"]);
+    expect(result.code).toBe(17);
+    expect(f.calls.map((call) => call.path)).toEqual(["/aiserver.v1.GrokBotService/ListGrokBotAgents"]);
+    const missing = await f.run(["agents", "routines", "list", AGENT], { env: { GROKBOX_PROFILE: "cloud" } });
+    expect(missing.code).toBe(29);
+    assertNoSecrets(result.stderr + missing.stderr, [TOKEN, KEY]);
+  });
+
+  test("requires confirm before mint, reuses a protected key, reveals only on request", async () => {
+    const f = await fixture();
+    const denied = await f.run(credentialArgs);
+    expect(denied.code).toBe(2);
+    expect(f.calls.length).toBe(0);
+    const hidden = await f.run([...credentialArgs, "--confirm"]);
     expect(hidden.code, hidden.stderr).toBe(0);
-    expect(parseJson(hidden.stdout)).toMatchObject({
-      ok: true,
-      data: {
-        routineId: ROUTINE_LOCAL_ID,
-        serverId: ROUTINE_SERVER_ID,
-        url: `${BACKEND}/automations/webhook/${ROUTINE_SERVER_ID}`,
-        keyPresent: true,
-        keyIncluded: false,
-      },
-    });
-    expect(hidden.stdout).not.toContain(WEBHOOK_KEY);
-    assertNoSecrets(hidden.stdout, [SERVER_TOKEN]);
-
-    const revealed = await run([
-      "server", "webhook", "credential",
-      "--agent", "小钻风", "--routine", ROUTINE_LOCAL_ID,
-      "--reveal-key", "--verify",
-    ]);
+    expect(parseJson(hidden.stdout)).toMatchObject({ data: { routineId: LOCAL, serverId: SERVER, keyPresent: true, keyIncluded: false, promptIncluded: false } });
+    const revealed = await f.run([...credentialArgs, "--confirm", "--reveal-key", "--verify"]);
     expect(revealed.code, revealed.stderr).toBe(0);
-    expect(parseJson(revealed.stdout)).toMatchObject({
-      ok: true,
-      data: { keyIncluded: true, key: WEBHOOK_KEY, keyLive: true },
-    });
-    assertNoSecrets(revealed.stdout, [SERVER_TOKEN]);
+    expect(parseJson(revealed.stdout)).toMatchObject({ data: { keyIncluded: true, key: KEY, keyLive: true, promptIncluded: false } });
+    expect(revealed.stdout).not.toContain("PRIVATE");
+    assertNoSecrets(hidden.stdout + hidden.stderr + revealed.stderr, [TOKEN, KEY]);
+    expect(f.calls.filter((call) => call.path.endsWith("/CreateAutomationWebhookApiKey")).length).toBe(1);
+    const files = await readdir(join(f.configDir, "server-webhook-keys"));
+    expect(files.filter((name) => name.endsWith(".json")).length).toBe(1);
+    expect(f.calls.at(-1)?.path).toBe(`/automations/webhook/${NIL}`);
+  });
+
+  test("fails closed on corrupted or permissive key stores without minting again", async () => {
+    for (const corrupt of [true, false]) {
+      const f = await fixture();
+      expect((await f.run([...credentialArgs, "--confirm"])).code).toBe(0);
+      const directory = join(f.configDir, "server-webhook-keys");
+      const file = (await readdir(directory)).find((name) => name.endsWith(".json"))!;
+      if (corrupt) await writeFile(join(directory, file), "not JSON");
+      else await chmod(join(directory, file), 0o644);
+      expect((await f.run([...credentialArgs, "--confirm"])).code).toBe(22);
+      expect(f.calls.filter((call) => call.path.endsWith("/CreateAutomationWebhookApiKey")).length).toBe(1);
+    }
+  });
+
+  test("scopes cached credentials by backend, credential, agent, server ID and incarnation", async () => {
+    const f = await fixture();
+    expect((await f.run([...credentialArgs, "--confirm"])).code).toBe(0);
+    const directory = join(f.configDir, "server-webhook-keys");
+    const before = await readdir(directory);
+    const next = await f.run([...credentialArgs, "--confirm"], { env: { CLOUD_TOKEN: "different-principal", GROKBOX_PROFILE: "cloud" } });
+    expect(next.code, next.stderr).toBe(0);
+    expect((await readdir(directory)).length).toBe(before.length + 1);
+    expect(f.calls.filter((call) => call.path.endsWith("/CreateAutomationWebhookApiKey")).length).toBe(2);
+    for (const name of await readdir(directory)) expect(await readFile(join(directory, name), "utf8")).not.toContain(TOKEN);
+    for (const change of ["backend", "agent", "server-id", "created-at"] as const) {
+      const fetcher = fakeServer({
+        agents: [{ id: change === "agent" ? OTHER : AGENT, name: "新机器人" }],
+        automationBody: automations([{ serverId: change === "server-id" ? "new-server-id" : SERVER,
+          record: record(change === "created-at" ? { createdAt: 1792570713585 } : {}) }]),
+      });
+      if (change === "backend") await writeProfileFile(f.configDir, "cloud", {
+        version: 1, server: { access_token_ref: "env:CLOUD_TOKEN", backend_url: "https://second.example.test" },
+      });
+      const result = await f.run([...credentialArgs, "--confirm"], { fetch: fetcher.fetch });
+      expect(result.code, result.stderr).toBe(0);
+      expect(fetcher.calls.filter((call) => call.path.endsWith("/CreateAutomationWebhookApiKey")).length).toBe(1);
+      if (change === "backend") await writeProfileFile(f.configDir, "cloud", {
+        version: 1, server: { access_token_ref: "env:CLOUD_TOKEN", backend_url: BACKEND },
+      });
+    }
+    expect((await readdir(directory)).filter((name) => name.endsWith(".json")).length).toBe(6);
+  });
+
+  test("rejects malformed required records/envelopes and duplicate IDs", async () => {
+    const badBodies = [
+      field(1, field(1, SERVER)), field(1, field(2, record())),
+      Buffer.from([8, 1]), Buffer.from([0]), Buffer.from([10, 5, 1]),
+      Buffer.concat([varint(80), Buffer.from([255, 255, 255, 255, 255, 255, 255, 255, 255, 2])]),
+      field(1, Buffer.concat([field(1, SERVER), field(2, Buffer.from([255]))])),
+      field(1, Buffer.concat([field(1, SERVER), field(1, SERVER), field(2, record())])),
+      Buffer.from([255, 255, 255, 255, 31, 0]),
+      automations([{ serverId: SERVER, record: "{}" }]),
+      automations([{ serverId: SERVER, record: record() }, { serverId: SERVER, record: record({ id: "second" }) }]),
+      automations([{ serverId: SERVER, record: record() }, { serverId: "second", record: record() }]),
+    ];
+    for (const automationBody of badBodies) {
+      const f = await fixture({ automationBody });
+      const result = await f.run(["agents", "routines", "list", AGENT]);
+      expect(result.code, result.stderr).toBe(22);
+      assertNoSecrets(result.stderr, [TOKEN, KEY, "PRIVATE"]);
+    }
+  });
+
+  test("skips legal unknown uint64 and fixed fields without loss of precision", async () => {
+    const automationBody = Buffer.concat([automations(), varint(80), varint(18446744073709551615n),
+      varint(89), Buffer.alloc(8), varint(101), Buffer.alloc(4)]);
+    const f = await fixture({ automationBody });
+    const result = await f.run(["agents", "routines", "list", AGENT]);
+    expect(result.code, result.stderr).toBe(0);
+    const grouped = await fixture({ automationBody: Buffer.concat([automationBody, varint(115), varint(8), varint(1), varint(116)]) });
+    expect((await grouped.run(["agents", "routines", "list", AGENT])).code).toBe(0);
+  });
+
+  test("verification requires actual 401 and exact scope response, never remints", async () => {
+    for (const [status, message] of [
+      [200, `User API key missing required scope: automation:${NIL}`],
+      [401, "User API key missing required scope: automation:wrong"],
+      [403, `User API key missing required scope: automation:${NIL}`],
+    ] as const) {
+      const f = await fixture({ probe: () => Response.json({ code: "error", message }, { status }) });
+      expect((await f.run([...credentialArgs, "--confirm", "--verify"])).code).toBe(22);
+      expect((await f.run([...credentialArgs, "--confirm", "--verify"])).code).toBe(22);
+      expect(f.calls.filter((call) => call.path.endsWith("/CreateAutomationWebhookApiKey")).length).toBe(1);
+    }
+    const dead = await fixture({ probe: () => Response.json({ code: "error", message: "Invalid API key" }, { status: 401 }) });
+    expect(parseJson((await dead.run([...credentialArgs, "--confirm", "--verify"])).stdout)).toMatchObject({ data: { keyLive: false } });
+    const network = await fixture({ probe: () => { throw new Error("offline"); } });
+    expect((await network.run([...credentialArgs, "--confirm", "--verify"])).code).toBe(22);
+  });
+
+  test("cancellation prevents mint or aborts verification and uncertain mint is not retried", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const cancelled = await fixture({}, { signal: controller.signal });
+    expect((await cancelled.run([...credentialArgs, "--confirm"])).code).not.toBe(0);
+    expect(cancelled.calls.length).toBe(0);
+    const verifyController = new AbortController();
+    const f = await fixture({ probe: async (call) => {
+      verifyController.abort();
+      expect(call.signal?.aborted).toBe(true);
+      throw new Error("aborted");
+    } }, { signal: verifyController.signal });
+    expect((await f.run([...credentialArgs, "--confirm", "--verify"])).code).toBe(22);
+    const uncertain = await fixture({ mint: () => { throw new Error("connection lost after mint"); } });
+    const unknown = await uncertain.run([...credentialArgs, "--confirm"]);
+    expect(unknown.code).toBe(28);
+    expect(parseJson(unknown.stderr)).toMatchObject({ error: { code: "operation_outcome_unknown", retryable: false } });
+    expect((await uncertain.run([...credentialArgs, "--confirm"])).code).toBe(22);
+    expect(uncertain.calls.filter((call) => call.path.endsWith("/CreateAutomationWebhookApiKey")).length).toBe(1);
+  });
+
+  test("cancelling during temporary store open leaves no lock and never dispatches mint", async () => {
+    const f = await fixture();
+    const controller = new AbortController();
+    const injected: Partial<CliDeps> & Pick<ServerCallDeps, "openWebhookKeyStore"> = {
+      signal: controller.signal,
+      openWebhookKeyStore: async (path, flags, mode) => {
+        const handle = await open(path, flags, mode);
+        controller.abort();
+        return handle;
+      },
+    };
+    const cancelled = await f.run([...credentialArgs, "--confirm"], injected);
+    expect(cancelled.code).toBe(22);
+    expect(f.calls.filter((call) => call.path.endsWith("/CreateAutomationWebhookApiKey")).length).toBe(0);
+    expect(await readdir(join(f.configDir, "server-webhook-keys"))).toEqual([]);
+    expect((await f.run([...credentialArgs, "--confirm"])).code).toBe(0);
+    expect(f.calls.filter((call) => call.path.endsWith("/CreateAutomationWebhookApiKey")).length).toBe(1);
+  });
+
+  test("mint 5xx is explicitly non-retryable and leaves an outcome lock", async () => {
+    const f = await fixture({ mint: () => new Response("unavailable", { status: 503 }) });
+    const result = await f.run([...credentialArgs, "--confirm"]);
+    expect(result.code).toBe(28);
+    expect(parseJson(result.stderr)).toMatchObject({ error: { code: "operation_outcome_unknown", retryable: false } });
+    expect((await f.run([...credentialArgs, "--confirm"])).code).toBe(22);
+    expect(f.calls.filter((call) => call.path.endsWith("/CreateAutomationWebhookApiKey")).length).toBe(1);
+  });
+
+  test("missing incarnation refuses mint rather than deriving a default cache key", async () => {
+    const f = await fixture({ automationBody: automations([{ serverId: SERVER, record: record({ createdAt: null }) }]) });
+    expect((await f.run([...credentialArgs, "--confirm"])).code).toBe(22);
+    expect(f.calls.filter((call) => call.path.endsWith("/CreateAutomationWebhookApiKey")).length).toBe(0);
+  });
+
+  test("rejects malformed cloud agent envelopes and duplicate IDs", async () => {
+    for (const agentBody of [field(1, field(3, "missing-id")), Buffer.from([8, 1]),
+      field(1, field(2, AGENT)),
+      Buffer.concat([field(1, field(12, AGENT)), varint(3 * 8), varint(1)]),
+      Buffer.concat([field(1, field(12, AGENT)), field(1, field(12, AGENT))])]) {
+      const f = await fixture({ agentBody });
+      expect((await f.run(["agents", "routines", "list", AGENT])).code).toBe(22);
+      expect(f.calls.length).toBe(1);
+    }
+  });
+
+  test("definitive mint refusal releases the lock without an automatic retry", async () => {
+    let refused = true;
+    const f = await fixture({ mint: () => refused
+      ? Response.json({ message: "Only the automation owner can create webhook API keys" }, { status: 401 })
+      : proto(field(1, KEY)) });
+    expect((await f.run([...credentialArgs, "--confirm"])).code).toBe(31);
+    expect(f.calls.filter((call) => call.path.endsWith("/CreateAutomationWebhookApiKey")).length).toBe(1);
+    refused = false;
+    expect((await f.run([...credentialArgs, "--confirm"])).code).toBe(0);
+    expect(f.calls.filter((call) => call.path.endsWith("/CreateAutomationWebhookApiKey")).length).toBe(2);
   });
 });

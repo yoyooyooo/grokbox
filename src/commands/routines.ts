@@ -3,6 +3,11 @@ import { CliError, usage } from "../errors.ts";
 import { GatewayClient, gatewayMeta, type GatewayMeta } from "../gateway.ts";
 import { formatTable, writeSuccess } from "../output.ts";
 import { ioFromOpts, readPrompt } from "../opts.ts";
+import { resolveSecretRef } from "../config/secret.ts";
+import {
+  DEFAULT_SERVER_BACKEND_URL, cachedWebhookKey, listServerAgents, listServerRoutines,
+  normalizedBackend, probeWebhookKey, type ServerRoutine,
+} from "../server-routines.ts";
 import {
   nativeRoutineCreateSpec,
   nativeRoutineUpdateSpec,
@@ -44,6 +49,7 @@ export type RoutineOptions = {
   confirm?: boolean;
   operationId?: string;
   revealKey?: boolean;
+  verify?: boolean;
 };
 
 type RoutineAuthority = "box-local" | "server-temporal";
@@ -165,7 +171,7 @@ async function resolveRoutineAuthority(
     if (error instanceof CliError && ["gateway_not_found", "gateway_bad_request", "capability_unavailable"].includes(error.code)) {
       throw new CliError(
         "capability_unavailable",
-        "This Temporal Bot requires the Grokbox Temporal Routine bridge before Routine state can be read safely. `grokbox server routines` reads the same Server records directly when the Profile declares server.access_token_ref.",
+        "This Temporal Bot requires the Grokbox Temporal Routine bridge, or an explicit server.access_token_ref in the selected Profile, before Routine state can be read safely.",
         { failureCode: "routine_bridge_missing" },
       );
     }
@@ -227,16 +233,21 @@ function nativePrompts(value: unknown, catalog: RoutineCatalog): Map<string, str
   return prompts;
 }
 
-function findRoutine(snapshot: RoutineSnapshot, id: string): RoutineView {
-  let rid: string;
-  try {
-    rid = routineId(id);
-  } catch (error) {
-    throw routineCliError(error);
+function findRoutine(snapshot: RoutineSnapshot, target: string, allowName = false): RoutineView {
+  const exact = snapshot.catalog.routines.find((routine) => routine.id === target);
+  if (exact) return exact;
+  if (!allowName) {
+    try {
+      routineId(target);
+    } catch (error) {
+      throw routineCliError(error);
+    }
+    throw routineCliError(new RoutineError("not_found_in_window"));
   }
-  const row = snapshot.catalog.routines.find((routine) => routine.id === rid);
-  if (!row) throw routineCliError(new RoutineError("not_found_in_window"));
-  return row;
+  const named = snapshot.catalog.routines.filter((routine) => routine.name.toLocaleLowerCase() === target.toLocaleLowerCase());
+  if (named.length > 1) throw new CliError("target_ambiguous", "Routine name matched more than one Routine.");
+  if (!named[0]) throw routineCliError(new RoutineError("not_found_in_window"));
+  return named[0];
 }
 
 function mutableRoutine(snapshot: RoutineSnapshot, id: string): RoutineView {
@@ -317,7 +328,7 @@ async function listOrShow(
     writeSuccess(deps.stdout, { ...snapshot.catalog, authority: snapshot.authority }, snapshot.discovery);
     return;
   }
-  const routine = findRoutine(snapshot, routineTarget ?? "");
+  const routine = findRoutine(snapshot, routineTarget ?? "", true);
   writeSuccess(
     deps.stdout,
     { schemaVersion: 1, agentId: agent.id, authority: snapshot.authority, routine, coverage: snapshot.catalog.coverage },
@@ -550,10 +561,13 @@ async function showWebhookCredential(
   raw: RoutineOptions,
 ): Promise<void> {
   requireConfirmed(raw);
+  if (raw.verify === true) {
+    throw new CliError("capability_unavailable", "Webhook key verification requires an explicit cloud credential in the selected Profile; Host-provided credentials are not sent to additional endpoints.");
+  }
   const io = ioFromOpts(raw);
   const agent = await resolveAgent(client, agentTarget, io.timeoutMs);
   const snapshot = await readSnapshot(client, agent, io.timeoutMs);
-  const routine = findRoutine(snapshot, routineTarget);
+  const routine = findRoutine(snapshot, routineTarget, true);
   if (routine.trigger.type !== "webhook") {
     throw new CliError("capability_unavailable", "Routine is not webhook-triggered.");
   }
@@ -650,6 +664,55 @@ async function deleteRoutine(
   }, after.discovery);
 }
 
+async function cloudRoutines(
+  deps: CliDeps,
+  action: "list" | "show" | "webhook-credential",
+  agentTarget: string,
+  routineTarget: string | undefined,
+  raw: RoutineOptions,
+): Promise<void> {
+  if (action === "webhook-credential") requireConfirmed(raw);
+  const io = ioFromOpts(raw);
+  const context = {
+    backendUrl: normalizedBackend(deps.serverBackendUrl ?? DEFAULT_SERVER_BACKEND_URL),
+    token: await resolveSecretRef(deps, deps.serverAccessTokenRef!),
+    timeoutMs: io.timeoutMs,
+  };
+  const agents = await listServerAgents(deps, context);
+  const agent = findRosterRow(agents, agentTarget, ["agent"]);
+  const agentId = asString(agent.id);
+  const routines = await listServerRoutines(deps, { ...context, agentId });
+  const coverage = { kind: "native_returned_window" as const, limit: 100, atLimit: routines.length === 100, complete: false as const };
+  const catalog = { schemaVersion: 1 as const, agentId, routines, coverage };
+  if (action === "list") {
+    if (io.table) deps.stdout.write(listTable(catalog));
+    else writeSuccess(deps.stdout, { ...catalog, authority: "server-temporal" });
+    return;
+  }
+  // IDs are authority: a name cannot override an exact server or native ID.
+  let selected = routines.filter((routine) => routine.id === routineTarget || routine.serverId === routineTarget);
+  if (selected.length === 0) {
+    selected = routines.filter((routine) => routine.name.toLocaleLowerCase() === (routineTarget ?? "").toLocaleLowerCase());
+  }
+  if (selected.length > 1) throw new CliError("target_ambiguous", "Routine target matched more than one Routine.");
+  const routine: ServerRoutine | undefined = selected[0];
+  if (!routine) throw new CliError("target_not_found", "No Routine matched that ID or name in the configured cloud account; no other identity was searched.");
+  if (action === "show") {
+    writeSuccess(deps.stdout, { schemaVersion: 1, agentId, authority: "server-temporal", routine, coverage });
+    return;
+  }
+  if (routine.trigger.type !== "webhook") throw new CliError("capability_unavailable", "Routine is not webhook-triggered.");
+  const key = await cachedWebhookKey(deps, { ...context, configDir: deps.configDir, agentId, routine });
+  const keyLive = raw.verify === true ? await probeWebhookKey(deps, { ...context, key, serverId: routine.serverId }) : undefined;
+  writeSuccess(deps.stdout, {
+    schemaVersion: 1, agentId, routineId: routine.id, serverId: routine.serverId,
+    authority: "server-temporal", url: routine.webhookUrl,
+    keyPresent: true, keyIncluded: raw.revealKey === true, promptIncluded: false,
+    ...(keyLive === undefined ? {} : { keyLive }),
+    ...(raw.revealKey === true ? { key } : {}),
+  });
+}
+
 export async function runRoutines(
   deps: CliDeps,
   action: RoutineAction,
@@ -657,6 +720,10 @@ export async function runRoutines(
   routineTarget: string | undefined,
   raw: RoutineOptions,
 ): Promise<void> {
+  if (deps.serverAccessTokenRef !== undefined && (action === "list" || action === "show" || action === "webhook-credential")) {
+    await cloudRoutines(deps, action, agentTarget, routineTarget, raw);
+    return;
+  }
   const client = new GatewayClient(deps);
   if (action === "list" || action === "show") {
     await listOrShow(deps, client, action, agentTarget, routineTarget, raw);

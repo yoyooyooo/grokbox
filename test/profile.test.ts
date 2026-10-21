@@ -435,6 +435,49 @@ describe("Profile v1 storage", () => {
     expect(sshCalls).toBe(0);
   });
 
+  test("cloud backend updates preserve the current account credential", async () => {
+    const configDir = await makeConfigDir();
+    await writeProfileFile(configDir, "cloud", {
+      version: 1,
+      server: { access_token_ref: "env:CLOUD_ACCOUNT_TOKEN", backend_url: "https://old.example.test" },
+    });
+    const updated = await cli(configDir, [
+      "profile", "update", "cloud", "--server-backend-url", "https://new.example.test",
+    ]);
+    expect(updated.code, updated.stderr).toBe(0);
+    const path = join(configDir, "profiles", "cloud", "config.json");
+    expect(JSON.parse(await readFile(path, "utf8")).server).toEqual({
+      access_token_ref: "env:CLOUD_ACCOUNT_TOKEN",
+      backend_url: "https://new.example.test",
+    });
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
+  });
+
+  test("unsafe cloud endpoints cannot replace a valid account configuration", async () => {
+    const configDir = await makeConfigDir();
+    const initial = {
+      version: 1 as const,
+      server: { access_token_ref: "env:CLOUD_ACCOUNT_TOKEN", backend_url: "https://cloud.example.test" },
+    };
+    await writeProfileFile(configDir, "cloud", initial);
+    const path = join(configDir, "profiles", "cloud", "config.json");
+    const before = await readFile(path, "utf8");
+    for (const url of [
+      "http://remote.example.test", "https://user:password@cloud.example.test",
+      "https://cloud.example.test?token=secret", "https://cloud.example.test#secret",
+    ]) {
+      const result = await cli(configDir, ["profile", "update", "cloud", "--server-backend-url", url]);
+      expect(code(result.stderr)).toBe("profile_invalid");
+      expect(await readFile(path, "utf8")).toBe(before);
+    }
+    const missingCredential = await cli(configDir, [
+      "profile", "add", "incomplete", "--server-backend-url", "https://cloud.example.test",
+    ]);
+    expect(code(missingCredential.stderr)).toBe("profile_invalid");
+    expect(await readFile(join(configDir, "profiles", "incomplete", "config.json"), "utf8").catch(() => null))
+      .toBeNull();
+  });
+
   test("capabilities distinguish configured Sandbox references from provider authorization", async () => {
     const configDir = await makeConfigDir();
     await writeProfileFile(configDir, "remote", {

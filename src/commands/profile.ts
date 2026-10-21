@@ -224,7 +224,10 @@ export async function runProfileUpdate(
   const quota = patch.quota
     ? { ...(current?.quota ?? {}), ...patch.quota }
     : current?.quota;
-  const next = validateProfile({ version: 1, ...(current ?? {}), ...patch, sandbox, quota });
+  const server = patch.server
+    ? { ...(current?.server ?? {}), ...patch.server }
+    : current?.server;
+  const next = validateProfile({ version: 1, ...(current ?? {}), ...patch, sandbox, quota, server });
   await persistSecretInput(deps, secretInput);
   await writeProfileFile(deps.configDir, name, next);
   writeSuccess(deps.stdout, { name, updated: true });
@@ -289,8 +292,8 @@ export async function runProfileCapabilities(
       "sandbox.wake": sandboxCapability,
       "sandbox.keepalive": sandboxCapability,
       "quota.read": quotaCapability,
-      "server.routine.read": serverCapability,
-      "server.routine.webhook": serverCapability,
+      "grok.routine.read": serverCapability || local || directGateway || daemon,
+      "grok.routine.webhook": serverCapability || local || directGateway || daemon,
     },
   });
 }

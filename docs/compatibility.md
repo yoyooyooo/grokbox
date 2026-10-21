@@ -15,7 +15,7 @@ interoperates. The project does not use official logos or trade dress.
 | Grok Bot Gateway discovery and methods | experimental compatibility | Upstream-private, may break without notice |
 | Cursor Sandbox status/wake/keeper | experimental compatibility | Upstream-private and method-authority dependent |
 | Cursor web quota adapter | experimental compatibility | Explicit opt-in, source-local account binding only |
-| Grok Bot Server Routine surface | experimental compatibility | Explicit opt-in via `server.access_token_ref`; account-scoped, no generic Server RPC |
+| Cloud Routine reads/credential | experimental compatibility | Selected Profile `server.access_token_ref` makes cloud SSOT authoritative inside `agents routines`; bounded protocol, no cloud CRUD |
 | Desktop classification/prune | experimental and destructive | Linux/Grok Bot layout-specific; dry-run first |
 
 Experimental compatibility means implementation and tests exist, not that the

@@ -1,20 +1,15 @@
 import { createHash } from "node:crypto";
+import { constants } from "node:fs";
+import { mkdir, open, lstat, rename, unlink, type FileHandle } from "node:fs/promises";
+import { join } from "node:path";
+import { projectNativeRoutines, type RoutineView } from "./routines.ts";
 import { CliError } from "./errors.ts";
 import { isRecord } from "./util.ts";
 
-/**
- * Account-level Routine reads and webhook-credential minting, addressed to the Grok Bot
- * Server of record instead of the box Gateway.
- *
- * Why this exists: a Temporal Bot's Routines live on the Server, not in the box's local
- * automation store. The Host bridge that normally proxies them may be absent, in which
- * case the Gateway answers with an empty list and `getAutomationWebhookCredential`
- * refuses. A Profile that declares an explicit Server credential can read the same
- * Server surface directly. It is a separate authority: it never implies Gateway,
- * daemon, Sandbox, or quota access.
- */
+// Internal cloud Routine adapter. Only the selected Profile's explicit credential
+// is used; Gateway authority and desktop state are never fallback identities.
 
-export const SERVER_ROUTINE_PATHS = {
+const SERVER_ROUTINE_PATHS = {
   listAgents: "/aiserver.v1.GrokBotService/ListGrokBotAgents",
   listAutomations: "/aiserver.v1.GrokBotService/ListGrokBotAgentAutomations",
   mintWebhookKey: "/aiserver.v1.DashboardService/CreateAutomationWebhookApiKey",
@@ -26,30 +21,19 @@ const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const MAX_RECORD_BYTES = 512 * 1024;
 const MAX_KEY_BYTES = 4096;
 const MAX_AGENTS = 5000;
-const MAX_ROUTINES = 1000;
+const MAX_ROUTINES = 100;
 const NIL_AUTOMATION_ID = "00000000-0000-5000-8000-000000000000";
 
 export type ServerAgent = {
   id: string;
   name: string;
   harness: "box" | "temporal" | null;
+  isGroup: boolean;
 };
 
-export type ServerRoutine = {
+export type ServerRoutine = RoutineView & {
   serverId: string;
-  localId: string;
-  name: string;
-  triggerType: "webhook" | "cron" | "unsupported";
-  isEnabled: boolean;
-  createdAtMs: number | null;
   webhookUrl: string | null;
-};
-
-export type ServerRoutineCredential = {
-  serverId: string;
-  localId: string;
-  url: string;
-  key: string;
 };
 
 function protocolFailure(failureCode: string): CliError {
@@ -69,7 +53,7 @@ function authorizationFailure(failureCode: string): CliError {
 }
 
 // ---------------------------------------------------------------------------
-// Minimal protobuf: the Server accepts only application/proto for these methods.
+// Bounded protobuf adapter for the selected internal Server methods.
 // ---------------------------------------------------------------------------
 
 function varint(value: number): Buffer {
@@ -87,23 +71,19 @@ function lengthDelimited(field: number, payload: Buffer): Buffer {
   return Buffer.concat([varint((field << 3) | 2), varint(payload.length), payload]);
 }
 
-function readVarint(buffer: Buffer, offset: number): { value: number; next: number } {
-  let value = 0;
-  let shift = 0;
-  let index = offset;
-  for (;;) {
-    if (index >= buffer.length) throw protocolFailure("truncated_varint");
-    const byte = buffer[index]!;
-    index += 1;
-    value += (byte & 0x7f) * 2 ** shift;
-    if ((byte & 0x80) === 0) break;
-    shift += 7;
-    if (shift > 63) throw protocolFailure("varint_overflow");
+function readVarint(buffer: Buffer, offset: number): { value: bigint; next: number } {
+  let value = 0n;
+  for (let index = 0; index < 10; index += 1) {
+    const byte = buffer[offset + index];
+    if (byte === undefined) throw protocolFailure("truncated_varint");
+    if (index === 9 && byte > 1) throw protocolFailure("varint_overflow");
+    value |= BigInt(byte & 0x7f) << BigInt(index * 7);
+    if ((byte & 0x80) === 0) return { value, next: offset + index + 1 };
   }
-  return { value, next: index };
+  throw protocolFailure("varint_overflow");
 }
 
-type ProtoField = { number: number; wire: number; value: Buffer | number };
+type ProtoField = { number: number; wire: number; value: Buffer | bigint };
 
 function decodeFields(buffer: Buffer): ProtoField[] {
   const fields: ProtoField[] = [];
@@ -111,8 +91,9 @@ function decodeFields(buffer: Buffer): ProtoField[] {
   while (offset < buffer.length) {
     const key = readVarint(buffer, offset);
     offset = key.next;
-    const number = key.value >>> 3;
-    const wire = key.value & 7;
+    if (key.value < 8n || key.value > 0xffffffffn) throw protocolFailure("invalid_tag");
+    const number = Number(key.value >> 3n);
+    const wire = Number(key.value & 7n);
     if (wire === 0) {
       const value = readVarint(buffer, offset);
       offset = value.next;
@@ -120,9 +101,10 @@ function decodeFields(buffer: Buffer): ProtoField[] {
     } else if (wire === 2) {
       const size = readVarint(buffer, offset);
       offset = size.next;
-      if (offset + size.value > buffer.length) throw protocolFailure("truncated_field");
-      fields.push({ number, wire, value: buffer.subarray(offset, offset + size.value) });
-      offset += size.value;
+      if (size.value > BigInt(buffer.length - offset)) throw protocolFailure("truncated_field");
+      const length = Number(size.value);
+      fields.push({ number, wire, value: buffer.subarray(offset, offset + length) });
+      offset += length;
     } else if (wire === 5) {
       if (offset + 4 > buffer.length) throw protocolFailure("truncated_field");
       fields.push({ number, wire, value: buffer.subarray(offset, offset + 4) });
@@ -132,40 +114,58 @@ function decodeFields(buffer: Buffer): ProtoField[] {
       fields.push({ number, wire, value: buffer.subarray(offset, offset + 8) });
       offset += 8;
     } else {
+      if (wire === 3) {
+        offset = skipGroup(buffer, offset, number, 0);
+        fields.push({ number, wire, value: 0n });
+        continue;
+      }
       throw protocolFailure("unsupported_wire_type");
     }
   }
   return fields;
 }
 
+function skipGroup(buffer: Buffer, start: number, expected: number, depth: number): number {
+  if (depth > 32) throw protocolFailure("group_depth_exceeded");
+  let offset = start;
+  while (offset < buffer.length) {
+    const tag = readVarint(buffer, offset);
+    if (tag.value < 8n || tag.value > 0xffffffffn) throw protocolFailure("invalid_tag");
+    const number = Number(tag.value >> 3n);
+    const wire = Number(tag.value & 7n);
+    offset = tag.next;
+    if (wire === 4) {
+      if (number !== expected) throw protocolFailure("group_mismatch");
+      return offset;
+    }
+    if (wire === 3) offset = skipGroup(buffer, offset, number, depth + 1);
+    else if (wire === 0) offset = readVarint(buffer, offset).next;
+    else if (wire === 1 || wire === 5) offset += wire === 1 ? 8 : 4;
+    else if (wire === 2) {
+      const size = readVarint(buffer, offset);
+      if (size.value > BigInt(buffer.length - size.next)) throw protocolFailure("truncated_field");
+      offset = size.next + Number(size.value);
+    } else throw protocolFailure("unsupported_wire_type");
+    if (offset > buffer.length) throw protocolFailure("truncated_field");
+  }
+  throw protocolFailure("truncated_group");
+}
+
 function firstBytes(fields: ProtoField[], number: number): Buffer | undefined {
-  const hit = fields.find((field) => field.number === number && field.wire === 2);
-  return hit?.value instanceof Buffer ? hit.value : undefined;
+  const hits = fields.filter((field) => field.number === number);
+  if (hits.length > 1 || (hits.length === 1 && hits[0]!.wire !== 2)) {
+    throw protocolFailure("invalid_required_field");
+  }
+  const value = hits[0]?.value;
+  return value instanceof Buffer ? value : undefined;
 }
 
 function text(buffer: Buffer | undefined): string {
-  return buffer === undefined ? "" : buffer.toString("utf8");
-}
-
-// ---------------------------------------------------------------------------
-// Server identity of one Routine
-// ---------------------------------------------------------------------------
-
-/**
- * The Server's automation id for a box-local Routine: sha256("<agentId>\0<localId>")
- * reshaped into the UUID form the Server stores (index 12 is dropped, index 16 is
- * masked to variant bits). Deterministic, so it can be derived without any credential.
- */
-export function stableAutomationId(agentId: string, localId: string): string {
-  const hex = createHash("sha256").update(`${agentId}\0${localId}`).digest("hex");
-  const variant = ((Number.parseInt(hex.charAt(16), 16) & 3) | 8).toString(16);
-  return [
-    hex.slice(0, 8),
-    hex.slice(8, 12),
-    `5${hex.slice(13, 16)}`,
-    `${variant}${hex.slice(17, 20)}`,
-    hex.slice(20, 32),
-  ].join("-");
+  try {
+    return buffer === undefined ? "" : new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+  } catch {
+    throw protocolFailure("invalid_utf8");
+  }
 }
 
 export function webhookUrlFor(backendUrl: string, serverId: string): string {
@@ -174,13 +174,18 @@ export function webhookUrlFor(backendUrl: string, serverId: string): string {
 }
 
 export function normalizedBackend(backendUrl: string): string {
-  const parsed = new URL(backendUrl);
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new CliError("profile_invalid", "Server backend URL must use HTTP or HTTPS.");
+  let parsed: URL;
+  try {
+    parsed = new URL(backendUrl);
+  } catch {
+    throw new CliError("profile_invalid", "Server backend URL is invalid.");
   }
-  parsed.pathname = "/";
-  parsed.search = "";
-  parsed.hash = "";
+  const loopback = parsed.hostname === "localhost" || parsed.hostname === "[::1]" ||
+    /^127(?:\.[0-9]{1,3}){3}$/.test(parsed.hostname);
+  if ((parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) ||
+      parsed.username || parsed.password || backendUrl.includes("?") || backendUrl.includes("#") || parsed.pathname !== "/") {
+    throw new CliError("profile_invalid", "Server backend must be an HTTPS origin (HTTP only on loopback), without credentials, query, or fragment.");
+  }
   return parsed.toString();
 }
 
@@ -192,6 +197,8 @@ export type ServerCallDeps = {
   fetch: typeof fetch;
   now: () => number;
   signal?: AbortSignal;
+  // Internal file-open seam for deterministic cancellation coverage.
+  openWebhookKeyStore?: typeof open;
 };
 
 async function readBounded(response: Response, limit: number): Promise<Buffer> {
@@ -242,6 +249,7 @@ async function call(
   };
   let response: Response;
   try {
+    if (controller.signal.aborted) throw new Error("aborted");
     response = await deps.fetch(new URL(path, normalizedBackend(backendUrl)).toString(), {
       method: "POST",
       headers: {
@@ -265,6 +273,10 @@ async function call(
     );
   }
   try {
+    if (controller.signal.aborted) {
+      await response.body?.cancel().catch(() => undefined);
+      throw protocolFailure("request_cancelled");
+    }
     if (response.redirected || (response.status >= 300 && response.status < 400)) {
       await response.body?.cancel().catch(() => undefined);
       throw protocolFailure("redirect_refused");
@@ -297,6 +309,10 @@ async function call(
         "The Server Routine method is unavailable for this credential.",
         { failureCode: "unexpected_status", httpStatus: response.status },
       );
+    }
+    if (response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/proto") {
+      await response.body?.cancel().catch(() => undefined);
+      throw protocolFailure("response_content_type_invalid");
     }
     return await readBounded(response, MAX_RESPONSE_BYTES);
   } catch (error) {
@@ -331,16 +347,33 @@ export async function listServerAgents(
 ): Promise<ServerAgent[]> {
   const body = await call(deps, options.backendUrl, options.token, SERVER_ROUTINE_PATHS.listAgents, Buffer.alloc(0), options.timeoutMs);
   const agents: ServerAgent[] = [];
-  for (const field of decodeFields(body)) {
-    if (field.number !== 1 || !(field.value instanceof Buffer)) continue;
+  const seen = new Set<string>();
+  const fields = decodeFields(body);
+  const truncated = fields.filter((field) => field.number === 3);
+  if (truncated.length > 1 || (truncated[0] && truncated[0].wire !== 0)) throw protocolFailure("agent_truncation_invalid");
+  if (truncated[0] && truncated[0].value !== 0n) throw protocolFailure("agent_roster_truncated");
+  for (const field of fields) {
+    if (field.number !== 1) continue;
+    if (!(field.value instanceof Buffer) || field.wire !== 2) throw protocolFailure("agent_envelope_invalid");
     const inner = decodeFields(field.value);
-    const id = text(firstBytes(inner, 2));
-    if (id.length === 0) continue;
+    const id = text(firstBytes(inner, 12));
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) || seen.has(id)) {
+      throw protocolFailure("agent_id_invalid");
+    }
+    seen.add(id);
+    // GrokBotAgent.kind field 19: UNSPECIFIED=0, AGENT=1, ROOM=2.
+    const kinds = inner.filter((field) => field.number === 19);
+    if (kinds.length > 1 || (kinds[0] && kinds[0].wire !== 0)) throw protocolFailure("agent_kind_invalid");
+    const kind = kinds[0]?.value ?? 0n;
+    if (kind !== 0n && kind !== 1n && kind !== 2n) throw protocolFailure("agent_kind_unknown");
     const harness = text(firstBytes(inner, 13));
+    const name = text(firstBytes(inner, 3));
+    if (name.length > 512 || /[\x00-\x1f\x7f]/.test(name)) throw protocolFailure("agent_name_invalid");
     agents.push({
       id,
-      name: text(firstBytes(inner, 3)),
+      name,
       harness: harness === "temporal" || harness === "box" ? harness : null,
+      isGroup: kind === 2n,
     });
     if (agents.length > MAX_AGENTS) throw protocolFailure("too_many_agents");
   }
@@ -359,60 +392,58 @@ export async function listServerRoutines(
     lengthDelimited(1, Buffer.from(options.agentId, "utf8")),
     options.timeoutMs,
   );
-  const routines: ServerRoutine[] = [];
+  const records: Record<string, unknown>[] = [];
+  const serverIds: string[] = [];
+  const seen = new Set<string>();
   for (const field of decodeFields(body)) {
-    if (field.number !== 1 || !(field.value instanceof Buffer)) continue;
+    if (field.number !== 1) continue;
+    if (!(field.value instanceof Buffer) || field.wire !== 2) throw protocolFailure("routine_envelope_invalid");
     const inner = decodeFields(field.value);
     const serverId = text(firstBytes(inner, 1));
     const recordBytes = firstBytes(inner, 2);
-    if (serverId.length === 0 || recordBytes === undefined) continue;
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,255}$/.test(serverId) || seen.has(serverId)) {
+      throw protocolFailure("server_id_invalid");
+    }
+    if (recordBytes === undefined) throw protocolFailure("record_missing");
     if (recordBytes.length > MAX_RECORD_BYTES) throw protocolFailure("record_oversized");
+    const json = text(recordBytes);
     let record: unknown;
     try {
-      record = JSON.parse(recordBytes.toString("utf8"));
+      record = JSON.parse(json);
     } catch {
       throw protocolFailure("record_not_json");
     }
     if (!isRecord(record)) throw protocolFailure("record_not_object");
-    const localId = record.id;
-    const name = record.name;
-    if (typeof localId !== "string" || localId.length === 0 || localId.length > 256) {
-      throw protocolFailure("routine_id_invalid");
-    }
-    if (typeof name !== "string" || name.length > 512) throw protocolFailure("routine_name_invalid");
-    if (typeof record.isEnabled !== "boolean") throw protocolFailure("routine_enabled_invalid");
-    const trigger = isRecord(record.trigger) ? record.trigger.type : undefined;
-    const triggerType = trigger === "webhook" ? "webhook" : trigger === "cron" ? "cron" : "unsupported";
-    const createdAtMs =
-      typeof record.createdAt === "number" && Number.isFinite(record.createdAt) && record.createdAt > 0
-        ? record.createdAt
-        : null;
-    routines.push({
-      serverId,
-      localId,
-      name,
-      triggerType,
-      isEnabled: record.isEnabled,
-      createdAtMs,
-      webhookUrl: triggerType === "webhook" ? webhookUrlFor(options.backendUrl, serverId) : null,
-    });
-    if (routines.length > MAX_ROUTINES) throw protocolFailure("too_many_routines");
+    seen.add(serverId);
+    records.push(record);
+    serverIds.push(serverId);
+    if (records.length > MAX_ROUTINES) throw protocolFailure("too_many_routines");
   }
-  return routines;
+  try {
+    return projectNativeRoutines(options.agentId, records).catalog.routines.map((routine, index) => ({
+      ...routine,
+      mutable: false,
+      serverId: serverIds[index]!,
+      webhookUrl: routine.trigger.type === "webhook" ? webhookUrlFor(options.backendUrl, serverIds[index]!) : null,
+    }));
+  } catch (error) {
+    if (error instanceof CliError) throw error;
+    throw protocolFailure("routine_record_invalid");
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Webhook credential
 // ---------------------------------------------------------------------------
 
-export function assertWebhookKey(value: string): string {
-  if (value.length < 1 || Buffer.byteLength(value, "utf8") > MAX_KEY_BYTES || value.includes("\0")) {
+function assertWebhookKey(value: string): string {
+  if (value.length < 1 || Buffer.byteLength(value, "utf8") > MAX_KEY_BYTES || /[\x00-\x20\x7f]/.test(value)) {
     throw protocolFailure("key_invalid");
   }
   return value;
 }
 
-export async function mintWebhookKey(
+async function mintWebhookKey(
   deps: ServerCallDeps,
   options: { backendUrl: string; token: string; timeoutMs: number; serverId: string },
 ): Promise<string> {
@@ -429,21 +460,20 @@ export async function mintWebhookKey(
   return assertWebhookKey(key);
 }
 
-/**
- * Proves a webhook key is live without firing the Routine.
- *
- * Posting to a *different* automation id answers `missing required scope: automation:<id>`
- * for a real key and `Invalid API key` for a dead one. Posting to the Routine's own id
- * would run it, so this probe deliberately never uses it.
- */
+// Never address the selected Routine. Only this fixed, different nonexistent ID is safe.
 export async function probeWebhookKey(
   deps: ServerCallDeps,
-  options: { backendUrl: string; token: string; key: string; timeoutMs: number },
+  options: { backendUrl: string; key: string; timeoutMs: number; serverId: string },
 ): Promise<boolean> {
+  if (options.serverId === NIL_AUTOMATION_ID) throw protocolFailure("unsafe_probe_target");
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), options.timeoutMs);
+  const abort = () => controller.abort();
+  if (deps.signal?.aborted) controller.abort();
+  else deps.signal?.addEventListener("abort", abort, { once: true });
+  const timer = setTimeout(abort, options.timeoutMs);
   try {
-    const response = await deps.fetch(new URL(`/automations/webhook/${NIL_AUTOMATION_ID}`, normalizedBackend(options.backendUrl)).toString(), {
+    if (controller.signal.aborted) throw protocolFailure("request_cancelled");
+    const response = await deps.fetch(webhookUrlFor(options.backendUrl, NIL_AUTOMATION_ID), {
       method: "POST",
       headers: { authorization: `Bearer ${options.key}`, "content-type": "application/json" },
       body: "{}",
@@ -451,11 +481,103 @@ export async function probeWebhookKey(
       redirect: "manual",
       signal: controller.signal,
     });
-    const text = await readBounded(response, 64 * 1024).then((buffer) => buffer.toString("utf8"));
-    return /missing required scope/i.test(text);
-  } catch {
-    return false;
+    const detail: unknown = JSON.parse(text(await readBounded(response, 64 * 1024)));
+    if (controller.signal.aborted) throw protocolFailure("request_cancelled");
+    if (!response.redirected && response.status === 401 && isRecord(detail) && detail.code === "error") {
+      if (detail.message === `User API key missing required scope: automation:${NIL_AUTOMATION_ID}`) return true;
+      if (detail.message === "Invalid API key") return false;
+    }
+    throw protocolFailure("verification_unknown");
+  } catch (error) {
+    if (error instanceof CliError) throw error;
+    throw protocolFailure(controller.signal.aborted ? "request_cancelled" : "verification_unknown");
   } finally {
     clearTimeout(timer);
+    deps.signal?.removeEventListener("abort", abort);
+  }
+}
+
+/** Credential fingerprints conservatively isolate principals, including rotation. */
+export async function cachedWebhookKey(
+  deps: ServerCallDeps,
+  options: { backendUrl: string; token: string; timeoutMs: number; configDir: string; agentId: string; routine: ServerRoutine },
+): Promise<string> {
+  if (options.routine.createdAtMs === null) throw protocolFailure("routine_incarnation_missing");
+  const scope = createHash("sha256").update(JSON.stringify([
+    normalizedBackend(options.backendUrl),
+    createHash("sha256").update(options.token).digest("hex"),
+    options.agentId, options.routine.serverId, options.routine.createdAtMs,
+  ])).digest("hex");
+  const directory = join(options.configDir, "server-webhook-keys");
+  const path = join(directory, `${scope}.json`);
+  const lockPath = join(directory, `${scope}.lock`);
+  let lock: FileHandle | undefined;
+  let temporary: string | undefined;
+  let preserveLock = false;
+  try {
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const dir = await lstat(directory);
+    if (!dir.isDirectory() || (dir.mode & 0o077) !== 0 ||
+        (process.getuid && dir.uid !== process.getuid())) throw protocolFailure("key_store_permissions");
+    lock = await open(lockPath, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
+    let cached: FileHandle | undefined;
+    try {
+      cached = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    } catch (error) {
+      if (!isRecord(error) || error.code !== "ENOENT") throw error;
+    }
+    if (cached) {
+      try {
+        const stat = await cached.stat();
+        if (!stat.isFile() || (stat.mode & 0o077) !== 0 || stat.nlink !== 1 || stat.size > 8192 ||
+            (process.getuid && stat.uid !== process.getuid())) throw protocolFailure("key_store_permissions");
+        const bytes = Buffer.alloc(8193);
+        const { bytesRead } = await cached.read(bytes, 0, bytes.length, 0);
+        if (bytesRead > 8192) throw protocolFailure("key_store_corrupt");
+        const record: unknown = JSON.parse(text(bytes.subarray(0, bytesRead)));
+        if (!isRecord(record) || record.version !== 1 || record.scope !== scope || typeof record.key !== "string" ||
+            Object.keys(record).length !== 3) throw protocolFailure("key_store_corrupt");
+        return assertWebhookKey(record.key);
+      } finally {
+        await cached.close();
+      }
+    }
+    if (deps.signal?.aborted) throw protocolFailure("request_cancelled");
+    // Establish a writable protected destination before any mint side effect.
+    temporary = join(directory, `${scope}.${process.pid}.${crypto.randomUUID()}.tmp`);
+    const output = await (deps.openWebhookKeyStore ?? open)(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
+    try {
+      if (deps.signal?.aborted) throw protocolFailure("request_cancelled");
+      // An interrupted/uncertain mint must not be repeated on the next command.
+      preserveLock = true;
+      const key = await mintWebhookKey(deps, { ...options, serverId: options.routine.serverId });
+      await output.writeFile(JSON.stringify({ version: 1, scope, key }), "utf8");
+      await output.sync();
+      await output.close();
+      await rename(temporary, path);
+      temporary = undefined;
+      preserveLock = false;
+      return key;
+    } finally {
+      await output.close().catch(() => undefined);
+    }
+  } catch (error) {
+    if (error instanceof CliError && (error.code === "credential_invalid" || error.code === "target_not_found" ||
+        (error.httpStatus !== undefined && error.httpStatus >= 400 && error.httpStatus < 500 && error.httpStatus !== 408))) {
+      preserveLock = false;
+    }
+    if (preserveLock) {
+      throw new CliError("operation_outcome_unknown", "Webhook key mint outcome is unknown; no automatic retry is safe. Inspect the protected store lock before another attempt.", {
+        failureCode: "mint_outcome_unknown", retryable: false,
+      });
+    }
+    if (error instanceof CliError) throw error;
+    throw protocolFailure("key_store_unavailable");
+  } finally {
+    if (temporary) await unlink(temporary).catch(() => undefined);
+    if (lock) {
+      await lock.close();
+      if (!preserveLock) await unlink(lockPath).catch(() => undefined);
+    }
   }
 }

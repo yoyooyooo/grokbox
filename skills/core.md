@@ -41,9 +41,10 @@ grokbox box wake
 grokbox box keepalive status
 grokbox agents list --table
 grokbox agents routines list <agent> --table
-grokbox server agents --table
-grokbox server routines --agent <agent> --table
-grokbox server webhook credential --agent <agent> --routine <routine-id> --verify
+grokbox profile update <name> --server-access-token-ref file:/absolute/path/to/cloud-token
+grokbox profile use <name>
+grokbox agents routines show <agent> <routine-id>
+grokbox agents routines webhook credential <agent> <routine-id> --confirm --verify
 grokbox groups list --table
 grokbox send <target> --text "hello"
 grokbox history tail <target> --limit 50
@@ -75,8 +76,8 @@ Targets accept an exact ID first, then an unambiguous case-insensitive name/titl
    `groups list/show/create/update/delete` only own product groups. Membership is only
    `groups members list/add/remove/set`; every member must resolve to a non-group agent and a group
    must retain 1-6 unique members.
-3. **Manage native Routines**: `agents routines list/show` returns bounded metadata only and never emits prompt bodies, credentials, or native paths. Box-local Bots support create/update/enable/disable/delete; create writes a disabled definition and later mutations require `--expect-revision` from a fresh read plus `--confirm`. Temporal Bots are Server-authoritative: list/show, webhook credential, enable/disable, and delete require the bounded Temporal Routine Host bridge; create/update refuse because the current official Temporal contract exposes neither mutation. `agents routines webhook credential <agent> <routine-id> --confirm` returns the webhook URL and hides the key and prompt by default; `--reveal-key` is the explicit boundary that also emits both. `list` and `show` still never emit them. Without the bridge, Temporal reads fail closed instead of reporting the legacy local store. Native writes have no upstream CAS or idempotency guarantee; uncertain writes return `operation_outcome_unknown` and must be reconciled by another read, never automatic replay.
-3b. **Read Server-side Routines when the Host bridge is absent**: `server agents`, `server routines --agent <id-or-name>`, and `server webhook credential --agent … --routine …` address the Grok Bot Server of record directly using the Profile's `server.access_token_ref`. Use them for Temporal Bots whose Gateway answers an empty automation list or refuses `getAutomationWebhookCredential`. The Routine projection is bounded metadata plus the webhook URL; prompts, native paths, and provider fields never appear. `webhook credential` hides the key by default, `--reveal-key` emits it, and `--verify` proves it is live by probing a different automation id (never the Routine's own, which would fire it). Minting is not idempotent upstream and there is no revoke: reuse an existing key when you already have one. A Server credential is a separate authority and grants nothing on the Gateway, daemon, Sandbox, or quota surfaces.
+3. **Manage Routines through one interface**: `agents routines list/show` and `agents routines webhook credential <agent> <routine-id>` use the selected box Profile's cloud SSOT whenever `server.access_token_ref` is configured. Configure with `profile add/update --server-access-token-ref` and optional `--server-backend-url`, using a protected secret reference. Cloud reads preserve envelopes and bounded metadata with `serverId`, webhook URL, and `mutable:false`, never keys or prompts. The Server-returned automation ID is authoritative. There is no separate command root, source flag, desktop discovery, or roster union. First credential access needs `--confirm` to mint; repeated access reuses a local cache scoped to backend, credential digest, agent, Server ID, and creation time. Minting is never automatically retried. `--reveal-key` explicitly reveals the key, never a cloud prompt. `--verify` probes only a fixed, distinct nonexistent ID, requires strict 401 `missing required scope` evidence, supports abort, and never POSTs to the real Routine. Cloud failures are reported directly: check the selected Profile reference/backend and authorization/protocol error, not another route.
+   Without cloud configuration, Gateway/Host behavior remains, including fail-closed missing Temporal bridge checks. Mutations retain the Host contract: Box-local create is disabled, later mutations require fresh `--expect-revision` and `--confirm`, and unsupported Temporal create/update refuse. Cloud adds no CRUD. Unknown write outcomes require reconciliation, not automatic replay. Host credential disclosure retains its existing contract. Cloud authority grants no Gateway, daemon, Sandbox, or quota permissions.
 4. **Search/read transcript**: `history search <query>`, `history tail <target>`, and
    `history thread <target> --root <entry-id>` own transcript access. Object `show` commands do
    not add transcript side projections.

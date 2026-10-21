@@ -4,6 +4,11 @@ This project follows [Semantic Versioning](https://semver.org/). While the
 version is below 1.0, documented experimental compatibility surfaces may change
 when upstream Grok Bot or Cursor internals change.
 
+## Unreleased
+
+- Use the existing `agents routines list/show` and webhook credential commands for cloud SSOT when the selected Profile configures a cloud credential, without a separate command root or source flag. Preserve Gateway/Host behavior otherwise and retain Host-only mutation contracts.
+- Reuse scoped local webhook key caches after confirmed first mint; keep cloud keys opt-in and prompts private. Optional verification uses only a distinct nonexistent automation ID, never invokes the real Routine, and minting is never automatically retried.
+
 ## 0.1.0-alpha.9 — 2026-10-01
 
 - Reveal a webhook Routine prompt together with its URL and key when `agents routines webhook credential --confirm --reveal-key` is used. Credential output without `--reveal-key`, and `list`/`show`, still omit the key and prompt.

@@ -128,7 +128,7 @@ grokbox jobs list --table
 grokbox desktop status --table
 ```
 
-Routine 读取只输出有界元数据，不暴露 prompt 正文、Webhook credential、原生路径或未知 provider 字段。Box-local Bot 支持 create/update/enable/disable/delete；create 始终只创建 disabled definition，后续 mutation 需要显式确认，并携带刚从 `agents routines list/show` 读到的精确 revision。Temporal Bot 的 Routine 以 Server 为权威：list/show、Webhook credential、enable/disable/delete 通过受限的 Temporal Routine bridge；当前官方合同没有暴露 Temporal definition create/update，因此 CLI 会明确拒绝，而不会误写旧 Box store。`agents routines webhook credential <agent> <routine-id> --confirm` 默认返回 URL 并隐藏 key；只有显式增加 `--reveal-key` 才把 key 输出到 stdout。Host bridge 不可用时，Temporal Routine 查询 fail-closed，不再冒充为空列表。上游 Routine 写接口没有 native compare-and-swap 或 idempotency 合同，因此回执不确定时不会自动重放。
+Routine 读取只输出有界元数据，不暴露 prompt 正文、Webhook credential、原生路径或未知 provider 字段。同一组 `agents routines list/show` 与 `agents routines webhook credential <agent> <routine-id> --confirm` 命令，在 selected Profile 配置 `server.access_token_ref` 时使用 cloud SSOT（通过 `profile update <name> --server-access-token-ref file:/absolute/path/to/cloud-token` 配置）；未配置时保留 Gateway/Host 行为。Cloud key 仅在确认后铸造，并从按范围隔离的本地缓存复用；`--reveal-key` 显式输出 key，但不输出 cloud prompt；`--verify` 从不调用真实 Routine。Cloud 读取为只读，mutation 保留现有 Host 合同。Box-local create 创建 disabled definition，后续 mutation 需要确认与 fresh revision；Temporal create/update 仍不支持。配置、验证与失败处理见 [Routine 合同](docs/product-contract.md#711-native-routines)。
 
 变更命令需要显式 capability；破坏性操作还需要显式确认。`desktop prune run` 默认 dry-run；传入 `--yes` 后会调用上游 stop-window 路径，并删除该 fork 的 Chrome profile。
 
