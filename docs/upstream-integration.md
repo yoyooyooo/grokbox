@@ -53,15 +53,15 @@ deleteAgent
 
 Every write has an explicit schema and command. Groups reject nested groups, membership is bounded, updates preserve required existing fields, and uncertain delivery is not blindly replayed.
 
-The Routine surface is owner-aware. For Box-hosted Bots the existing Gateway methods continue to use the local automation store. For Temporal Bots, the official desktop coordinator routes Routine reads and supported mutations to Server actions; a direct Box Gateway caller would otherwise see only the legacy local store. Grokbox's bounded management Host bridge therefore adds `getGrokboxRoutineAuthority` and makes `getAgentAutomations`, `getAutomationWebhookCredential`, `setAgentAutomationEnabled`, and `deleteAgentAutomation` use the Host's own authenticated Server clients when the Bot is Temporal. No access token or generic Server RPC is exported to the CLI. If that bridge is absent, the CLI refuses Temporal Routine access instead of interpreting the local store as authoritative.
+Without a configured cloud credential, the Routine surface is owner-aware through Gateway/Host. Box-hosted Bots use the local automation store. For Temporal Bots, the bounded Host bridge adds `getGrokboxRoutineAuthority` and routes `getAgentAutomations`, `getAutomationWebhookCredential`, `setAgentAutomationEnabled`, and `deleteAgentAutomation` through Host-owned authenticated Server clients. This path exports neither access tokens nor generic RPC. A missing bridge fails closed instead of treating the local store as authoritative. A configured Profile cloud credential instead selects the cloud read/credential route described below; mutations remain on the Host contract.
 
-Routine list/show is projected into a bounded metadata-only window; prompt bodies, filesystem paths, webhook credentials and unknown provider fields never enter normal output. Current Temporal Server contracts expose list, webhook credential, enable/disable and delete, but not definition create/update. `createAgentAutomation` and `updateAgentAutomation` therefore remain Box-local only, and the CLI rejects those commands for Temporal Bots before any write. Box create writes disabled definitions; later mutations use revision preflight plus explicit confirmation and same-generation readback. Upstream Routine APIs expose neither compare-and-swap nor native idempotency, so uncertain writes are `operation_outcome_unknown` and are never automatically replayed. Webhook credential access is an explicit confirmed command: the URL is safe output, while the key and prompt are omitted unless `--reveal-key` is explicitly requested. Credential access may mint/persist an upstream key; webhook invocation itself is not part of this command surface.
+Host Routine list/show returns bounded metadata only. Temporal Host contracts expose list, webhook credential, enable/disable and delete, not definition create/update; those writes remain Box-local only. Box create writes disabled definitions; later mutations require revision preflight, explicit confirmation, and same-generation readback. Uncertain writes return `operation_outcome_unknown` and are never automatically replayed. Host credential access retains its explicit confirmation and `--reveal-key` disclosure contract; cloud credential caching and key-only disclosure are described below. Webhook invocation is not part of this surface.
 
 `sendPrompt` represents one Human message to an ordinary agent or group. It is not peer delivery, an administrative broadcast, approval resolution, or arbitrary host execution.
 
 ## Server-of-record Routine surface
 
-Temporal Bots keep their Routines on the Grok Bot Server rather than in the box's local automation store, so a Gateway-only caller sees an empty list and cannot mint a webhook key. When a Profile declares `server.access_token_ref`, grokbox may address three Server unary methods directly, in the Server's own binary protobuf encoding (`content-type: application/proto`; JSON is rejected with 415):
+When the selected Profile declares `server.access_token_ref`, the existing `agents routines list/show` and `agents routines webhook credential` commands use cloud SSOT internally. There is no separate command root, source flag, desktop discovery, or roster union. Without cloud configuration the Gateway/Host behavior remains. For the following bounded Server methods the adapter chooses the verified binary protobuf wire (`content-type: application/proto`) without new dependencies; this does not assert that upstream rejects JSON or other formats:
 
 ```text
 POST /aiserver.v1.GrokBotService/ListGrokBotAgents
@@ -70,16 +70,15 @@ POST /aiserver.v1.DashboardService/CreateAutomationWebhookApiKey { automation_id
 POST /automations/webhook/<automation_id>                      (credential-scoped, fires the Routine)
 ```
 
-Observed response fields used by the adapter: agents carry `id`, `name`, and `harness`; an automation row carries `automation_id` plus a `record_json` string with `id`, `name`, `trigger.type`, `isEnabled`, and `createdAt`. Everything else in the record is ignored and never re-emitted.
+The adapter resolves Bots with the public `agent_id` (protobuf field 12), not `legacy_agent_id` (field 2) or the internal row `id` (field 1). This public UUID is the product/Gateway identity. `kind` (field 19, ROOM=2) distinguishes groups from ordinary Bots, so rooms cannot be selected for Routine operations. An automation row carries `automation_id` plus a `record_json` string; the bounded native projection retains only safe definition metadata. Prompts, native paths, credentials, and unknown provider fields are never re-emitted.
 
-Two server-side facts shape the contract:
+The returned `automation_id` is authoritative and supplies the webhook URL; do not assume every Temporal automation ID can be derived from a local ID. Cloud list/show preserves envelopes and bounded Routine metadata with `serverId`, webhook URL, and `mutable:false`, never keys or prompts.
 
-- The automation id is `sha256("<agentId>\0<localId>")` reshaped into UUID form, so a Routine's webhook URL can be derived without any credential.
-- Webhook keys are scoped to exactly one automation (`automation:<id>`) and authorize nothing else: they cannot call the RPC surface, and posting to a different automation id is refused with `missing required scope`. That refusal is the only safe liveness probe; posting to the Routine's own id would run it.
+Optional webhook verification probes only a fixed, distinct nonexistent automation ID and requires HTTP 401 with exact `missing required scope` scope evidence. It supports abort and never POSTs to the real Routine, which would execute it.
 
-`CreateAutomationWebhookApiKey` is owner-checked (`Only the automation owner can create webhook API keys`), is not idempotent, and has no revoke counterpart in the supported surface. The adapter therefore mints only on explicit request and never retries a mint automatically.
+`CreateAutomationWebhookApiKey` is owner-checked, non-idempotent, and has no supported revoke counterpart. First access requires `--confirm` to mint; subsequent access reuses the local key cache scoped to backend, credential digest, agent, Server automation ID, and creation time. Minting is never automatically retried. Keys remain hidden unless `--reveal-key` is explicit; cloud prompts remain private even then.
 
-This surface is a separate credential authority and does not imply Gateway, daemon, Sandbox, or quota access.
+Cloud failures do not fall back to Gateway or desktop discovery. Check the selected Profile's cloud reference, optional backend URL, and reported authorization/protocol failure. This authority grants no Gateway, daemon, Sandbox, or quota access and adds no cloud CRUD; mutations retain the Host contract.
 
 ## Capability separation
 

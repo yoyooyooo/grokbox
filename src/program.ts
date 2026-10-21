@@ -59,11 +59,6 @@ import {
   type ProfileOptions,
 } from "./commands/profile.ts";
 import { runRoutines } from "./commands/routines.ts";
-import {
-  runServerAgents,
-  runServerRoutines,
-  runServerWebhookCredential,
-} from "./commands/server.ts";
 import { runSend } from "./commands/send.ts";
 import { resolveProfile } from "./config/profile.ts";
 import type { CliDeps } from "./deps.ts";
@@ -226,10 +221,6 @@ function actionBindings(): Readonly<Record<string, LeafAction>> {
       await runRoutines(deps, "delete", args[0] ?? "", args[1], options),
     "agents routines webhook credential": async (deps, args, options) =>
       await runRoutines(deps, "webhook-credential", args[0] ?? "", args[1], options),
-    "server agents": async (deps, _args, options) => await runServerAgents(deps, options),
-    "server routines": async (deps, _args, options) => await runServerRoutines(deps, options),
-    "server webhook credential": async (deps, _args, options) =>
-      await runServerWebhookCredential(deps, options),
     "groups list": async (deps, _args, options) => await runGroupsList(deps, options),
     "groups show": async (deps, args, options) => await runGroupsShow(deps, args[0] ?? "", options),
     "groups create": async (deps, _args, options) => await runGroupsCreate(deps, options),

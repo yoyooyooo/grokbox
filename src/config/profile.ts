@@ -211,21 +211,7 @@ export function validateProfile(input: unknown): ProfileFile {
       "server.access_token_ref",
     );
     if (accessTokenRef === undefined) throw invalid("server.access_token_ref is required.");
-    const backendUrl = optionalString(input.server, "backend_url");
-    if (backendUrl !== undefined) {
-      let parsed: URL;
-      try {
-        parsed = new URL(backendUrl);
-      } catch {
-        throw invalid("server.backend_url must be an absolute HTTP(S) URL.");
-      }
-      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-        throw invalid("server.backend_url must use HTTP or HTTPS.");
-      }
-      if (parsed.protocol === "http:" && !isLoopbackUrlHost(parsed.hostname)) {
-        throw invalid("server.backend_url must use HTTPS unless it targets loopback.");
-      }
-    }
+    const backendUrl = validateUrl(optionalString(input.server, "backend_url"), "server.backend_url");
     server = { access_token_ref: accessTokenRef, backend_url: backendUrl };
     if (server.backend_url === undefined) delete server.backend_url;
   }

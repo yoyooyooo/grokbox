@@ -43,4 +43,5 @@ The project does not claim that App-free wake or long-lived keeper behavior work
 - Implementation ownership: `docs/architecture.md`.
 - Required compatibility facts: `docs/upstream-integration.md`.
 - Deferred work: `docs/roadmap/`.
+- Routine reads/credential have one command face: `agents routines`. A selected Profile's explicit cloud credential selects cloud SSOT internally; absent it, Gateway/Host behavior remains. Cloud reads grant no mutation authority or merged roster.
 - Public work intake: GitHub Issues.

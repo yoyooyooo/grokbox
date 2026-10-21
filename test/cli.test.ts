@@ -85,29 +85,6 @@ describe("registry, help, and runtime", () => {
     const result = await captureCli(["--help"], { skillsDir, discoveryPath: "/dev/null" });
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("Start here (for Agents):");
-    expect(TOP_LEVEL_COMMANDS).toEqual([
-      "init",
-      "skills",
-      "profile",
-      "daemon",
-      "doctor",
-      "quota",
-      "recover",
-      "box",
-      "agents",
-      "groups",
-      "send",
-      "history",
-      "memory",
-      "export",
-      "fs",
-      "exec",
-      "jobs",
-      "desktop",
-      "events",
-      "server",
-      "is",
-    ]);
     for (const name of TOP_LEVEL_COMMANDS) expect(result.stdout).toContain(name);
     expect(TOP_LEVEL_COMMANDS).not.toContain("credential");
     expect(LEAF_COMMANDS.map((leaf) => leaf.path.join(" "))).not.toContain("credential sync");

@@ -4,7 +4,7 @@ This documentation separates current source truth, accepted product behavior, up
 
 ## Current homes
 
-- [Product contract](product-contract.md): commands, Profiles, capabilities, output, and security boundaries.
+- [Product contract](product-contract.md): commands, Profiles, capabilities, output, and security boundaries, including unified `agents routines` cloud SSOT setup and credential caching.
 - [Architecture](architecture.md): modules, transports, daemon, Sandbox, and verification boundaries.
 - [Compatibility](compatibility.md): unofficial status, stability classes, trademarks, and revalidation policy.
 - [Upstream integration](upstream-integration.md): minimum interoperability facts required by the implementation.
@@ -31,6 +31,6 @@ Current behavior is owned by source and executable tests. Product and architectu
 Review the relevant current homes when any of these change:
 
 - Gateway methods, schemas, discovery, generation, or token scope;
-- Sandbox, quota, or desktop compatibility behavior;
+- Sandbox, quota, cloud Routine protocol/credential caching, or desktop compatibility behavior;
 - daemon protocol, filesystem/process policy, or network transport;
 - Profile format, package layout, runtime requirements, license, or bundled dependencies.
