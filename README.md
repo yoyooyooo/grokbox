@@ -10,7 +10,7 @@ This project is not affiliated with or endorsed by Anysphere, Cursor, xAI, or
 Grok Bot. Grok Bot, Cursor, and related names identify compatible products and
 remain the property of their respective owners.
 
-> **Release:** current source is `0.1.0`. Stable versions publish to npm
+> **Release:** current source is `0.1.1`. Stable versions publish to npm
 > `latest`; prereleases use `next`. Upstream-private compatibility adapters
 > remain experimental and subject to the documented acceptance limits.
 
@@ -47,7 +47,7 @@ never gain host filesystem or process authority.
 ## Prerequisites and platform support
 
 - Node.js 20+ for the published-style CLI runtime.
-- Bun 1.3.14 for source development and the pre-release source shim.
+- Bun 1.3.14 for source development and the source-backed shim.
 - An existing Grok Bot cloud computer that you own or are authorized to use.
 - Tailscale plus BatchMode SSH for remote bootstrap/recovery; bootstrap also
   needs npm or Bun locally to repack the installed runtime for transfer.
@@ -147,7 +147,7 @@ grokbox jobs list --table
 grokbox desktop status --table
 ```
 
-Routine reads expose bounded metadata only: prompt bodies, webhook credentials, native paths, and unknown provider fields stay private. The same `agents routines list/show` and `agents routines webhook credential <agent> <routine-id> --confirm` commands use cloud SSOT when the selected Profile has `server.access_token_ref` (configure with `profile update <name> --server-access-token-ref file:/absolute/path/to/cloud-token`); otherwise they retain Gateway/Host behavior. Cloud keys are minted only after confirmation and reused from a scoped local cache; `--reveal-key` explicitly reveals the key, never a cloud prompt, and `--verify` never invokes the real Routine. Cloud reads are read-only; mutations retain the Host contract. Box-local create writes a disabled definition; later mutations require confirmation and a fresh revision. Temporal create/update remain unsupported. See the [Routine contract](docs/product-contract.md#711-native-routines) for setup, verification, and failure guidance.
+Routine reads expose bounded metadata only, never prompts, keys, native paths, or unknown provider fields. Version 0.1.1 automatically uses proven current-box native Host authentication for `agents routines list/show` and `agents routines webhook credential <agent> <routine-id> --confirm`, without manual cloud token setup. This supports only the observed packaged production Linux Host layout described in the [native identity boundary](docs/upstream-integration.md#server-of-record-routine-surface); custom backends and lab/dev Hosts fail as unsupported. Explicit Profile credentials remain authoritative, including on rejection; remote Profiles never borrow local identity. Missing native proof retains Gateway/Host behavior, not false empty Temporal lists; authentication failures never fall back. Confirmation gates credential side effects, and the key cache remains stable across token renewal. `--reveal-key` reveals only the key; `--verify` never invokes the real Routine. Mutations retain the Host contract; capabilities remain conditional, not proof of authorization. Source-first real-box validation passed with the default Profile and no token injection: both CLI names read Routine list/show with the public Bot UUID and current cloud webhook URL; unknown Routine lookup returned exit 17. No real Routine was invoked and no webhook key was minted. See the [Routine contract](docs/product-contract.md#711-native-routines).
 
 Mutating commands require explicit capability and, where destructive, explicit
 confirmation. `desktop prune run` defaults to dry-run; `--yes` invokes the

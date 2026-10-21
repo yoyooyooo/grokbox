@@ -39,7 +39,7 @@ external Sandbox adapter / keeper
 | --- | --- |
 | current Profile selection | CLI global config writer |
 | Profile fields | corresponding Profile config writer |
-| agent/group/native Routine/transcript/Memory | Grok Bot Gateway and its stores |
+| agent/group/transcript/Memory and Routine mutations | Grok Bot Gateway and its stores; Routine reads/credentials may use cloud SSOT through explicit or proven native current-box auth |
 | offline agent export snapshot | local agent-data allowlist reader; never a product writer |
 | ordinary cloud files | box filesystem through governed filesystem use cases |
 | process/job runtime state | daemon job manager plus observed OS process state |
@@ -49,7 +49,7 @@ external Sandbox adapter / keeper
 | account quota | selected credential-owning Cursor/Sand quota source |
 | keeper process state | external keeper state store and observed provider result |
 
-正常 agent/group 与 native Routine 管理只经 Gateway。`export agent` 只读取本地 agent-data allowlist，不是第二个产品 writer，也不经 Gateway 组装导出包。离线文件修复不能成为第二个自动 writer；它必须是显式维护 use case，并在恢复前 fence 正常 writer。
+正常 agent/group 与 native Routine mutation 只经 Gateway。Routine list/show/webhook credential 使用同一命令面，显式 Profile cloud credential 优先；否则受支持的 Linux 本地上下文可自动证明当前 box Host 身份。无证明时保留 Gateway/Host 路径，缺失 Temporal authority 不返回虚假空列表；认证失败不 fallback。`export agent` 只读取本地 agent-data allowlist，不是第二个产品 writer，也不经 Gateway 组装导出包。离线文件修复不能成为第二个自动 writer；它必须是显式维护 use case，并在恢复前 fence 正常 writer。
 
 ## 3. Repository Shape
 
@@ -137,6 +137,8 @@ Application input adapters never infer payload presence from `stdin.isTTY` alone
 Transport resolution is capability-aware. A reachable direct Gateway cannot satisfy `host.fs.read`; SSH is never an implicit fallback. Resolution results are observable in response metadata and verbose diagnostics.
 
 Profile writes use temporary file plus atomic rename. Directory/file modes are verified after creation. Error and display projections redact every secret-bearing field.
+
+Routine native auth is a narrow Linux local resolver, not generic secret discovery. It rejects explicit remote endpoints, binds exact loopback discovery PID/start generation and health to same-UID native Host command line and `/proc` starttime before/after bounded allowlisted environment access, and never scans all processes, reads private App storage, or uses guest identity sockets. Only the proven Host environment's renewal credential reaches the fixed HTTPS inference credential exchange; account access tokens stay in memory and `grokBotToken` is not account auth. Stable renewal identity scopes persistent webhook keys separately from access-token expiry. Explicit Profile credentials remain authoritative even on rejection. Static `profile capabilities` reports `provider-authorization-dependent` for explicit cloud config or `runtime-host-dependent` for eligible Host transport, without process/secret/network probes or implied authorization. See the [exact boundary](upstream-integration.md#server-of-record-routine-surface). This source-backed shim awaits local validation and release; it does not retroactively fix published 0.1.0.
 
 ### Credential references
 

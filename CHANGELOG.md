@@ -4,6 +4,13 @@ This project follows [Semantic Versioning](https://semver.org/). While the
 version is below 1.0, documented experimental compatibility surfaces may change
 when upstream Grok Bot or Cursor internals change.
 
+## 0.1.1 — 2026-10-21
+
+- Add automatic native current-box Routine authentication for the observed packaged production Linux Host layout, without manual Profile token provisioning or another command face; custom backends and lab/dev Hosts fail as unsupported. Explicit Profile credentials remain authoritative and remote Profiles cannot borrow local identity.
+- Bind bounded credential resolution to exact loopback discovery and same-UID native Host generation. Renew tokens in memory through the fixed inference credential endpoint; separate token renewal from stable webhook-key cache identity and preserve confirmation gates and fail-closed authentication errors.
+- Keep `profile capabilities` config-only: explicit cloud configuration is `provider-authorization-dependent`; eligible Host transport is `runtime-host-dependent`, never proof of authorization.
+- Source-first real-box validation passed with the default Profile (`auto`, no server configuration or injected token): both CLI names resolved Routine list/show using the public Bot UUID and current cloud webhook URL; unknown Routine lookup returned exit 17 and capabilities remained conditional. No real Routine was invoked and no webhook key was minted. Linux Bun/Node tests and builds passed, with independent review approval.
+
 ## 0.1.0 — 2026-10-21
 
 - First non-prerelease release of the grokbox CLI and control plane. Upstream-private Gateway, cloud Routine, Sandbox, quota, and desktop integrations remain explicitly experimental; this version does not broaden their compatibility or authorization guarantees.

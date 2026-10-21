@@ -15,7 +15,7 @@ interoperates. The project does not use official logos or trade dress.
 | Grok Bot Gateway discovery and methods | experimental compatibility | Upstream-private, may break without notice |
 | Cursor Sandbox status/wake/keeper | experimental compatibility | Upstream-private and method-authority dependent |
 | Cursor web quota adapter | experimental compatibility | Explicit opt-in, source-local account binding only |
-| Cloud Routine reads/credential | experimental compatibility | Selected Profile `server.access_token_ref` makes cloud SSOT authoritative inside `agents routines`; bounded protocol, no cloud CRUD |
+| Cloud Routine reads/credential | experimental compatibility | Explicit Profile credential first; supported Linux local current-box Host proof can supply native auth automatically; bounded protocol, no cloud CRUD |
 | Desktop classification/prune | experimental and destructive | Linux/Grok Bot layout-specific; dry-run first |
 
 Experimental compatibility means implementation and tests exist, not that the
@@ -31,6 +31,8 @@ credential accepted by one surface does not authorize another. Private App
 credential discovery is not implemented. `file:` references are accepted only
 for a current-user-owned regular file with no group or other permission bits;
 symbolic links are rejected.
+
+The forthcoming native current-box Routine route is a source-backed shim for local validation pending release, not a guarantee about published 0.1.0. It requires exact loopback discovery/health and same-UID Host process-generation proof around bounded environment access; it never scans processes broadly, reads private App credentials, uses identity sockets, or borrows local credentials for remote Profiles. Explicit Profile credentials are authoritative, including on rejection. Missing proof retains existing Gateway/Host behavior (missing Temporal authority fails closed, not empty); renewal/provider/auth errors never fall back. Renewable account tokens remain in memory, while webhook keys use stable renewal-identity cache scope. Static capabilities report dependencies (`provider-authorization-dependent` or `runtime-host-dependent`), not proven authorization. See the [native auth boundary](upstream-integration.md#server-of-record-routine-surface).
 
 ## Known holds
 
