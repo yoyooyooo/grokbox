@@ -9,9 +9,9 @@ interoperates. The project does not use official logos or trade dress.
 
 | Surface | Status | Public commitment |
 | --- | --- | --- |
-| CLI registry, Profile format, output/error projection | alpha | Versioned by this repository |
-| grokbox daemon, governed filesystem, Jobs | alpha | Versioned by this repository; Linux daemon |
-| Tailscale/SSH bootstrap | alpha | Uses public tools but depends on local policy and versions |
+| CLI registry, Profile format, output/error projection | pre-1.0 (0.x) | Versioned by this repository |
+| grokbox daemon, governed filesystem, Jobs | pre-1.0 (0.x) | Versioned by this repository; Linux daemon |
+| Tailscale/SSH bootstrap | pre-1.0 (0.x) | Uses public tools but depends on local policy and versions |
 | Grok Bot Gateway discovery and methods | experimental compatibility | Upstream-private, may break without notice |
 | Cursor Sandbox status/wake/keeper | experimental compatibility | Upstream-private and method-authority dependent |
 | Cursor web quota adapter | experimental compatibility | Explicit opt-in, source-local account binding only |

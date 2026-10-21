@@ -1,6 +1,6 @@
 # Support
 
-`grokbox` is an unofficial alpha project maintained on a best-effort basis.
+`grokbox` is an unofficial pre-1.0 (0.x) project maintained on a best-effort basis.
 
 - Usage questions and sanitized bug reports: GitHub Issues
 - Feature proposals: GitHub Issues

@@ -305,7 +305,7 @@ A passing local fake does not prove tailnet identity, box persistence or externa
 Migration is contract-first:
 
 1. Stabilize the current v1 agent-first command surface before adding transports: move transcript search to `history search`, make target roles positional, keep agent/group domains strict, separate object detail from history, fix headless text input, and make the registry own every accepted option.
-2. Remove replaced v1 routes rather than retaining compatibility aliases. The package is pre-stable, and dual routes would preserve ambiguous natural-language choices in help and skills.
+2. Remove replaced v1 routes rather than retaining compatibility aliases. The package is pre-1.0 (0.x), and dual routes would preserve ambiguous natural-language choices in help and skills.
 3. Add idempotent `init`, Profile resolution, Tailnet discovery and shared-credential bootstrap while preserving current no-config local behavior.
 4. Add the external Sandbox control port and bounded wake/keeper commands without coupling them to daemon transport.
 5. Introduce capability-shaped application ports around existing Gateway commands.
