@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import cliPackage from "../package.json" with { type: "json" };
 import { DEFAULT_AGENT_DATA_ROOT, DEFAULT_DISCOVERY_PATH } from "./registry.ts";
 import type { Writable } from "./output.ts";
+import type { BoxRoutineAuthIO } from "./box-routine-auth.ts";
 
 export type FetchFn = typeof fetch;
 
@@ -20,6 +21,7 @@ export type CommandOptions = {
 };
 
 export type CliDeps = {
+  boxRoutineAuthIO?: BoxRoutineAuthIO;
   discoveryPath: string;
   fetch: FetchFn;
   now: () => number;

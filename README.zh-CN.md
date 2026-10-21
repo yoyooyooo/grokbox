@@ -6,7 +6,7 @@
 
 本项目与 Anysphere、Cursor、xAI 或 Grok Bot 没有隶属或背书关系。Grok Bot、Cursor 及相关名称仅用于标识兼容产品，其权利归各自所有者。
 
-> **发布：** 当前源码版本是 `0.1.0`。正式版发布到 npm `latest`，预发布版使用 `next`。上游私有接口的兼容适配器仍为实验性，遵守文档中的验收范围与限制。
+> **发布：** 当前源码版本是 `0.1.1`。正式版发布到 npm `latest`，预发布版使用 `next`。上游私有接口的兼容适配器仍为实验性，遵守文档中的验收范围与限制。
 
 ## 它能做什么
 
@@ -40,7 +40,7 @@ Daemon 不提供通用 raw RPC 或任意 shell。仅有 Gateway 权限的 Profil
 ## 前置条件与平台支持
 
 - 发布版 CLI 运行时需要 Node.js 20+。
-- 源码开发与发布前源码 shim 需要 Bun 1.3.14。
+- 源码开发与源码 shim 需要 Bun 1.3.14。
 - 需要一个你拥有或获准使用的 Grok Bot 云电脑。
 - 远程 bootstrap/recovery 需要 Tailscale 与 BatchMode SSH；bootstrap 还需要本机 npm 或 Bun，以便重新打包已安装运行时并传输。
 
@@ -128,7 +128,7 @@ grokbox jobs list --table
 grokbox desktop status --table
 ```
 
-Routine 读取只输出有界元数据，不暴露 prompt 正文、Webhook credential、原生路径或未知 provider 字段。同一组 `agents routines list/show` 与 `agents routines webhook credential <agent> <routine-id> --confirm` 命令，在 selected Profile 配置 `server.access_token_ref` 时使用 cloud SSOT（通过 `profile update <name> --server-access-token-ref file:/absolute/path/to/cloud-token` 配置）；未配置时保留 Gateway/Host 行为。Cloud key 仅在确认后铸造，并从按范围隔离的本地缓存复用；`--reveal-key` 显式输出 key，但不输出 cloud prompt；`--verify` 从不调用真实 Routine。Cloud 读取为只读，mutation 保留现有 Host 合同。Box-local create 创建 disabled definition，后续 mutation 需要确认与 fresh revision；Temporal create/update 仍不支持。配置、验证与失败处理见 [Routine 合同](docs/product-contract.md#711-native-routines)。
+Routine 读取只输出有界元数据，不暴露 prompt、key、原生路径或未知 provider 字段。0.1.1 通过已证明归属的当前 box 原生 Host 身份，自动使用同一组 `agents routines list/show` 与 `agents routines webhook credential <agent> <routine-id> --confirm` 命令，无需手工配置 cloud token。仅支持[精确原生身份边界](docs/upstream-integration.md#server-of-record-routine-surface)中的已观察 packaged production Linux Host 布局；自定义 backend、lab/dev Host 以 unsupported 拒绝。显式 Profile 凭据优先，被拒绝后不 fallback；Remote Profile 不能借用本机身份。原生证明不可用时保留 Gateway/Host 行为，缺失 Temporal bridge 必须拒绝而非返回虚假空列表。确认后才发生 credential 副作用，key 缓存身份不随 token 续期变化；`--reveal-key` 只揭示 key，`--verify` 不调用真实 Routine。Mutation 保留 Host 合同；capabilities 仍为条件依赖，不宣称已授权。源码优先实机验收已通过：默认 Profile、无 token 注入下，两个 CLI 名称均可读取公开 Bot UUID 对应的 Routine list/show 与当前云端 webhook URL；未知 Routine 返回 exit 17。未调用真实 Routine，也未创建 webhook key。详见 [Routine 合同](docs/product-contract.md#711-native-routines)。
 
 变更命令需要显式 capability；破坏性操作还需要显式确认。`desktop prune run` 默认 dry-run；传入 `--yes` 后会调用上游 stop-window 路径，并删除该 fork 的 Chrome profile。
 

@@ -30,7 +30,7 @@ CLI 统一四类能力：
 2. 云电脑能力：受控文件读写、命令执行、长任务和 artifact 传输。
 3. Sandbox 生命周期能力：从外部唤醒、维持 lease 和观察 Cursor/AnyRun 状态。
 4. 账号额度能力：由显式 credential-owning source 返回 fresh sanitized quota，不从 transcript 推算。
-5. Routine 读取与凭据能力：同一 `agents routines` 命令使用 selected Profile 的显式 cloud credential 读取云端 SSOT；未配置时保留 Gateway/Host 路径，不扩展 mutation authority。
+5. Routine 读取与凭据能力：同一 `agents routines` 命令优先使用 selected Profile 显式 cloud credential，否则受支持的本地 Linux box 自动证明当前 native Host 身份；不可用时保留 Gateway/Host 路径，不扩展 mutation authority。
 6. 连接与运行能力：Profile、doctor、daemon 和版本匹配的 bundled skills。
 
 正常远程路径由 box 内 daemon 持有 Gateway discovery 与本机权限。Sandbox wake/lease 由 box 外控制面 adapter 持有，因为 cgroup freeze 后内部 daemon 不能唤醒自己。外部客户端不需要获得 Gateway Bearer。SSH 只负责 bootstrap 与故障恢复，不是日常命令 transport。
@@ -329,7 +329,7 @@ Sandbox adapter 独立声明 `sandbox.inspect`、`sandbox.wake`、`sandbox.keepa
 
 Quota adapter 同样独立声明 `quota.read`。静态 Profile 只能报告 `provider-authorization-dependent`；真实成功只证明该 OAuth credential 对 quota endpoint 的当前方法级授权，不授予 Gateway、daemon、App storage 或 Sandbox lifecycle 权限。
 
-Cloud Routine capabilities are `grok.routine.read` and `grok.routine.webhook`; they are backed only by the selected Profile's explicit cloud configuration, not inferred from Host capabilities.
+Cloud Routine capabilities are `grok.routine.read` and `grok.routine.webhook`. `profile capabilities` is config-only: explicit cloud configuration reports `provider-authorization-dependent`; eligible Linux local Host transport without it reports `runtime-host-dependent`, never boolean `true` from transport alone. It performs no native secret, process, or network probe; runtime Routine commands determine actual availability.
 
 ## 7. Grok Bot 命令
 
@@ -353,7 +353,7 @@ Cloud Routine capabilities are `grok.routine.read` and `grok.routine.webhook`; t
 
 #### 7.1.1 Native Routines
 
-`agents routines list/show` and `agents routines webhook credential` are the single Routine read/credential interface. When the selected Profile configures `server.access_token_ref`, its cloud credential is authoritative for these operations: the CLI reads the cloud SSOT internally, without Gateway discovery, desktop caches, roster unions, or a user-selected source/transport flag. Without that configuration, the existing Gateway/Host bridge behavior remains: Box-local Bots use the native store and Temporal Bots require proven Server authority; a missing bridge fails closed rather than reporting a false empty list.
+`agents routines list/show` and `agents routines webhook credential` are the single Routine read/credential interface, with no top-level server command or `--via`. Explicit selected Profile `server.access_token_ref` is authoritative first, including on rejection, with no local fallback. Otherwise a supported genuinely local Linux `auto`/local context with loopback discovery and no explicit remote endpoints can automatically use proven current-box native Host authentication; the built-in default needs no manual cloud token. Exact discovery PID/start generation, Gateway health, same-UID Host command line and `/proc` starttime must agree before and after reading a bounded allowlisted environment. No broad process scan, private App read, identity socket, copied desktop credential, or cross-account name fallback is allowed. Remote Profiles never borrow local identity. Missing/mismatched proof retains existing Gateway/Host behavior: Box-local Bots use the native store and Temporal Bots require proven Server authority; a missing bridge fails closed rather than reporting a false empty list. Renewal/provider/authentication errors do not fall back. See the [native authentication boundary](upstream-integration.md#server-of-record-routine-surface). This source-backed shim is for local validation pending release, not a claim about published 0.1.0 or completed real-box validation.
 
 Cloud reads preserve the normal command envelopes and bounded `RoutineView`, adding `serverId` and (for webhook triggers) `webhookUrl`, with `mutable:false`. They never emit keys, prompts, native paths, or unknown provider fields. The Server-returned automation ID is authoritative; do not derive every Temporal ID from a local ID. Host projections retain their existing revision, coverage, and owner semantics; cloud read-only projections do not grant mutation authority.
 
@@ -371,7 +371,7 @@ The mutation surface is intentionally owner-aware:
 
 #### 7.1.2 Cloud Routine credential setup and use
 
-Configure the selected box Profile with an explicit secret reference (never an inline token). `profile add` and `profile update` accept `--server-access-token-ref` and optional `--server-backend-url`; these configure internal transport, not a second command family. For example, after placing the token in a current-user-owned regular `0600` file:
+External/cloud-configured use may optionally configure an explicit secret reference (never an inline token). This is not required inside a supported local Linux box. `profile add` and `profile update` accept `--server-access-token-ref` and optional `--server-backend-url`; these configure internal transport, not a second command family. For example, after placing the token in a current-user-owned regular `0600` file:
 
 ```bash
 grokbox profile update <name> --server-access-token-ref file:/absolute/path/to/cloud-token
@@ -384,11 +384,11 @@ grokbox agents routines webhook credential <agent> <routine-id> --confirm --veri
 ```
 
 - The cloud adapter chooses the verified `application/proto` wire format for bounded agent resolution, Routine reads, and webhook key creation, without new dependencies. This is an adapter choice, not a claim that upstream rejects other formats. There is no generic RPC command or cloud CRUD; mutations retain the existing Host contract and do not fall back to cloud writes.
-- Cloud keys are cached locally, scoped by backend, credential digest, agent ID, Server automation ID, and creation time. First access requires `--confirm` before minting; repeated access reuses the matching cached key instead of minting another. Minting is non-idempotent and never automatically retried. No supported revoke operation exists.
-- The local cache lives under the config directory's `server-webhook-keys/` with owner-only directory/file permissions (`0700`/`0600`), atomic writes, and an exclusive per-scope lock. Credential rotation changes the digest and causes a cache miss. An explicit HTTP 4xx rejection other than 408 releases the mint lock. Unknown network outcomes, HTTP 5xx, HTTP 408, or cancellation after the mint POST starts retain the lock and fail closed on later access: an operator must review the uncertain outcome and lock, never automatically clear it and retry minting.
+- Cloud keys are cached locally, scoped by backend, credential identity, agent ID, Server automation ID, and creation time. Explicit credentials use a digest; native credentials use a stable renewal-identity fingerprint, so changing the in-memory renewed access token does not mint another key. Token renewal and webhook-key persistence are separate. `--confirm` gates credential side effects, including renewal and minting; repeated access reuses the matching cached key. Minting is non-idempotent, never automatically retried, and has no supported revoke operation.
+- The local cache lives under the config directory's `server-webhook-keys/` with owner-only directory/file permissions (`0700`/`0600`), atomic writes, and an exclusive per-scope lock. Explicit credential rotation or native renewal-identity changes cause a cache miss; ordinary access-token renewal does not. An explicit HTTP 4xx rejection other than 408 releases the mint lock. Unknown network outcomes, HTTP 5xx, HTTP 408, or cancellation after the mint POST starts retain the lock and fail closed on later access: an operator must review the uncertain outcome and lock, never automatically clear it and retry minting.
 - Credential output hides the key by default; `--reveal-key` explicitly emits the cloud key, never the prompt. Cloud `list/show` never reveal either.
-- `--verify` probes only a fixed, distinct nonexistent automation ID and accepts only the strict HTTP 401 `missing required scope` response as scope evidence. It supports abort and never POSTs to the real Routine, which would execute it. Without cloud configuration, `--verify` is rejected before any credential mint; it is never silently ignored on the Gateway/Host path.
-- A configured cloud route failure is reported directly, without Gateway, desktop, credential, or discovery fallback. Check the selected Profile's explicit cloud reference, backend configuration, and reported authorization/protocol error. Without cloud configuration, a missing Temporal Host bridge requires configuring the Profile credential or restoring that bridge; it is not evidence of an empty cloud list.
+- `--verify` probes only a fixed, distinct nonexistent automation ID and accepts only the strict HTTP 401 `missing required scope` response as scope evidence. It supports abort and never POSTs to the real Routine, which would execute it. If neither explicit nor native cloud authentication is available, `--verify` is rejected before credential minting; it is never silently ignored on Gateway/Host.
+- Explicit cloud and native renewal/provider/authentication failures are reported directly without credential or discovery fallback. Unavailable native proof alone retains the existing Host path; missing Temporal authority requires restoring that bridge or optionally configuring an explicit Profile credential, not reporting an empty cloud list.
 - Cloud credential authority is internal and does not grant Gateway, daemon, Sandbox, or quota authority. No merged roster or account-ownership inference is part of this interface.
 
 ### 7.2 Groups

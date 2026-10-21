@@ -3,6 +3,7 @@ import { chmod, mkdir, readFile, stat, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mkdtemp } from "node:fs/promises";
+import type { CliDeps } from "../src/deps.ts";
 import {
   resolveProfile,
   writeGlobalConfig,
@@ -476,6 +477,35 @@ describe("Profile v1 storage", () => {
     expect(code(missingCredential.stderr)).toBe("profile_invalid");
     expect(await readFile(join(configDir, "profiles", "incomplete", "config.json"), "utf8").catch(() => null))
       .toBeNull();
+  });
+
+  test("routine capability configuration never claims an unproven Host bridge", async () => {
+    const configDir = await makeConfigDir();
+    await writeProfileFile(configDir, "cloud", {
+      version: 1, server: { access_token_ref: "env:CLOUD_ACCOUNT_TOKEN" },
+    });
+    await writeProfileFile(configDir, "gateway", {
+      version: 1, transport: "gateway", gateway_url: "https://gateway.example.test",
+      gateway_token_ref: "env:GATEWAY_TOKEN",
+    });
+    await writeProfileFile(configDir, "daemon", {
+      version: 1, transport: "daemon", server_url: "https://daemon.example.test",
+      daemon_token_ref: "env:DAEMON_TOKEN",
+    });
+    for (const name of ["default", "cloud", "gateway", "daemon"]) {
+      let externalCalls = 0;
+      const result = await cli(configDir, ["profile", "capabilities", name], {
+        fetch: (async () => { externalCalls += 1; throw new Error("must not probe"); }) as unknown as CliDeps["fetch"],
+        readFile: async () => { throw new Error("must not discover local Host"); },
+      });
+      expect(result.code, result.stderr).toBe(0);
+      // captureCli owns this success envelope; assertions below validate its public fields.
+      const body = parseJson(result.stdout) as { data: { capabilities: Record<string, unknown> } };
+      const expected = name === "cloud" ? "provider-authorization-dependent" : "runtime-host-dependent";
+      expect(body.data.capabilities["grok.routine.read"]).toBe(expected);
+      expect(body.data.capabilities["grok.routine.webhook"]).toBe(expected);
+      expect(externalCalls).toBe(0);
+    }
   });
 
   test("capabilities distinguish configured Sandbox references from provider authorization", async () => {

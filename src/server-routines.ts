@@ -6,8 +6,8 @@ import { projectNativeRoutines, type RoutineView } from "./routines.ts";
 import { CliError } from "./errors.ts";
 import { isRecord } from "./util.ts";
 
-// Internal cloud Routine adapter. Only the selected Profile's explicit credential
-// is used; Gateway authority and desktop state are never fallback identities.
+// Internal cloud Routine adapter. Callers supply either an explicit Profile
+// credential or a verified current-box identity; never a desktop fallback.
 
 const SERVER_ROUTINE_PATHS = {
   listAgents: "/aiserver.v1.GrokBotService/ListGrokBotAgents",
@@ -497,15 +497,15 @@ export async function probeWebhookKey(
   }
 }
 
-/** Credential fingerprints conservatively isolate principals, including rotation. */
+/** Opaque explicit tokens isolate principals; native renewal uses a stable internal scope. */
 export async function cachedWebhookKey(
   deps: ServerCallDeps,
-  options: { backendUrl: string; token: string; timeoutMs: number; configDir: string; agentId: string; routine: ServerRoutine },
+  options: { backendUrl: string; token: string; credentialScope?: string; timeoutMs: number; configDir: string; agentId: string; routine: ServerRoutine },
 ): Promise<string> {
   if (options.routine.createdAtMs === null) throw protocolFailure("routine_incarnation_missing");
   const scope = createHash("sha256").update(JSON.stringify([
     normalizedBackend(options.backendUrl),
-    createHash("sha256").update(options.token).digest("hex"),
+    options.credentialScope ?? createHash("sha256").update(options.token).digest("hex"),
     options.agentId, options.routine.serverId, options.routine.createdAtMs,
   ])).digest("hex");
   const directory = join(options.configDir, "server-webhook-keys");

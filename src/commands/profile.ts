@@ -261,6 +261,9 @@ export async function runProfileCapabilities(
   const serverCapability = profile.server?.access_token_ref
     ? "provider-authorization-dependent"
     : false;
+  const routineCapability = serverCapability || (
+    local || directGateway || daemon ? "runtime-host-dependent" : false
+  );
   writeSuccess(deps.stdout, {
     profile: profile.name,
     transport: profile.transport,
@@ -292,8 +295,8 @@ export async function runProfileCapabilities(
       "sandbox.wake": sandboxCapability,
       "sandbox.keepalive": sandboxCapability,
       "quota.read": quotaCapability,
-      "grok.routine.read": serverCapability || local || directGateway || daemon,
-      "grok.routine.webhook": serverCapability || local || directGateway || daemon,
+      "grok.routine.read": routineCapability,
+      "grok.routine.webhook": routineCapability,
     },
   });
 }

@@ -1,4 +1,5 @@
 import type { CliDeps } from "../deps.ts";
+import { resolveBoxRoutineAuth, type BoxRoutineAuth } from "../box-routine-auth.ts";
 import { CliError, usage } from "../errors.ts";
 import { GatewayClient, gatewayMeta, type GatewayMeta } from "../gateway.ts";
 import { formatTable, writeSuccess } from "../output.ts";
@@ -670,10 +671,11 @@ async function cloudRoutines(
   agentTarget: string,
   routineTarget: string | undefined,
   raw: RoutineOptions,
+  nativeAuth?: BoxRoutineAuth,
 ): Promise<void> {
   if (action === "webhook-credential") requireConfirmed(raw);
   const io = ioFromOpts(raw);
-  const context = {
+  const context = nativeAuth ? { ...nativeAuth, timeoutMs: io.timeoutMs } : {
     backendUrl: normalizedBackend(deps.serverBackendUrl ?? DEFAULT_SERVER_BACKEND_URL),
     token: await resolveSecretRef(deps, deps.serverAccessTokenRef!),
     timeoutMs: io.timeoutMs,
@@ -723,6 +725,14 @@ export async function runRoutines(
   if (deps.serverAccessTokenRef !== undefined && (action === "list" || action === "show" || action === "webhook-credential")) {
     await cloudRoutines(deps, action, agentTarget, routineTarget, raw);
     return;
+  }
+  if (action === "webhook-credential") requireConfirmed(raw);
+  if (action === "list" || action === "show" || action === "webhook-credential") {
+    const nativeAuth = await resolveBoxRoutineAuth(deps, ioFromOpts(raw).timeoutMs);
+    if (nativeAuth) {
+      await cloudRoutines(deps, action, agentTarget, routineTarget, raw, nativeAuth);
+      return;
+    }
   }
   const client = new GatewayClient(deps);
   if (action === "list" || action === "show") {
