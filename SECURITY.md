@@ -2,8 +2,8 @@
 
 ## Supported versions
 
-Until the first stable release, only the current `main` branch and the newest
-alpha release candidate receive security fixes. The npm `0.0.1` snapshot is not
+The current `main` branch, the latest stable 0.x release, and the newest
+prerelease (if any) receive security fixes. The npm `0.0.1` snapshot is not
 supported.
 
 ## Private reporting

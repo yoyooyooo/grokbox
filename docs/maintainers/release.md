@@ -78,7 +78,7 @@ it.
    ```bash
    git switch main
    git pull --ff-only origin main
-   bun run release:precheck -- 0.1.0-alpha.2
+   bun run release:precheck -- 0.1.0
    ```
 
 7. After reviewing the printed commit, version, tag, and npm channel, authorize
@@ -86,7 +86,7 @@ it.
    backward:
 
    ```bash
-   bun run release -- 0.1.0-alpha.2
+   bun run release -- 0.1.0
    ```
 
    The command creates one annotated tag and pushes only that tag. It never
@@ -99,9 +99,9 @@ it.
 9. Verify:
 
    ```bash
-   npm view grokbox@0.1.0-alpha.2 version dist.integrity dist.attestations --json
+   npm view grokbox@0.1.0 version dist.integrity dist.attestations --json
    npm view grokbox dist-tags --json
-   gh release view v0.1.0-alpha.2
+   gh release view v0.1.0
    ```
 
 10. Install that exact registry version on a distinct external runner and run
@@ -121,7 +121,7 @@ Published npm versions and pushed release tags are immutable.
   `publish.yml` on the original immutable tag ref:
 
   ```bash
-  gh workflow run publish.yml --ref v0.1.0-alpha.2 -f tag=v0.1.0-alpha.2
+  gh workflow run publish.yml --ref v0.1.0 -f tag=v0.1.0
   ```
 
   The manual lane is repair-only: the npm version must already exist, the tag

@@ -1,6 +1,6 @@
 # Contributing to grokbox
 
-Thanks for helping improve grokbox. The project is currently alpha and its
+Thanks for helping improve grokbox. The project is currently pre-1.0 (0.x) and its
 upstream-private compatibility adapters may change without notice.
 
 ## Start here

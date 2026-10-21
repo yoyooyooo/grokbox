@@ -4,8 +4,10 @@ This project follows [Semantic Versioning](https://semver.org/). While the
 version is below 1.0, documented experimental compatibility surfaces may change
 when upstream Grok Bot or Cursor internals change.
 
-## Unreleased
+## 0.1.0 — 2026-10-21
 
+- First non-prerelease release of the grokbox CLI and control plane. Upstream-private Gateway, cloud Routine, Sandbox, quota, and desktop integrations remain explicitly experimental; this version does not broaden their compatibility or authorization guarantees.
+- Includes Profile-based local/remote operation, governed filesystem and Jobs, bounded Bot/Group/Routine management, and version-matched bundled skills from the alpha series.
 - Use the existing `agents routines list/show` and webhook credential commands for cloud SSOT when the selected Profile configures a cloud credential, without a separate command root or source flag. Preserve Gateway/Host behavior otherwise and retain Host-only mutation contracts.
 - Reuse scoped local webhook key caches after confirmed first mint; keep cloud keys opt-in and prompts private. Optional verification uses only a distinct nonexistent automation ID, never invokes the real Routine, and minting is never automatically retried.
 

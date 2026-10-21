@@ -34,4 +34,4 @@ Before a release candidate:
 4. confirm package metadata and compatibility disclaimers;
 5. confirm the npm allowlist contains no private evidence or provider material.
 
-Last reviewed: 2026-09-04. Revisit when authorship, vendored code, runtime dependencies, bundle composition, or public history changes.
+Last reviewed: 2026-10-21 for `0.1.0`. The dependency set and Commander.js notice are unchanged; the dry-run package allowlist contains only the Node CLI, bundled skill, package metadata, README files, license, and third-party notice. This does not extend upstream authorization or external runtime acceptance claims. Revisit when authorship, vendored code, runtime dependencies, bundle composition, or public history changes.
