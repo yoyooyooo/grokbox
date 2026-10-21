@@ -49,6 +49,8 @@ export type CliDeps = {
   sandboxKeepaliveIntervalMs?: number;
   quotaSource?: "cursor-web";
   quotaAccessTokenRef?: string;
+  serverAccessTokenRef?: string;
+  serverBackendUrl?: string;
   gatewayServerUrl?: string;
   gatewayTokenRef?: string;
   gatewayHeadersRef?: string;

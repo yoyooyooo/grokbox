@@ -28,6 +28,11 @@ export type QuotaProfile = {
   access_token_ref: SecretRef;
 };
 
+export type ServerProfile = {
+  access_token_ref: SecretRef;
+  backend_url?: string;
+};
+
 export type ProfileFile = {
   version: 1;
   transport?: Transport;
@@ -41,6 +46,7 @@ export type ProfileFile = {
   ssh_host?: string;
   sandbox?: SandboxProfile;
   quota?: QuotaProfile;
+  server?: ServerProfile;
 };
 
 export type ResolvedProfile = ProfileFile & {
@@ -65,9 +71,11 @@ const PROFILE_KEYS = new Set([
   "ssh_host",
   "sandbox",
   "quota",
+  "server",
 ]);
 const SANDBOX_KEYS = new Set(["access_token_ref", "keepalive_interval_ms"]);
 const QUOTA_KEYS = new Set(["source", "access_token_ref"]);
+const SERVER_KEYS = new Set(["access_token_ref", "backend_url"]);
 const GLOBAL_KEYS = new Set(["version", "current_profile"]);
 const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const SSH_HOST = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,254}$/;
@@ -194,6 +202,33 @@ export function validateProfile(input: unknown): ProfileFile {
     if (accessTokenRef === undefined) throw invalid("quota.access_token_ref is required.");
     quota = { source, access_token_ref: accessTokenRef };
   }
+  let server: ServerProfile | undefined;
+  if (input.server !== undefined) {
+    if (!isRecord(input.server)) throw invalid("server must be an object.");
+    assertKnownKeys(input.server, SERVER_KEYS, "server");
+    const accessTokenRef = validateSecretRef(
+      optionalString(input.server, "access_token_ref"),
+      "server.access_token_ref",
+    );
+    if (accessTokenRef === undefined) throw invalid("server.access_token_ref is required.");
+    const backendUrl = optionalString(input.server, "backend_url");
+    if (backendUrl !== undefined) {
+      let parsed: URL;
+      try {
+        parsed = new URL(backendUrl);
+      } catch {
+        throw invalid("server.backend_url must be an absolute HTTP(S) URL.");
+      }
+      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+        throw invalid("server.backend_url must use HTTP or HTTPS.");
+      }
+      if (parsed.protocol === "http:" && !isLoopbackUrlHost(parsed.hostname)) {
+        throw invalid("server.backend_url must use HTTPS unless it targets loopback.");
+      }
+    }
+    server = { access_token_ref: accessTokenRef, backend_url: backendUrl };
+    if (server.backend_url === undefined) delete server.backend_url;
+  }
   const profile: ProfileFile = {
     version: 1,
     transport: transport as Transport | undefined,
@@ -210,6 +245,7 @@ export function validateProfile(input: unknown): ProfileFile {
     })(),
     sandbox,
     quota,
+    server,
   };
   for (const key of Object.keys(profile) as Array<keyof ProfileFile>) {
     if (profile[key] === undefined) delete profile[key];

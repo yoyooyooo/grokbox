@@ -34,11 +34,14 @@ export type ProfileOptions = {
   keepaliveIntervalMs?: string;
   quotaSource?: string;
   quotaAccessTokenRef?: string;
+  serverAccessTokenRef?: string;
+  serverBackendUrl?: string;
   secretStdinFile?: string;
 };
 
-type ProfilePatch = Omit<ProfileFile, "version" | "quota"> & {
+type ProfilePatch = Omit<ProfileFile, "version" | "quota" | "server"> & {
   quota?: Partial<NonNullable<ProfileFile["quota"]>>;
+  server?: Partial<NonNullable<ProfileFile["server"]>>;
 };
 
 type SecretInput = { path: string; field: "daemon" | "gateway" | "headers" | "sandbox" | "quota" };
@@ -115,6 +118,15 @@ function patchFromOptions(raw: ProfileOptions): ProfilePatch {
         min: 1000,
         max: Number.MAX_SAFE_INTEGER,
       });
+    }
+  }
+  if (raw.serverAccessTokenRef !== undefined || raw.serverBackendUrl !== undefined) {
+    patch.server = {};
+    if (raw.serverAccessTokenRef !== undefined) {
+      patch.server.access_token_ref = raw.serverAccessTokenRef;
+    }
+    if (raw.serverBackendUrl !== undefined) {
+      patch.server.backend_url = raw.serverBackendUrl;
     }
   }
   const quotaSecret = raw.secretStdinFile?.startsWith("quota-access-token=") ?? false;
@@ -243,6 +255,9 @@ export async function runProfileCapabilities(
   const quotaCapability = profile.quota?.access_token_ref
     ? "provider-authorization-dependent"
     : false;
+  const serverCapability = profile.server?.access_token_ref
+    ? "provider-authorization-dependent"
+    : false;
   writeSuccess(deps.stdout, {
     profile: profile.name,
     transport: profile.transport,
@@ -274,6 +289,8 @@ export async function runProfileCapabilities(
       "sandbox.wake": sandboxCapability,
       "sandbox.keepalive": sandboxCapability,
       "quota.read": quotaCapability,
+      "server.routine.read": serverCapability,
+      "server.routine.webhook": serverCapability,
     },
   });
 }
