@@ -41,6 +41,9 @@ grokbox box wake
 grokbox box keepalive status
 grokbox agents list --table
 grokbox agents routines list <agent> --table
+grokbox server agents --table
+grokbox server routines --agent <agent> --table
+grokbox server webhook credential --agent <agent> --routine <routine-id> --verify
 grokbox groups list --table
 grokbox send <target> --text "hello"
 grokbox history tail <target> --limit 50
@@ -73,6 +76,7 @@ Targets accept an exact ID first, then an unambiguous case-insensitive name/titl
    `groups members list/add/remove/set`; every member must resolve to a non-group agent and a group
    must retain 1-6 unique members.
 3. **Manage native Routines**: `agents routines list/show` returns bounded metadata only and never emits prompt bodies, credentials, or native paths. Box-local Bots support create/update/enable/disable/delete; create writes a disabled definition and later mutations require `--expect-revision` from a fresh read plus `--confirm`. Temporal Bots are Server-authoritative: list/show, webhook credential, enable/disable, and delete require the bounded Temporal Routine Host bridge; create/update refuse because the current official Temporal contract exposes neither mutation. `agents routines webhook credential <agent> <routine-id> --confirm` returns the webhook URL and hides the key and prompt by default; `--reveal-key` is the explicit boundary that also emits both. `list` and `show` still never emit them. Without the bridge, Temporal reads fail closed instead of reporting the legacy local store. Native writes have no upstream CAS or idempotency guarantee; uncertain writes return `operation_outcome_unknown` and must be reconciled by another read, never automatic replay.
+3b. **Read Server-side Routines when the Host bridge is absent**: `server agents`, `server routines --agent <id-or-name>`, and `server webhook credential --agent … --routine …` address the Grok Bot Server of record directly using the Profile's `server.access_token_ref`. Use them for Temporal Bots whose Gateway answers an empty automation list or refuses `getAutomationWebhookCredential`. The Routine projection is bounded metadata plus the webhook URL; prompts, native paths, and provider fields never appear. `webhook credential` hides the key by default, `--reveal-key` emits it, and `--verify` proves it is live by probing a different automation id (never the Routine's own, which would fire it). Minting is not idempotent upstream and there is no revoke: reuse an existing key when you already have one. A Server credential is a separate authority and grants nothing on the Gateway, daemon, Sandbox, or quota surfaces.
 4. **Search/read transcript**: `history search <query>`, `history tail <target>`, and
    `history thread <target> --root <entry-id>` own transcript access. Object `show` commands do
    not add transcript side projections.

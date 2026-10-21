@@ -165,7 +165,8 @@ async function resolveRoutineAuthority(
     if (error instanceof CliError && ["gateway_not_found", "gateway_bad_request", "capability_unavailable"].includes(error.code)) {
       throw new CliError(
         "capability_unavailable",
-        "This Temporal Bot requires the Grokbox Temporal Routine bridge before Routine state can be read safely.",
+        "This Temporal Bot requires the Grokbox Temporal Routine bridge before Routine state can be read safely. `grokbox server routines` reads the same Server records directly when the Profile declares server.access_token_ref.",
+        { failureCode: "routine_bridge_missing" },
       );
     }
     throw error;

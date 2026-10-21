@@ -15,6 +15,7 @@ interoperates. The project does not use official logos or trade dress.
 | Grok Bot Gateway discovery and methods | experimental compatibility | Upstream-private, may break without notice |
 | Cursor Sandbox status/wake/keeper | experimental compatibility | Upstream-private and method-authority dependent |
 | Cursor web quota adapter | experimental compatibility | Explicit opt-in, source-local account binding only |
+| Grok Bot Server Routine surface | experimental compatibility | Explicit opt-in via `server.access_token_ref`; account-scoped, no generic Server RPC |
 | Desktop classification/prune | experimental and destructive | Linux/Grok Bot layout-specific; dry-run first |
 
 Experimental compatibility means implementation and tests exist, not that the
@@ -25,7 +26,7 @@ or account enforcement must not be bypassed.
 
 ## Credential and capability separation
 
-Gateway, daemon, Sandbox, and quota credentials are separate authorities. A
+Gateway, daemon, Sandbox, quota, and Grok Bot Server credentials are separate authorities. A
 credential accepted by one surface does not authorize another. Private App
 credential discovery is not implemented. `file:` references are accepted only
 for a current-user-owned regular file with no group or other permission bits;

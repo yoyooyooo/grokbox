@@ -15,7 +15,7 @@ The TypeScript CLI currently provides:
 - typed Grok Bot roster, native Routine lifecycle, send, history, Memory, event, and offline agent-export commands;
 - governed named-root filesystem access and structured Linux Jobs;
 - layered read-only diagnosis and explicit recovery;
-- opt-in experimental Sandbox, quota, and desktop compatibility adapters.
+- opt-in experimental Sandbox, quota, desktop, and Grok Bot Server Routine adapters.
 
 Node.js 20+ is the published runtime. Bun is development tooling. Source and package checks run on Linux and macOS; host filesystem, process, Job, and desktop capabilities remain Linux-only.
 

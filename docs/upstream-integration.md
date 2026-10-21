@@ -59,6 +59,28 @@ Routine list/show is projected into a bounded metadata-only window; prompt bodie
 
 `sendPrompt` represents one Human message to an ordinary agent or group. It is not peer delivery, an administrative broadcast, approval resolution, or arbitrary host execution.
 
+## Server-of-record Routine surface
+
+Temporal Bots keep their Routines on the Grok Bot Server rather than in the box's local automation store, so a Gateway-only caller sees an empty list and cannot mint a webhook key. When a Profile declares `server.access_token_ref`, grokbox may address three Server unary methods directly, in the Server's own binary protobuf encoding (`content-type: application/proto`; JSON is rejected with 415):
+
+```text
+POST /aiserver.v1.GrokBotService/ListGrokBotAgents
+POST /aiserver.v1.GrokBotService/ListGrokBotAgentAutomations   { agent_id }
+POST /aiserver.v1.DashboardService/CreateAutomationWebhookApiKey { automation_id }
+POST /automations/webhook/<automation_id>                      (credential-scoped, fires the Routine)
+```
+
+Observed response fields used by the adapter: agents carry `id`, `name`, and `harness`; an automation row carries `automation_id` plus a `record_json` string with `id`, `name`, `trigger.type`, `isEnabled`, and `createdAt`. Everything else in the record is ignored and never re-emitted.
+
+Two server-side facts shape the contract:
+
+- The automation id is `sha256("<agentId>\0<localId>")` reshaped into UUID form, so a Routine's webhook URL can be derived without any credential.
+- Webhook keys are scoped to exactly one automation (`automation:<id>`) and authorize nothing else: they cannot call the RPC surface, and posting to a different automation id is refused with `missing required scope`. That refusal is the only safe liveness probe; posting to the Routine's own id would run it.
+
+`CreateAutomationWebhookApiKey` is owner-checked (`Only the automation owner can create webhook API keys`), is not idempotent, and has no revoke counterpart in the supported surface. The adapter therefore mints only on explicit request and never retries a mint automatically.
+
+This surface is a separate credential authority and does not imply Gateway, daemon, Sandbox, or quota access.
+
 ## Capability separation
 
 The Gateway is not a general cloud-computer RPC. Governed filesystem, process, and Job operations belong to the grokbox daemon. Sandbox lifecycle and quota are separate adapters with separate credential references. Authority on one surface never implies authority on another.

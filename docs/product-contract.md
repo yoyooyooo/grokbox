@@ -30,7 +30,8 @@ CLI 统一四类能力：
 2. 云电脑能力：受控文件读写、命令执行、长任务和 artifact 传输。
 3. Sandbox 生命周期能力：从外部唤醒、维持 lease 和观察 Cursor/AnyRun 状态。
 4. 账号额度能力：由显式 credential-owning source 返回 fresh sanitized quota，不从 transcript 推算。
-5. 连接与运行能力：Profile、doctor、daemon 和版本匹配的 bundled skills。
+5. 账号 Routine 能力：由显式 Server credential 直连 Grok Bot Server of record，读取 Temporal Bot 的 Routine 并铸造 webhook key；不经过 box Gateway，也不借用它的权限。
+6. 连接与运行能力：Profile、doctor、daemon 和版本匹配的 bundled skills。
 
 正常远程路径由 box 内 daemon 持有 Gateway discovery 与本机权限。Sandbox wake/lease 由 box 外控制面 adapter 持有，因为 cgroup freeze 后内部 daemon 不能唤醒自己。外部客户端不需要获得 Gateway Bearer。SSH 只负责 bootstrap 与故障恢复，不是日常命令 transport。
 
@@ -130,6 +131,11 @@ grokbox (alias: gbox)
 │       ├── enable <agent> <routine-id> --expect-revision <sha256> --confirm
 │       ├── disable <agent> <routine-id> --expect-revision <sha256> --confirm
 │       └── delete <agent> <routine-id> --expect-revision <sha256> --confirm
+├── server
+│   ├── agents
+│   ├── routines --agent <id-or-name> [--routine <id-or-name>]
+│   └── webhook
+│       └── credential --agent <id-or-name> --routine <id-or-name> [--reveal-key] [--verify]
 ├── groups
 │   ├── list
 │   ├── show <id-or-name>
@@ -361,6 +367,27 @@ The mutation surface is intentionally owner-aware:
 - Every mutation performs one native/Server write followed by a same-Gateway-generation readback. The upstream APIs provide neither compare-and-swap nor native idempotency; the revision is therefore a preflight guard, not a Server CAS.
 - Lost/ambiguous write acknowledgement returns `operation_outcome_unknown` with the caller correlation ID and is never automatically replayed. Box create also refuses when the native returned window is already at its limit because a newly created ID could not be reconciled safely.
 - `agents routines webhook credential <agent> <routine-id> --confirm` is the explicit credential boundary. It returns the webhook URL and only reports key and prompt presence by default; `--reveal-key` emits the sensitive key and the routine prompt together. `list` and `show` still omit both. Credential access may mint/persist a key upstream. Webhook invocation, run-now semantics, and cancellation of in-flight runs remain outside this command family.
+
+### 7.1b Server Routine surface (`grokbox server …`)
+
+`grokbox server agents|routines|webhook credential` addresses the Grok Bot Server of record directly, for accounts whose box Host does not carry the Temporal Routine bridge. It is a **separate authority**: it needs its own Profile credential (`server.access_token_ref`, optional `server.backend_url`) and never borrows Gateway, daemon, Sandbox, or quota capability. Declaring it does not widen any other surface.
+
+```bash
+grokbox profile update <name> --server-access-token-ref file:/path/to/account-token
+grokbox server agents
+grokbox server routines --agent <id-or-name> [--routine <id-or-name>]
+grokbox server webhook credential --agent <id-or-name> --routine <id-or-name> [--reveal-key] [--verify]
+```
+
+Behaviour contract:
+
+- The transport is the Server's own unary protobuf methods (`ListGrokBotAgents`, `ListGrokBotAgentAutomations`, `CreateAutomationWebhookApiKey`) plus the webhook liveness probe. There is no generic Server RPC command and no arbitrary path.
+- The Server automation id is derived, not discovered: `sha256("<agentId> <localId>")` reshaped into the Server's UUID form. The webhook URL is `<backend>/automations/webhook/<serverAutomationId>`.
+- Routine rows are a bounded projection: Server id, local id, name, enabled state, supported trigger, creation time, and the webhook URL for webhook triggers. Prompts, native paths, and provider fields never enter output; a malformed or oversized record fails closed instead of being guessed.
+- `webhook credential` mints a key and reports only its presence by default. `--reveal-key` emits the key. `--verify` proves the key is live by probing a **different** automation id (a live key answers `missing required scope`); the probe never addresses the Routine's own id, because that would fire it.
+- Minting is not idempotent upstream: each call issues another live key and there is no revoke method in the supported surface. Prefer reusing a key you already hold.
+- `agents routines …` stays the Gateway path. When the Temporal bridge is missing it fails closed with `failureCode: routine_bridge_missing` and points at this command family instead of returning an empty list.
+- A Server credential is account-scoped: it sees only the Bots that account owns. Two credentials for two accounts are two Profiles, not one merged view.
 
 ### 7.2 Groups
 

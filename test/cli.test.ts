@@ -105,6 +105,7 @@ describe("registry, help, and runtime", () => {
       "jobs",
       "desktop",
       "events",
+      "server",
       "is",
     ]);
     for (const name of TOP_LEVEL_COMMANDS) expect(result.stdout).toContain(name);
